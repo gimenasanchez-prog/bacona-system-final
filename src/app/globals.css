@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Small defaults for POS feel */
+:root {
+  color-scheme: light;
+}
+

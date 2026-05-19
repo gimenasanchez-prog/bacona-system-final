@@ -1,0 +1,13 @@
+category,name,unit,dimension,displayUnit,targetDaysCover
+Harinas,Harina 000,KG,MASS,KG,14
+Harinas,Harina 0000,KG,MASS,KG,14
+Harinas,Harina integral,KG,MASS,KG,14
+Carnes,Carne picada,KG,MASS,KG,7
+Carnes,Pollo,KG,MASS,KG,7
+Lácteos,Queso cremoso,KG,MASS,KG,7
+Lácteos,Manteca,KG,MASS,KG,14
+Bebidas,Agua mineral 500ml,UN,COUNT,UN,14
+Bebidas,Gaseosa 500ml,UN,COUNT,UN,14
+Insumos,Aceite girasol,L,VOLUME,L,14
+Insumos,Sal fina,KG,MASS,KG,30
+Insumos,Azúcar,KG,MASS,KG,30

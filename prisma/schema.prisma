@@ -1,0 +1,739 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@index([isActive, sortOrder])
+}
+
+model Product {
+  id                         String                 @id @default(cuid())
+  categoryId                 String
+  name                       String
+  priceCents                 Int
+  isActive                   Boolean                @default(true)
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  consumptionRecipeVersionId String?
+  inventoryItemId            String?
+  saleItems                  PosSaleItem[]
+  category                   Category               @relation(fields: [categoryId], references: [id])
+  consumptionRecipeVersion   RecipeVersion?         @relation("ProductConsumptionRecipeVersion", fields: [consumptionRecipeVersionId], references: [id])
+  inventoryItem              InventoryItem?         @relation("ProductInventoryItem", fields: [inventoryItemId], references: [id])
+  modifierGroups             ProductModifierGroup[]
+
+  @@index([categoryId, isActive])
+  @@index([inventoryItemId])
+  @@index([consumptionRecipeVersionId])
+}
+
+model ModifierGroup {
+  id        String                 @id @default(cuid())
+  name      String
+  minSelect Int                    @default(0)
+  maxSelect Int                    @default(1)
+  isActive  Boolean                @default(true)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  options   ModifierOption[]
+  products  ProductModifierGroup[]
+}
+
+model ModifierOption {
+  id              String                @id @default(cuid())
+  groupId         String
+  name            String
+  priceDeltaCents Int                   @default(0)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  group           ModifierGroup         @relation(fields: [groupId], references: [id])
+  saleItemLinks   PosSaleItemModifier[]
+
+  @@index([groupId, isActive])
+}
+
+model ProductModifierGroup {
+  productId String
+  groupId   String
+  sortOrder Int           @default(0)
+  group     ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, groupId])
+  @@index([groupId])
+}
+
+model Customer {
+  id          String                   @id @default(cuid())
+  displayName String
+  isActive    Boolean                  @default(true)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  accounts    CuentaCorrienteAccount[]
+  sales       PosSale[]
+
+  @@index([isActive, displayName])
+}
+
+model CuentaCorrienteAccount {
+  id         String       @id @default(cuid())
+  customerId String
+  planCode   String?
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  customer   Customer     @relation(fields: [customerId], references: [id])
+  payments   PosPayment[]
+  sales      PosSale[]    @relation("SaleCuentaCorriente")
+
+  @@index([customerId, isActive])
+}
+
+model Employee {
+  id                        String              @id @default(cuid())
+  displayName               String
+  isActive                  Boolean             @default(true)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  role                      EmployeeRole        @default(ASOCIADO)
+  cashSessions              CashSession[]
+  envelopesControlled       Envelope[]          @relation("EmployeeEnvelopesControlled")
+  envelopesOpened           Envelope[]          @relation("EmployeeEnvelopesOpened")
+  localCashMovementsCreated LocalCashMovement[] @relation("EmployeeLocalCashMovementsCreated")
+  localExpensesCreated      LocalExpense[]      @relation("EmployeeLocalExpensesCreated")
+  payments                  PosPayment[]
+  stockMovementsCreated     StockMovement[]     @relation("EmployeeStockMovementsCreated")
+
+  @@index([isActive, displayName])
+}
+
+model CashSession {
+  id                        String                              @id @default(cuid())
+  businessDate              DateTime
+  shift                     Shift
+  employeeId                String
+  status                    CashSessionStatus                   @default(OPEN)
+  openedAt                  DateTime                            @default(now())
+  closedAt                  DateTime?
+  openKey                   String?                             @unique
+  notes                     String?
+  totalCashCents            Int                                 @default(0)
+  totalDebitCents           Int                                 @default(0)
+  totalCreditCents          Int                                 @default(0)
+  totalTransferCents        Int                                 @default(0)
+  totalQrCents              Int                                 @default(0)
+  totalCuentaCorrienteCents Int                                 @default(0)
+  totalCuentasInternasCents Int                                 @default(0)
+  totalIncomeCents          Int                                 @default(0)
+  totalExpensesCents        Int                                 @default(0)
+  totalNetCents             Int                                 @default(0)
+  createdAt                 DateTime                            @default(now())
+  updatedAt                 DateTime                            @updatedAt
+  employee                  Employee                            @relation(fields: [employeeId], references: [id])
+  paymentDetails            CashSessionPaymentBreakdownDetail[]
+  envelope                  Envelope?
+  localExpenses             LocalExpense[]
+  sales                     PosSale[]
+
+  @@index([businessDate, shift, status])
+  @@index([employeeId, businessDate, shift])
+}
+
+model CashSessionPaymentBreakdownDetail {
+  id            String                       @id @default(cuid())
+  cashSessionId String
+  type          CashSessionPaymentDetailType
+  referenceId   String?
+  referenceName String
+  amountCents   Int
+  createdAt     DateTime                     @default(now())
+  cashSession   CashSession                  @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+
+  @@index([cashSessionId, type])
+}
+
+model Supplier {
+  id        String         @id @default(cuid())
+  name      String
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  expenses  LocalExpense[]
+
+  @@index([active, name])
+}
+
+model LocalExpense {
+  id                   String                    @id @default(cuid())
+  cashSessionId        String?
+  date                 DateTime
+  category             LocalExpenseCategory
+  supplierId           String
+  supplierNameSnapshot String
+  description          String?
+  amountCents          Int
+  paymentSource        LocalExpensePaymentSource
+  affectsStock         Boolean                   @default(false)
+  createdByEmployeeId  String
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  localCashMovements   LocalCashMovement[]
+  cashSession          CashSession?              @relation(fields: [cashSessionId], references: [id])
+  createdByEmployee    Employee                  @relation("EmployeeLocalExpensesCreated", fields: [createdByEmployeeId], references: [id])
+  supplier             Supplier                  @relation(fields: [supplierId], references: [id])
+  stockMovement        StockMovement?
+
+  @@index([cashSessionId, date])
+  @@index([supplierId, date])
+  @@index([paymentSource, date])
+}
+
+model Envelope {
+  id                     String              @id @default(cuid())
+  envelopeCode           String              @unique
+  cashSessionId          String              @unique
+  expectedAmountCents    Int
+  actualAmountCents      Int?
+  status                 EnvelopeStatus      @default(CLOSED)
+  depositedAt            DateTime            @default(now())
+  openedAt               DateTime?
+  controlledAt           DateTime?
+  openedByEmployeeId     String?
+  controlledByEmployeeId String?
+  notes                  String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  cashSession            CashSession         @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+  controlledByEmployee   Employee?           @relation("EmployeeEnvelopesControlled", fields: [controlledByEmployeeId], references: [id])
+  openedByEmployee       Employee?           @relation("EmployeeEnvelopesOpened", fields: [openedByEmployeeId], references: [id])
+  localCashMovements     LocalCashMovement[]
+
+  @@index([status, depositedAt])
+}
+
+model LocalCashBox {
+  id        String              @id @default(cuid())
+  name      String              @unique
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  movements LocalCashMovement[]
+
+  @@index([active, name])
+}
+
+model LocalCashMovement {
+  id                    String                      @id @default(cuid())
+  localCashBoxId        String
+  type                  LocalCashMovementType
+  sourceType            LocalCashMovementSourceType
+  relatedEnvelopeId     String?
+  relatedLocalExpenseId String?
+  amountCents           Int
+  date                  DateTime
+  description           String?
+  createdByEmployeeId   String
+  createdAt             DateTime                    @default(now())
+  createdByEmployee     Employee                    @relation("EmployeeLocalCashMovementsCreated", fields: [createdByEmployeeId], references: [id])
+  localCashBox          LocalCashBox                @relation(fields: [localCashBoxId], references: [id])
+  relatedEnvelope       Envelope?                   @relation(fields: [relatedEnvelopeId], references: [id])
+  relatedLocalExpense   LocalExpense?               @relation(fields: [relatedLocalExpenseId], references: [id])
+
+  @@index([localCashBoxId, date])
+  @@index([type, date])
+  @@index([sourceType, date])
+  @@index([relatedEnvelopeId])
+  @@index([relatedLocalExpenseId])
+}
+
+model PosTable {
+  id        String    @id @default(cuid())
+  label     String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sales     PosSale[]
+
+  @@index([isActive, label])
+}
+
+model PosSale {
+  id                       String                  @id @default(cuid())
+  saleType                 PosSaleType
+  status                   PosSaleStatus           @default(DRAFT)
+  customerId               String?
+  cuentaCorrienteAccountId String?
+  customerNameFreeText     String?
+  tableId                  String?
+  reservationAt            DateTime?
+  subtotalCents            Int                     @default(0)
+  totalCents               Int                     @default(0)
+  externalRefs             Json?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  cashSessionId            String?
+  payments                 PosPayment[]
+  cashSession              CashSession?            @relation(fields: [cashSessionId], references: [id])
+  cuentaCorrienteAccount   CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
+  customer                 Customer?               @relation(fields: [customerId], references: [id])
+  table                    PosTable?               @relation(fields: [tableId], references: [id])
+  items                    PosSaleItem[]
+  stockMovement            StockMovement?          @relation("SaleStockMovement")
+
+  @@index([saleType, status, createdAt])
+  @@index([cashSessionId, createdAt])
+  @@index([customerId])
+  @@index([cuentaCorrienteAccountId])
+  @@index([tableId])
+}
+
+model PosSaleItem {
+  id             String                @id @default(cuid())
+  saleId         String
+  productId      String
+  qty            Int
+  unitPriceCents Int
+  lineTotalCents Int
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  product        Product               @relation(fields: [productId], references: [id])
+  sale           PosSale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  modifiers      PosSaleItemModifier[]
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model PosSaleItemModifier {
+  id               String         @id @default(cuid())
+  saleItemId       String
+  modifierOptionId String
+  priceDeltaCents  Int
+  modifierOption   ModifierOption @relation(fields: [modifierOptionId], references: [id])
+  saleItem         PosSaleItem    @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+
+  @@index([saleItemId])
+  @@index([modifierOptionId])
+}
+
+model PosPayment {
+  id                       String                  @id @default(cuid())
+  saleId                   String
+  method                   PosPaymentMethod
+  amountCents              Int
+  cuentaCorrienteAccountId String?
+  employeeId               String?
+  createdAt                DateTime                @default(now())
+  cuentaCorrienteAccount   CuentaCorrienteAccount? @relation(fields: [cuentaCorrienteAccountId], references: [id])
+  employee                 Employee?               @relation(fields: [employeeId], references: [id])
+  sale                     PosSale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([method])
+}
+
+model StockLocation {
+  id                 String              @id @default(cuid())
+  code               String              @unique
+  label              String
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  lossEvents         LossEvent[]
+  productionBatches  ProductionBatch[]
+  purchases          Purchase[]
+  stockMovementLines StockMovementLine[]
+
+  @@index([isActive, label])
+}
+
+model InventoryCategory {
+  id        String          @id @default(cuid())
+  name      String
+  sortOrder Int             @default(0)
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  items     InventoryItem[]
+
+  @@index([isActive, sortOrder])
+}
+
+model InventoryItem {
+  id              String                @id @default(cuid())
+  categoryId      String
+  name            String
+  unit            StockUnit
+  dimension       StockDimension        @default(COUNT)
+  displayUnit     StockUnit             @default(UN)
+  isActive        Boolean               @default(true)
+  targetDaysCover Int                   @default(14)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  category        InventoryCategory     @relation(fields: [categoryId], references: [id])
+  lossLines       LossEventLine[]
+  productLinks    Product[]             @relation("ProductInventoryItem")
+  productionLines ProductionBatchLine[]
+  purchaseLines   PurchaseLine[]
+  recipeLines     RecipeLine[]
+  stockLines      StockMovementLine[]
+  uoms            InventoryItemUom[]
+
+  @@index([categoryId, isActive])
+  @@index([isActive, name])
+}
+
+model InventoryItemUom {
+  id                String        @id @default(cuid())
+  inventoryItemId   String
+  label             String
+  unit              StockUnit
+  multiplierToBase  Decimal       @db.Decimal(18, 6)
+  isDefaultForEntry Boolean       @default(false)
+  sortOrder         Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId, sortOrder])
+  @@index([inventoryItemId, isDefaultForEntry])
+}
+
+model Recipe {
+  id        String          @id @default(cuid())
+  name      String
+  kind      RecipeKind
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  versions  RecipeVersion[]
+
+  @@index([kind, isActive, name])
+}
+
+model RecipeVersion {
+  id                      String            @id @default(cuid())
+  recipeId                String
+  version                 Int
+  notes                   String?
+  isActive                Boolean           @default(true)
+  createdAt               DateTime          @default(now())
+  productConsumptionLinks Product[]         @relation("ProductConsumptionRecipeVersion")
+  productionBatches       ProductionBatch[]
+  lines                   RecipeLine[]
+  recipe                  Recipe            @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, version])
+  @@index([recipeId, isActive])
+}
+
+model RecipeLine {
+  id              String                 @id @default(cuid())
+  recipeVersionId String
+  inventoryItemId String
+  direction       StockMovementDirection
+  qty             Decimal                @db.Decimal(18, 3)
+  sortOrder       Int                    @default(0)
+  inventoryItem   InventoryItem          @relation(fields: [inventoryItemId], references: [id])
+  recipeVersion   RecipeVersion          @relation(fields: [recipeVersionId], references: [id], onDelete: Cascade)
+
+  @@index([recipeVersionId, sortOrder])
+  @@index([inventoryItemId])
+}
+
+model ProductionBatch {
+  id                  String                @id @default(cuid())
+  recipeVersionId     String
+  locationId          String
+  status              ProductionStatus      @default(DRAFT)
+  occurredAt          DateTime              @default(now())
+  deviationFlag       Boolean               @default(false)
+  deviationReason     String?
+  recommendedSnapshot Json?
+  actualSnapshot      Json?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  location            StockLocation         @relation(fields: [locationId], references: [id])
+  recipeVersion       RecipeVersion         @relation(fields: [recipeVersionId], references: [id])
+  lines               ProductionBatchLine[]
+  stockMovement       StockMovement?        @relation("ProductionStockMovement")
+
+  @@index([status, occurredAt])
+  @@index([locationId, occurredAt])
+}
+
+model ProductionBatchLine {
+  id              String                 @id @default(cuid())
+  batchId         String
+  inventoryItemId String
+  direction       StockMovementDirection
+  qty             Decimal                @db.Decimal(18, 3)
+  entryQty        Decimal?               @db.Decimal(18, 3)
+  entryUnit       StockUnit?
+  uomId           String?
+  sortOrder       Int                    @default(0)
+  batch           ProductionBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem          @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([batchId, sortOrder])
+  @@index([inventoryItemId])
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  type          PurchaseType
+  status        PurchaseStatus @default(DRAFT)
+  locationId    String
+  supplierName  String?
+  invoiceNumber String?
+  purchasedAt   DateTime       @default(now())
+  postedAt      DateTime?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  location      StockLocation  @relation(fields: [locationId], references: [id])
+  lines         PurchaseLine[]
+  stockMovement StockMovement? @relation("PurchaseStockMovement")
+
+  @@index([type, status, purchasedAt])
+  @@index([locationId, purchasedAt])
+}
+
+model PurchaseLine {
+  id              String        @id @default(cuid())
+  purchaseId      String
+  inventoryItemId String
+  qty             Decimal       @db.Decimal(18, 3)
+  entryQty        Decimal?      @db.Decimal(18, 3)
+  entryUnit       StockUnit?
+  uomId           String?
+  unitCostCents   Int?
+  sortOrder       Int           @default(0)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  purchase        Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId, sortOrder])
+  @@index([inventoryItemId])
+}
+
+model LossEvent {
+  id            String          @id @default(cuid())
+  reasonType    LossReasonType
+  locationId    String
+  occurredAt    DateTime        @default(now())
+  notes         String?
+  createdAt     DateTime        @default(now())
+  location      StockLocation   @relation(fields: [locationId], references: [id])
+  lines         LossEventLine[]
+  stockMovement StockMovement?  @relation("LossStockMovement")
+
+  @@index([reasonType, occurredAt])
+  @@index([locationId, occurredAt])
+}
+
+model LossEventLine {
+  id              String        @id @default(cuid())
+  lossEventId     String
+  inventoryItemId String
+  qty             Decimal       @db.Decimal(18, 3)
+  entryQty        Decimal?      @db.Decimal(18, 3)
+  entryUnit       StockUnit?
+  uomId           String?
+  sortOrder       Int           @default(0)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  lossEvent       LossEvent     @relation(fields: [lossEventId], references: [id], onDelete: Cascade)
+
+  @@index([lossEventId, sortOrder])
+  @@index([inventoryItemId])
+}
+
+model StockMovement {
+  id                  String              @id @default(cuid())
+  type                StockMovementType
+  occurredAt          DateTime            @default(now())
+  notes               String?
+  posSaleId           String?             @unique
+  purchaseId          String?             @unique
+  productionBatchId   String?             @unique
+  lossEventId         String?             @unique
+  reversesMovementId  String?             @unique
+  createdByEmployeeId String?
+  createdAt           DateTime            @default(now())
+  externalKey         String?             @unique
+  localExpenseId      String?             @unique
+  createdByEmployee   Employee?           @relation("EmployeeStockMovementsCreated", fields: [createdByEmployeeId], references: [id])
+  localExpense        LocalExpense?       @relation(fields: [localExpenseId], references: [id], onDelete: Cascade)
+  lossEvent           LossEvent?          @relation("LossStockMovement", fields: [lossEventId], references: [id], onDelete: Cascade)
+  posSale             PosSale?            @relation("SaleStockMovement", fields: [posSaleId], references: [id], onDelete: Cascade)
+  productionBatch     ProductionBatch?    @relation("ProductionStockMovement", fields: [productionBatchId], references: [id], onDelete: Cascade)
+  purchase            Purchase?           @relation("PurchaseStockMovement", fields: [purchaseId], references: [id], onDelete: Cascade)
+  reversesMovement    StockMovement?      @relation("StockMovementReversal", fields: [reversesMovementId], references: [id])
+  reversedBy          StockMovement?      @relation("StockMovementReversal")
+  lines               StockMovementLine[]
+
+  @@index([type, occurredAt])
+}
+
+model StockMovementLine {
+  id              String                 @id @default(cuid())
+  movementId      String
+  inventoryItemId String
+  locationId      String
+  direction       StockMovementDirection
+  qty             Decimal                @db.Decimal(18, 3)
+  sortOrder       Int                    @default(0)
+  inventoryItem   InventoryItem          @relation(fields: [inventoryItemId], references: [id])
+  location        StockLocation          @relation(fields: [locationId], references: [id])
+  movement        StockMovement          @relation(fields: [movementId], references: [id], onDelete: Cascade)
+
+  @@index([movementId, sortOrder])
+  @@index([inventoryItemId, locationId])
+  @@index([locationId])
+}
+
+enum PosSaleType {
+  MOSTRADOR
+  MESA
+  RESERVA
+}
+
+enum PosSaleStatus {
+  DRAFT
+  CONFIRMED
+  PAID
+  CANCELLED
+}
+
+enum PosPaymentMethod {
+  CREDITO
+  DEBITO
+  TRANSFERENCIA
+  QR
+  CUENTA_CORRIENTE
+  CUENTAS_INTERNAS
+  EFECTIVO
+}
+
+enum StockUnit {
+  UN
+  KG
+  G
+  L
+  ML
+}
+
+enum StockDimension {
+  VOLUME
+  MASS
+  COUNT
+}
+
+enum StockMovementType {
+  SALE
+  PURCHASE
+  PRODUCTION
+  LOSS
+  TRANSFER
+  ADJUSTMENT
+}
+
+enum StockMovementDirection {
+  IN
+  OUT
+}
+
+enum PurchaseType {
+  APROVISIONAMIENTO
+  IN_SITU
+}
+
+enum PurchaseStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum ProductionStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum RecipeKind {
+  PRODUCTION
+  CONSUMPTION
+}
+
+enum LossReasonType {
+  DURING_PRODUCTION
+  DURING_SALE_PREP
+  SPOILED
+  OTHER
+}
+
+enum Shift {
+  MANIANA
+  TARDE
+  NOCHE
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashSessionPaymentDetailType {
+  CUENTA_CORRIENTE
+  CUENTA_INTERNA
+}
+
+enum LocalExpenseCategory {
+  APROVISIONAMIENTO_COMIDA_LOCAL
+  APROVISIONAMIENTO_BEBIDAS_LOCAL
+  GAS
+  MANTENIMIENTO
+  OTRO
+}
+
+enum LocalExpensePaymentSource {
+  SHIFT_CASH
+  LOCAL_CASH
+}
+
+enum EnvelopeStatus {
+  CLOSED
+  OPENED
+  CONTROLLED
+  NOT_CONTROLLED
+}
+
+enum LocalCashMovementType {
+  IN
+  OUT
+}
+
+enum LocalCashMovementSourceType {
+  ENVELOPE_OPENING
+  LOCAL_EXPENSE
+  MANUAL_ADJUSTMENT
+  CHANGE_RETURN
+}
+
+enum EmployeeRole {
+  ASOCIADO
+  CAJA_LOCAL
+  GERENCIA
+}
