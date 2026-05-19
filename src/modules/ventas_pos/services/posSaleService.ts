@@ -1,4 +1,4 @@
-import { PosPaymentMethod, PosSaleStatus, PosSaleType } from "@prisma/client";
+import { Prisma, PosPaymentMethod, PosSaleStatus, PosSaleType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { onSaleConfirmed, onSalePaid } from "./posIntegrationHooks";
@@ -72,7 +72,7 @@ export class PosSaleService {
         customerNameFreeText: input.customerNameFreeText,
         tableId: input.tableId,
         reservationAt: input.reservationAt,
-        externalRefs: input.externalRefs !== undefined ? input.externalRefs : undefined,
+        externalRefs: input.externalRefs === null ? Prisma.DbNull : input.externalRefs,
       },
     });
   }

@@ -26,7 +26,7 @@ const PatchSaleSchema = z.object({
   customerNameFreeText: z.string().nullable().optional(),
   tableId: z.string().nullable().optional(),
   reservationAt: z.string().datetime().nullable().optional(),
-  externalRefs: z.record(z.any()).nullable().optional(),
+  externalRefs: z.record(z.string(), z.any()).nullable().optional(),
 });
 
 export async function PATCH(
