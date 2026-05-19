@@ -1,4 +1,6 @@
 import "./globals.css";
+
+export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
