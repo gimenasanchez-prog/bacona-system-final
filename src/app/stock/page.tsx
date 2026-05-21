@@ -157,9 +157,14 @@ export default function StockPage() {
               Ubicación: <b>{dashboard?.location.label ?? "—"}</b>
             </div>
           </div>
-          <Link href="/stock/movimientos" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
-            Ver movimientos
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/stock/entrada" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
+              Entrada de stock
+            </Link>
+            <Link href="/stock/movimientos" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
+              Ver movimientos
+            </Link>
+          </div>
         </div>
 
         {error ? (

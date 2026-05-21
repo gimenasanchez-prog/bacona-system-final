@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit",
+    "lint:all": "eslint src",
+    "build:check": "prisma generate && next build",
+    "migrate:status": "prisma migrate status",
+    "predeploy": "npm run type-check && npm run lint:all && npm run build:check",
+    "prepare": "husky",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -28,6 +34,12 @@
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"
   },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "eslint"
+    ]
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^25.4.0",
@@ -36,10 +48,13 @@
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.1.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "postcss": "^8.5.8",
     "prisma": "^7.5.0",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.4"
   }
 }

@@ -129,7 +129,8 @@ export default function PosPage() {
   const [saleSuccess, setSaleSuccess] = useState<number | null>(null);
   const [selectedPlanCode, setSelectedPlanCode] = useState<string | null>(null);
   const [upcomingReservations, setUpcomingReservations] = useState<ReservationSummary[]>([]);
-  const [reservationsCollapsed, setReservationsCollapsed] = useState(false);
+
+  const [pendingCustomerName, setPendingCustomerName] = useState("");
 
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [lossForm, setLossForm] = useState<{
@@ -153,9 +154,17 @@ export default function PosPage() {
       method: "POST",
       body: JSON.stringify({ saleType: saleTypeDraft }),
     });
-    setSaleId(created.sale.id);
-    await refreshSale(created.sale.id);
-    return created.sale.id;
+    const sid = created.sale.id;
+    setSaleId(sid);
+    if (pendingCustomerName.trim()) {
+      await apiJson(`/api/pos/sales/${sid}`, {
+        method: "PATCH",
+        body: JSON.stringify({ customerNameFreeText: pendingCustomerName }),
+      });
+      setPendingCustomerName("");
+    }
+    await refreshSale(sid);
+    return sid;
   }
 
   async function patchSale(patch: Record<string, any>) {
@@ -269,19 +278,24 @@ export default function PosPage() {
   );
 
   const hasCoverCount = useMemo(() => {
-    if (!saleId) return false;
-    const count = sale?.externalRefs?.coverCount;
-    if (count === undefined || count === null) return true; // default: 1 persona
-    return typeof count === "number" && (count as number) >= 1;
+    if (!saleId || !sale) return false;
+    const count = sale.externalRefs?.coverCount;
+    return typeof count === "number" && count >= 1;
   }, [saleId, sale]);
 
   const allowedPlanConfig = useMemo(() => {
     if (!selectedPlanCode) return null;
-    const configs: Record<string, { showSnacks: boolean; corpoFilter: "all" | "corpo2" | "corpo2_basic"; capCentsPerPerson: number | null }> = {
-      FULL:                 { showSnacks: false, corpoFilter: "all",         capCentsPerPerson: null },
-      FULL_SNACKS_CAPPED:   { showSnacks: true,  corpoFilter: "all",         capCentsPerPerson: 1_350_000 },
-      CORPO2_SNACKS:        { showSnacks: true,  corpoFilter: "corpo2",      capCentsPerPerson: null },
-      CORPO2_BASIC:         { showSnacks: false, corpoFilter: "corpo2_basic", capCentsPerPerson: null },
+    const configs: Record<string, {
+      showSnacks: boolean;
+      showBebidas: boolean;
+      corpoFilter: "all" | "corpo1" | "corpo2" | "corpo2_basic";
+      cartaLibre: boolean;
+      capCentsPerPerson: number | null;
+    }> = {
+      CORPO1:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
+      CORPO1_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
+      CORPO2_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
+      CORPO2_CARTA_LIBRE: { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: true,  capCentsPerPerson: null },
     };
     return configs[selectedPlanCode] ?? null;
   }, [selectedPlanCode]);
@@ -319,48 +333,84 @@ export default function PosPage() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
-      <div className="rounded-lg border bg-white p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-sm font-semibold">Categorías</div>
-          <button
-            type="button"
-            className="rounded-md border px-2 py-1 text-xs"
-            onClick={() => {
-              setSaleId(null);
-              setSale(null);
-              setPaymentsOpen(false);
-              setSaleSuccess(null);
-              setError(null);
-            }}
-          >
-            Nuevo
-          </button>
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg border bg-white p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-semibold">Categorías</div>
+            <button
+              type="button"
+              className="rounded-md border px-2 py-1 text-xs"
+              onClick={() => {
+                setSaleId(null);
+                setSale(null);
+                setPaymentsOpen(false);
+                setSaleSuccess(null);
+                setError(null);
+                setPendingCustomerName("");
+              }}
+            >
+              Nuevo
+            </button>
+          </div>
+          <div className="space-y-1">
+            {categories
+              .filter((c) => {
+                if (!allowedPlanConfig) return true;
+                if (allowedPlanConfig.cartaLibre) return true;
+                const name = c.name.toLowerCase();
+                if (name.includes("corporat")) return true;
+                if (allowedPlanConfig.showSnacks && name.includes("snack")) return true;
+                if (allowedPlanConfig.showBebidas && name.includes("bebida")) return true;
+                return false;
+              })
+              .map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedCategoryId(c.id)}
+                  className={cn(
+                    "w-full rounded-md px-3 py-2 text-left text-sm",
+                    selectedCategoryId === c.id
+                      ? "bg-neutral-900 text-white"
+                      : "hover:bg-neutral-100"
+                  )}
+                >
+                  {c.name}
+                </button>
+              ))}
+          </div>
         </div>
-        <div className="space-y-1">
-          {categories
-            .filter((c) => {
-              if (!allowedPlanConfig) return true;
-              const name = c.name.toLowerCase();
-              if (name.includes("corporat")) return true;
-              if (name.includes("snack") && allowedPlanConfig.showSnacks) return true;
-              return false;
-            })
-            .map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setSelectedCategoryId(c.id)}
-                className={cn(
-                  "w-full rounded-md px-3 py-2 text-left text-sm",
-                  selectedCategoryId === c.id
-                    ? "bg-neutral-900 text-white"
-                    : "hover:bg-neutral-100"
-                )}
-              >
-                {c.name}
-              </button>
-            ))}
-        </div>
+
+        {upcomingReservations.length > 0 ? (
+          <div className="rounded-lg border bg-amber-50 p-2">
+            <div className="mb-1.5 text-xs font-semibold text-amber-800">
+              Reservas próximas ({upcomingReservations.length})
+            </div>
+            <div className="max-h-40 space-y-1 overflow-y-auto">
+              {upcomingReservations.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs">
+                  <div className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{r.customerName}</span>
+                    <span className="ml-1.5 text-neutral-500">
+                      {new Date(r.reservationAt!).toLocaleString("es-AR", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {r.coverCount ? <span className="ml-1 text-neutral-400">· {r.coverCount}p</span> : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
+                    onClick={async () => {
+                      setSaleId(r.id);
+                      await refreshSale(r.id);
+                    }}
+                  >
+                    Cargar
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-3">
@@ -490,18 +540,29 @@ export default function PosPage() {
               <div className="space-y-2">
                 <label className="block text-xs font-medium">
                   ¿Cómo se llama?{" "}
-                  <span className="text-neutral-400 font-normal">(obligatorio)</span>
+                  <span className={cn("font-normal", saleId && !sale?.customerNameFreeText?.trim() ? "text-red-500" : "text-neutral-400")}>
+                    (obligatorio)
+                  </span>
                 </label>
                 <input
-                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  className={cn(
+                    "w-full rounded-md border px-3 py-2 text-sm",
+                    saleId && !sale?.customerNameFreeText?.trim() ? "border-red-300" : ""
+                  )}
                   placeholder="Ej: Gimena"
-                  value={sale?.customerNameFreeText ?? ""}
-                  onChange={(e) => setSale((prev) => (prev ? { ...prev, customerNameFreeText: e.target.value } : prev))}
+                  value={sale?.customerNameFreeText ?? pendingCustomerName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (sale) {
+                      setSale((prev) => (prev ? { ...prev, customerNameFreeText: val } : prev));
+                    } else {
+                      setPendingCustomerName(val);
+                    }
+                  }}
                   onBlur={async () => {
                     if (!saleId) return;
                     await patchSale({ customerNameFreeText: sale?.customerNameFreeText ?? null });
                   }}
-                  disabled={!saleId}
                 />
               </div>
             ) : null}
@@ -510,18 +571,20 @@ export default function PosPage() {
           <div className="mt-3 space-y-2">
             <label className="block text-xs font-medium">
               Comensales{" "}
-              <span className="text-neutral-400 font-normal">(requerido)</span>
+              <span className={cn("font-normal", saleId && !hasCoverCount ? "text-red-500" : "text-neutral-400")}>
+                (requerido)
+              </span>
             </label>
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 className="flex h-8 w-8 items-center justify-center rounded-md border text-lg hover:bg-neutral-50 disabled:opacity-40"
-                disabled={(sale?.externalRefs?.coverCount ?? 1) <= 1}
+                disabled={(sale?.externalRefs?.coverCount ?? 0) <= 0}
                 onClick={async () => {
                   const sid = saleId ?? await ensureSale().catch(() => null);
                   if (!sid) return;
-                  const current = (sale?.externalRefs?.coverCount as number | undefined) ?? 1;
-                  const next = Math.max(1, current - 1);
+                  const current = (sale?.externalRefs?.coverCount as number | undefined) ?? 0;
+                  const next = Math.max(0, current - 1);
                   await apiJson(`/api/pos/sales/${sid}`, { method: "PATCH", body: JSON.stringify({ externalRefs: { ...(sale?.externalRefs ?? {}), coverCount: next } }) });
                   await refreshSale(sid);
                 }}
@@ -529,7 +592,7 @@ export default function PosPage() {
                 −
               </button>
               <span className="min-w-[2rem] text-center text-sm font-semibold">
-                {(sale?.externalRefs?.coverCount as number | undefined) ?? 1}
+                {(sale?.externalRefs?.coverCount as number | undefined) ?? 0}
               </span>
               <button
                 type="button"
@@ -537,7 +600,7 @@ export default function PosPage() {
                 onClick={async () => {
                   try {
                     const sid = saleId ?? await ensureSale();
-                    const current = (sale?.externalRefs?.coverCount as number | undefined) ?? 1;
+                    const current = (sale?.externalRefs?.coverCount as number | undefined) ?? 0;
                     await apiJson(`/api/pos/sales/${sid}`, { method: "PATCH", body: JSON.stringify({ externalRefs: { ...(sale?.externalRefs ?? {}), coverCount: current + 1 } }) });
                     await refreshSale(sid);
                   } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
@@ -546,7 +609,7 @@ export default function PosPage() {
                 +
               </button>
               <span className="text-xs text-neutral-500">
-                {((sale?.externalRefs?.coverCount as number | undefined) ?? 1) === 1 ? "persona" : "personas"}
+                {((sale?.externalRefs?.coverCount as number | undefined) ?? 0) === 1 ? "persona" : "personas"}
               </span>
             </div>
           </div>
@@ -575,64 +638,71 @@ export default function PosPage() {
           ) : null}
 
           {sale?.saleType === "RESERVA" ? (
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Fecha y hora (obligatorio)</label>
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs font-medium">
+                Fecha y hora{" "}
+                <span className={cn("font-normal", saleId && !sale.reservationAt ? "text-red-500" : "text-neutral-400")}>
+                  (obligatorio)
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[0, 1, 2, 3].map((offset) => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + offset);
+                  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                  const resDate = sale.reservationAt ? toDatetimeLocal(sale.reservationAt).slice(0, 10) : "";
+                  const resTime = sale.reservationAt ? toDatetimeLocal(sale.reservationAt).slice(11, 16) : "";
+                  const label = offset === 0 ? "Hoy" : offset === 1 ? "Mañana" : d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric" });
+                  return (
+                    <button
+                      key={iso}
+                      type="button"
+                      className={cn(
+                        "rounded-md border px-3 py-1.5 text-sm",
+                        resDate === iso ? "border-neutral-900 bg-neutral-900 text-white" : "hover:bg-neutral-50"
+                      )}
+                      onClick={async () => {
+                        const time = resTime || "12:00";
+                        await patchSale({ reservationAt: new Date(`${iso}T${time}:00`).toISOString() });
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
                 <input
-                  type="datetime-local"
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={sale.reservationAt ? toDatetimeLocal(sale.reservationAt) : ""}
-                  onChange={async (ev) => {
-                    const v = ev.target.value;
-                    await patchSale({ reservationAt: v ? new Date(v).toISOString() : null });
+                  type="date"
+                  className="rounded-md border px-2 py-1.5 text-sm"
+                  value={sale.reservationAt ? toDatetimeLocal(sale.reservationAt).slice(0, 10) : ""}
+                  onChange={async (e) => {
+                    if (!e.target.value) return;
+                    const time = sale.reservationAt ? toDatetimeLocal(sale.reservationAt).slice(11, 16) : "12:00";
+                    await patchSale({ reservationAt: new Date(`${e.target.value}T${time}:00`).toISOString() });
                   }}
                 />
               </div>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={sale.reservationAt ? toDatetimeLocal(sale.reservationAt).slice(11, 16) : ""}
+                onChange={async (e) => {
+                  const date = sale.reservationAt ? toDatetimeLocal(sale.reservationAt).slice(0, 10) : "";
+                  if (!e.target.value || !date) return;
+                  await patchSale({ reservationAt: new Date(`${date}T${e.target.value}:00`).toISOString() });
+                }}
+              >
+                <option value="">— Hora —</option>
+                {Array.from({ length: 28 }, (_, i) => {
+                  const totalMin = 600 + i * 30;
+                  const h = Math.floor(totalMin / 60);
+                  const m = totalMin % 60;
+                  const t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                  return <option key={t} value={t}>{t}</option>;
+                })}
+              </select>
             </div>
           ) : null}
         </div>
 
-        {upcomingReservations.length > 0 ? (
-          <div className="rounded-lg border bg-amber-50 p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-amber-800">
-                Reservas próximas ({upcomingReservations.length})
-              </div>
-              <button
-                type="button"
-                className="text-xs text-amber-600 hover:underline"
-                onClick={() => setReservationsCollapsed((v) => !v)}
-              >
-                {reservationsCollapsed ? "Ver" : "Ocultar"}
-              </button>
-            </div>
-            {!reservationsCollapsed && (
-              <div className="mt-2 space-y-1">
-                {upcomingReservations.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
-                    <div>
-                      <span className="font-medium">{r.customerName}</span>
-                      <span className="ml-2 text-xs text-neutral-500">
-                        {new Date(r.reservationAt!).toLocaleString("es-AR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      {r.coverCount ? <span className="ml-2 text-xs text-neutral-400">· {r.coverCount} pers.</span> : null}
-                    </div>
-                    <button
-                      type="button"
-                      className="ml-3 rounded-md border px-2 py-1 text-xs hover:bg-neutral-50"
-                      onClick={async () => {
-                        setSaleId(r.id);
-                        await refreshSale(r.id);
-                      }}
-                    >
-                      Cargar
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : null}
 
         {planCapReached ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -647,13 +717,32 @@ export default function PosPage() {
               .filter((p) => {
                 if (!allowedPlanConfig) return true;
                 const selectedCat = categories.find((c) => c.id === selectedCategoryId);
-                if (!selectedCat?.name.toLowerCase().includes("corporat")) return true;
-                const name = p.name.toLowerCase();
-                if (allowedPlanConfig.corpoFilter === "all") return true;
-                if (allowedPlanConfig.corpoFilter === "corpo2") return name.includes("corpo 2");
-                if (allowedPlanConfig.corpoFilter === "corpo2_basic")
-                  return name.includes("corpo 2") && (name.includes("snack") || name.includes("brunch"));
+                if (!selectedCat) return true;
+                const catName = selectedCat.name.toLowerCase();
+                if (catName.includes("bebida")) {
+                  const pname = p.name.toLowerCase();
+                  return !pname.includes("cerveza") && !pname.includes("energizante");
+                }
+                if (!catName.includes("corporat")) return true;
+                const pname = p.name.toLowerCase();
+                const { corpoFilter } = allowedPlanConfig;
+                if (corpoFilter === "all") return true;
+                if (corpoFilter === "corpo1") return pname.includes("corpo 1");
+                if (corpoFilter === "corpo2") return pname.includes("corpo 2");
+                if (corpoFilter === "corpo2_basic")
+                  return pname.includes("corpo 2") && (pname.includes("snack") || pname.includes("brunch"));
                 return true;
+              })
+              .sort((a, b) => {
+                const selectedCat = categories.find((c) => c.id === selectedCategoryId);
+                if (!selectedCat?.name.toLowerCase().includes("corporat")) return 0;
+                const key = (name: string) => {
+                  const n = name.toLowerCase();
+                  const tier = n.includes("corpo 1") ? 0 : 10;
+                  const type = n.includes("snack") ? 1 : n.includes("brunch") ? 2 : 3;
+                  return tier + type;
+                };
+                return key(a.name) - key(b.name);
               })
               .map((p) => (
                 <button
@@ -876,7 +965,14 @@ export default function PosPage() {
                     try {
                       setError(null);
                       await apiJson(`/api/pos/sales/${saleId}/confirm`, { method: "POST" });
-                      await refreshSale(saleId);
+                      if (sale?.saleType === "RESERVA") {
+                        setSaleId(null);
+                        setSale(null);
+                        setPendingCustomerName("");
+                        setPaymentsOpen(false);
+                      } else {
+                        await refreshSale(saleId);
+                      }
                     } catch (e) {
                       setError(e instanceof Error ? e.message : "Error");
                     }
@@ -912,7 +1008,7 @@ export default function PosPage() {
 
       {modals.product ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
-          <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
+          <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-base font-semibold">{modals.product.name}</div>
@@ -946,7 +1042,9 @@ export default function PosPage() {
 
                 const optionNames = g.options.map((o) => o.name);
                 let groupQuestion: string;
-                if (g.minSelect > 0) {
+                if (g.name.startsWith("¿")) {
+                  groupQuestion = g.name;
+                } else if (g.minSelect > 0) {
                   groupQuestion = `Elegí una opción:`;
                 } else if (optionNames.length === 1) {
                   groupQuestion = `¿Le ponemos ${optionNames[0]}?`;
@@ -1122,19 +1220,25 @@ export default function PosPage() {
 
                 {paymentMethod === "CUENTA_CORRIENTE" ? (
                   <div className="mt-3 space-y-2">
-                    <label className="block text-xs font-medium">Cuenta corriente (obligatorio)</label>
-                    <select
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      value={paymentAccountId}
-                      onChange={(e) => setPaymentAccountId(e.target.value)}
-                    >
-                      <option value="">—</option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.customer.displayName}
-                        </option>
-                      ))}
-                    </select>
+                    <label className="block text-xs font-medium">Cuenta corriente</label>
+                    {sale.cuentaCorrienteAccountId ? (
+                      <div className="rounded-md border bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
+                        {accounts.find((a) => a.id === sale.cuentaCorrienteAccountId)?.customer.displayName ?? "—"}
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        value={paymentAccountId}
+                        onChange={(e) => setPaymentAccountId(e.target.value)}
+                      >
+                        <option value="">—</option>
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.customer.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 ) : null}
 
@@ -1175,7 +1279,9 @@ export default function PosPage() {
                             method: paymentMethod,
                             amountCents: paymentAmount,
                             cuentaCorrienteAccountId:
-                              paymentMethod === "CUENTA_CORRIENTE" ? paymentAccountId || null : null,
+                              paymentMethod === "CUENTA_CORRIENTE"
+                                ? (sale.cuentaCorrienteAccountId || paymentAccountId || null)
+                                : null,
                             employeeId:
                               paymentMethod === "CUENTAS_INTERNAS" ? paymentEmployeeId || null : null,
                           }),

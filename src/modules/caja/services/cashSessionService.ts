@@ -244,6 +244,16 @@ export class CashSessionService {
     const summary = await this.getCashSessionSummary(params.cashSessionId);
     if (summary.cashSession.status !== "OPEN") throw new Error("La caja ya está cerrada");
 
+    if (summary.totals.expectedEnvelopeAmountCents > 0) {
+      const envelope = await prisma.envelope.findUnique({
+        where: { cashSessionId: params.cashSessionId },
+        select: { id: true },
+      });
+      if (!envelope) {
+        throw new Error("Generá el sobre antes de cerrar el turno. Hay efectivo pendiente de depositar.");
+      }
+    }
+
     const detailsToCreate = [
       ...summary.breakdownDetails.cuentaCorriente.map((d) => ({
         cashSessionId: params.cashSessionId,

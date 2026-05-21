@@ -86,17 +86,31 @@ export default async function HomePage() {
             {hasSession && <NavButton href="/caja/turno" label="Mi turno" />}
             <NavButton href="/caja/local" label="Caja BCÑ" />
           </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
+          <div className="flex flex-wrap gap-2">
+            <NavButton href="/stock" label="Stock" />
+            <NavButton href="/produccion" label="Producción" />
+            <NavButton href="/mermas" label="Mermas" />
+          </div>
         </div>
       )}
 
       {role === "ASOCIADO" && (
-        <div className="flex flex-wrap gap-2">
-          {hasSession ? (
-            <NavButton href="/pos" label="Ir a Ventas" primary />
-          ) : (
-            <NavButton href="/caja/abrir" label="Abrir turno" primary />
-          )}
-          {hasSession && <NavButton href="/caja/turno" label="Mi turno" />}
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {hasSession ? (
+              <NavButton href="/pos" label="Ir a Ventas" primary />
+            ) : (
+              <NavButton href="/caja/abrir" label="Abrir turno" primary />
+            )}
+            {hasSession && <NavButton href="/caja/turno" label="Mi turno" />}
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
+          <div className="flex flex-wrap gap-2">
+            <NavButton href="/stock" label="Stock" />
+            <NavButton href="/produccion" label="Producción" />
+            <NavButton href="/mermas" label="Mermas" />
+          </div>
         </div>
       )}
     </main>

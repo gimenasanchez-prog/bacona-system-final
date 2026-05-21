@@ -89,10 +89,13 @@ export class PosSaleService {
 
     const sale = await prisma.posSale.findUnique({
       where: { id: params.saleId },
-      select: { status: true },
+      select: { status: true, saleType: true },
     });
     if (!sale) throw new Error("Sale not found");
-    if (sale.status !== "DRAFT") {
+    if (sale.status === "PAID" || sale.status === "CANCELLED") {
+      throw new Error("Cannot modify items on a paid or cancelled sale");
+    }
+    if (sale.status === "CONFIRMED" && sale.saleType === "MOSTRADOR") {
       throw new Error("Cannot modify items after sale is confirmed/paid/cancelled");
     }
 
@@ -162,10 +165,13 @@ export class PosSaleService {
 
     const sale = await prisma.posSale.findUnique({
       where: { id: params.saleId },
-      select: { status: true },
+      select: { status: true, saleType: true },
     });
     if (!sale) throw new Error("Sale not found");
-    if (sale.status !== "DRAFT") {
+    if (sale.status === "PAID" || sale.status === "CANCELLED") {
+      throw new Error("Cannot modify items on a paid or cancelled sale");
+    }
+    if (sale.status === "CONFIRMED" && sale.saleType === "MOSTRADOR") {
       throw new Error("Cannot modify items after sale is confirmed/paid/cancelled");
     }
     if (params.qty === 0) {
@@ -185,10 +191,13 @@ export class PosSaleService {
   static async removeItem(params: { saleId: string; itemId: string }) {
     const sale = await prisma.posSale.findUnique({
       where: { id: params.saleId },
-      select: { status: true },
+      select: { status: true, saleType: true },
     });
     if (!sale) throw new Error("Sale not found");
-    if (sale.status !== "DRAFT") {
+    if (sale.status === "PAID" || sale.status === "CANCELLED") {
+      throw new Error("Cannot modify items on a paid or cancelled sale");
+    }
+    if (sale.status === "CONFIRMED" && sale.saleType === "MOSTRADOR") {
       throw new Error("Cannot modify items after sale is confirmed/paid/cancelled");
     }
     const item = await prisma.posSaleItem.findUnique({ where: { id: params.itemId } });

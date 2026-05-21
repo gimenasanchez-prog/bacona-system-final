@@ -30,9 +30,9 @@ export function LocalExpenseModal(props: {
     if (state.createdId) {
       setOpen(false);
       router.refresh();
-      props.onCreated?.();
     }
-  }, [state.createdId, props]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.createdId]);
 
   return (
     <>
