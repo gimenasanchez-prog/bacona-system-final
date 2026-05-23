@@ -223,10 +223,6 @@ export class PosSaleService {
 
     if (sale.items.length === 0) throw new Error("Sale must have at least one item");
 
-    const hasCustomer =
-      !!sale.customerId || !!sale.cuentaCorrienteAccountId || !!sale.customerNameFreeText?.trim();
-    if (!hasCustomer) throw new Error("Customer selection or free-text name is required");
-
     if (sale.saleType === "MESA" && !sale.tableId) {
       throw new Error("tableId is required for MESA sales");
     }
@@ -268,23 +264,43 @@ export class PosSaleService {
     });
   }
 
-  static async cancelSale(saleId: string) {
+  static async cancelSale(saleId: string, reason?: string) {
     return prisma.$transaction(async (tx) => {
-      const sale = await tx.posSale.findUnique({ where: { id: saleId }, select: { status: true } });
+      const sale = await tx.posSale.findUnique({
+        where: { id: saleId },
+        select: { status: true, cashSessionId: true },
+      });
       if (!sale) throw new Error("Sale not found");
-      if (sale.status === "PAID") throw new Error("Cannot cancel a paid sale");
       if (sale.status === "CANCELLED") {
         return tx.posSale.findUnique({ where: { id: saleId } });
       }
 
-      // If sale was confirmed, reverse stock impact (if any) via compensatory movement.
-      if (sale.status === "CONFIRMED") {
+      if (sale.status === "PAID") {
+        if (!reason?.trim()) throw new Error("Se requiere un motivo para anular una venta paga");
+        if (sale.cashSessionId) {
+          const session = await tx.cashSession.findUnique({
+            where: { id: sale.cashSessionId },
+            select: { status: true },
+          });
+          if (session?.status === "CLOSED") {
+            throw new Error(
+              "Esta venta pertenece a un turno cerrado. La anulación debe gestionarla gerencia."
+            );
+          }
+        }
+      }
+
+      if (sale.status === "CONFIRMED" || sale.status === "PAID") {
         await StockMovementService.ensureReversalForSaleMovement(tx, saleId);
       }
 
       return tx.posSale.update({
         where: { id: saleId },
-        data: { status: "CANCELLED" },
+        data: {
+          status: "CANCELLED",
+          cancellationReason: reason?.trim() ?? null,
+          cancelledAt: new Date(),
+        },
       });
     });
   }

@@ -27,7 +27,7 @@ const EMPLEADOS: Array<{ displayName: string; role: "ASOCIADO" | "CAJA_LOCAL" | 
 
 const MESAS: string[] = [
   // Salón
-  "Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5",
+  "Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Mesa 6",
   "Mesón 1", "Mesón 2",
   "Pufs",
   // Mostrador
@@ -66,6 +66,7 @@ const MODIFIER_GROUPS: Array<{
       { name: "Papas rústicas",   priceDeltaCents: 0 },
       { name: "Puré de zapallo",  priceDeltaCents: 0 },
       { name: "Arroz",            priceDeltaCents: 0 },
+      { name: "Ensalada",         priceDeltaCents: 0 },
     ],
     appliedTo: [
       "Pollo a la crema c/ guarnicion",
@@ -204,7 +205,7 @@ const MODIFIER_GROUPS: Array<{
     minSelect: 1, maxSelect: 1,
     options: [
       { name: "Sandwich de Milanesa",                    priceDeltaCents: 0 },
-      { name: "Burguer BCÑ",                             priceDeltaCents: 0 },
+      { name: "Burguer BCÑ con papas rústicas",          priceDeltaCents: 0 },
       { name: "Patinesa",                                priceDeltaCents: 0 },
       { name: "Mix empanadas x8",                        priceDeltaCents: 0 },
       { name: "Guiso de lentejas",                       priceDeltaCents: 0 },
@@ -221,7 +222,7 @@ const MODIFIER_GROUPS: Array<{
     options: [
       { name: "Sandwich Desmechado",                     priceDeltaCents: 0 },
       { name: "Sandwich de Milanesa",                    priceDeltaCents: 0 },
-      { name: "Burguer BCÑ",                             priceDeltaCents: 0 },
+      { name: "Burguer BCÑ con papas rústicas",          priceDeltaCents: 0 },
       { name: "Patinesa",                                priceDeltaCents: 0 },
       { name: "Mix empanadas x8",                        priceDeltaCents: 0 },
       { name: "Guiso de lentejas",                       priceDeltaCents: 0 },
@@ -259,7 +260,7 @@ const MODIFIER_GROUPS: Array<{
       { name: "Bacon",           priceDeltaCents: 150000 },
       { name: "Cheddar",         priceDeltaCents: 150000 },
     ],
-    appliedTo: ["Papas fritas grandes", "Papas fritas chicas"],
+    appliedTo: ["Papas Rústicas"],
   },
   {
     name: "Extras",
@@ -271,10 +272,24 @@ const MODIFIER_GROUPS: Array<{
     ],
     appliedTo: ["Patitas de Pollo x6un con papas rusticas"],
   },
+  {
+    name: "Guarnición (Almuerzo)",
+    minSelect: 0, maxSelect: 1,
+    options: [
+      { name: "Papas rústicas",  priceDeltaCents: 0 },
+      { name: "Puré de zapallo", priceDeltaCents: 0 },
+      { name: "Arroz",           priceDeltaCents: 0 },
+      { name: "Ensalada",        priceDeltaCents: 0 },
+    ],
+    appliedTo: [
+      "Corpo 1 - Almuerzo c/ bebida",
+      "Corpo 2 - Appetite c/ bebida y postre",
+    ],
+  },
 ];
 
 // ============================================================
-// CATÁLOGO POS — 9 categorías, 79 productos
+// CATÁLOGO POS — 9 categorías, 80 productos
 // ============================================================
 
 const CATALOGO: Array<{
@@ -344,9 +359,9 @@ const CATALOGO: Array<{
       { name: "Sandwich de miga jamón y queso",        priceCents: 450000  },
       { name: "Sandwich de miga huevo, jamon y queso", priceCents: 470000  },
       { name: "Megacito",                              priceCents: 750000  },
-      { name: "Sandwiche Desmechado",                  priceCents: 1580000 },
-      { name: "Sandwiche de Milanesa",                 priceCents: 1420000 },
-      { name: "Sandwiche Burguer BCÑ",                 priceCents: 1310000 },
+      { name: "Sandwich Desmechado",                  priceCents: 1580000 },
+      { name: "Sandwich de Milanesa",                 priceCents: 1420000 },
+      { name: "Burguer BCÑ",                 priceCents: 1310000 },
       { name: "Patinesa",                              priceCents: 1420000 },
     ],
   },
@@ -363,8 +378,7 @@ const CATALOGO: Array<{
       { name: "Mix empanadas x8",                          priceCents: 950000  },
       { name: "Guiso de lentejas",                         priceCents: 1490000 },
       { name: "Ramen",                                     priceCents: 700000  },
-      { name: "Papas fritas grandes",                      priceCents: 340000  },
-      { name: "Papas fritas chicas",                       priceCents: 290000  },
+      { name: "Papas Rústicas",                            priceCents: 250000  },
       { name: "Pollo a la crema c/ guarnicion",            priceCents: 1350000 },
       { name: "Bondiola a la cerveza c/ guarnicion",       priceCents: 1420000 },
       { name: "Milanesa al plato c/ guarnicion",           priceCents: 1420000 },
@@ -399,6 +413,8 @@ const CATALOGO: Array<{
       { name: "Chicles Topline",              priceCents: 170000 },
       { name: "Cigarrillos",                  priceCents: 280000 },
       { name: "Encendedor",                   priceCents: 170000 },
+      { name: "Papas fritas chicas",          priceCents: 290000 },
+      { name: "Papas fritas grandes",         priceCents: 340000 },
     ],
   },
   {
@@ -417,21 +433,20 @@ const CATALOGO: Array<{
 
 // ============================================================
 // CLIENTES CON CUENTA CORRIENTE
-// saldoInicialCents = deuda pendiente actual (facturas sin cobrar)
 // ============================================================
 
-const CLIENTES_CC: Array<{ displayName: string; saldoInicialCents: number; planCode: string }> = [
-  { displayName: "Runa",             saldoInicialCents: 0,            planCode: "CORPO1_SNACKS" },
-  { displayName: "Ecco SAU",         saldoInicialCents: 143_180_000,  planCode: "CORPO1" },
-  { displayName: "MVA",              saldoInicialCents: 37_840_000,   planCode: "CORPO1" },
-  { displayName: "DINATEC",          saldoInicialCents: 21_540_000,   planCode: "CORPO1_SNACKS" },
-  { displayName: "CyS",              saldoInicialCents: 92_970_000,   planCode: "CORPO1_SNACKS" },
-  { displayName: "Tmo del Norte",    saldoInicialCents: 41_930_000,   planCode: "CORPO1" },
-  { displayName: "Posco Enc",        saldoInicialCents: 0,            planCode: "CORPO1" },
-  { displayName: "Posco SAU",        saldoInicialCents: 163_720_000,  planCode: "CORPO2_CARTA_LIBRE" },
-  { displayName: "Socompa",          saldoInicialCents: 23_590_000,   planCode: "CORPO2_CARTA_LIBRE" },
-  { displayName: "Fundación Condor", saldoInicialCents: 0,            planCode: "CORPO2_SNACKS" },
-  { displayName: "PECOM",            saldoInicialCents: 50_800_000,   planCode: "CORPO2_SNACKS" },
+const CLIENTES_CC: Array<{ displayName: string; saldoInicialCents: number; planCode: string; billingCycle: "QUINCENAL" | "MENSUAL" }> = [
+  { displayName: "Runa",             saldoInicialCents: 0, planCode: "CORPO1_SNACKS",       billingCycle: "MENSUAL" },
+  { displayName: "Ecco SAU",         saldoInicialCents: 0, planCode: "CORPO2",              billingCycle: "MENSUAL" },
+  { displayName: "MVA",              saldoInicialCents: 0, planCode: "CORPO1",              billingCycle: "MENSUAL" },
+  { displayName: "DINATEC",          saldoInicialCents: 0, planCode: "CORPO1_SNACKS",       billingCycle: "QUINCENAL" },
+  { displayName: "CyS",              saldoInicialCents: 0, planCode: "CORPO1_SNACKS",       billingCycle: "QUINCENAL" },
+  { displayName: "Tmo del Norte",    saldoInicialCents: 0, planCode: "CORPO1",              billingCycle: "QUINCENAL" },
+  { displayName: "Posco Enc",        saldoInicialCents: 0, planCode: "CORPO1",              billingCycle: "MENSUAL" },
+  { displayName: "Posco SAU",        saldoInicialCents: 0, planCode: "CORPO2_CARTA_LIBRE",  billingCycle: "QUINCENAL" },
+  { displayName: "Socompa",          saldoInicialCents: 0, planCode: "CORPO2_CARTA_LIBRE",  billingCycle: "QUINCENAL" },
+  { displayName: "Fundación Condor", saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
+  { displayName: "PECOM",            saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
 ];
 
 // ============================================================
@@ -452,6 +467,7 @@ async function main() {
   await prisma.posSaleItemModifier.deleteMany();
   await prisma.posSaleItem.deleteMany();
   await prisma.posPayment.deleteMany();
+  await prisma.cuentaCorrienteInvoice.deleteMany();
   await prisma.posSale.deleteMany();
   await prisma.productModifierGroup.deleteMany();
   await prisma.modifierOption.deleteMany();
@@ -529,6 +545,129 @@ async function main() {
     }
   }
 
+  console.log("Creando ubicaciones de stock...");
+  await Promise.all([
+    prisma.stockLocation.upsert({
+      where: { code: "BACONA" },
+      update: {},
+      create: { code: "BACONA", label: "Bacoña (consumo/venta)" },
+    }),
+    prisma.stockLocation.upsert({
+      where: { code: "SALTA" },
+      update: {},
+      create: { code: "SALTA", label: "Salta (origen)" },
+    }),
+    prisma.stockLocation.upsert({
+      where: { code: "EN_TRANSITO" },
+      update: {},
+      create: { code: "EN_TRANSITO", label: "En tránsito" },
+    }),
+  ]);
+
+  console.log("Creando categorías de inventario...");
+  const materiaPrima = await prisma.inventoryCategory.findFirst({
+    where: { name: "Materia Prima" },
+  }).then((c) => c || prisma.inventoryCategory.create({ data: { name: "Materia Prima" } }));
+
+  const bebidas = await prisma.inventoryCategory.findFirst({
+    where: { name: "Bebidas" },
+  }).then((c) => c || prisma.inventoryCategory.create({ data: { name: "Bebidas" } }));
+
+  console.log("Creando items de inventario (ficticios para prueba)...");
+  const panTostado = await prisma.inventoryItem.findFirst({
+    where: { name: "Pan tostado" },
+  }).then((i) => i || prisma.inventoryItem.create({
+    data: {
+      name: "Pan tostado",
+      categoryId: materiaPrima.id,
+      dimension: "COUNT",
+      unit: "UN",
+      displayUnit: "UN",
+      targetDaysCover: 7,
+    },
+  }));
+
+  const jamon = await prisma.inventoryItem.findFirst({
+    where: { name: "Jamón cocido" },
+  }).then((i) => i || prisma.inventoryItem.create({
+    data: {
+      name: "Jamón cocido",
+      categoryId: materiaPrima.id,
+      dimension: "MASS",
+      unit: "G",
+      displayUnit: "G",
+      targetDaysCover: 7,
+    },
+  }));
+
+  const tomate = await prisma.inventoryItem.findFirst({
+    where: { name: "Tomate" },
+  }).then((i) => i || prisma.inventoryItem.create({
+    data: {
+      name: "Tomate",
+      categoryId: materiaPrima.id,
+      dimension: "MASS",
+      unit: "G",
+      displayUnit: "G",
+      targetDaysCover: 7,
+    },
+  }));
+
+  const cocacola = await prisma.inventoryItem.findFirst({
+    where: { name: "Coca-Cola 250ml" },
+  }).then((i) => i || prisma.inventoryItem.create({
+    data: {
+      name: "Coca-Cola 250ml",
+      categoryId: bebidas.id,
+      dimension: "COUNT",
+      unit: "UN",
+      displayUnit: "UN",
+      targetDaysCover: 7,
+    },
+  }));
+
+  console.log("Creando receta (Sandwich)...");
+  const recipe = await prisma.recipe.findFirst({
+    where: { name: "Sandwich Jamón y Tomate" },
+  }).then((r) => r || prisma.recipe.create({
+    data: {
+      name: "Sandwich Jamón y Tomate",
+      kind: "CONSUMPTION",
+    },
+  }));
+
+  await prisma.recipeVersion.upsert({
+    where: { recipeId_version: { recipeId: recipe.id, version: 1 } },
+    update: {},
+    create: {
+      recipeId: recipe.id,
+      version: 1,
+      isActive: true,
+      lines: {
+        create: [
+          {
+            inventoryItemId: panTostado.id,
+            direction: "OUT",
+            qty: new (require("@prisma/client").Prisma.Decimal)(2),
+            sortOrder: 0,
+          },
+          {
+            inventoryItemId: jamon.id,
+            direction: "OUT",
+            qty: new (require("@prisma/client").Prisma.Decimal)(50),
+            sortOrder: 1,
+          },
+          {
+            inventoryItemId: tomate.id,
+            direction: "OUT",
+            qty: new (require("@prisma/client").Prisma.Decimal)(50),
+            sortOrder: 2,
+          },
+        ],
+      },
+    },
+  });
+
   console.log("Creando Caja BCN...");
   await prisma.localCashBox.create({
     data: { name: "Caja BCN", active: true },
@@ -540,7 +679,7 @@ async function main() {
       data: { displayName: cliente.displayName, isActive: true },
     });
     await prisma.cuentaCorrienteAccount.create({
-      data: { customerId: customer.id, isActive: true, planCode: cliente.planCode },
+      data: { customerId: customer.id, isActive: true, planCode: cliente.planCode, billingCycle: cliente.billingCycle },
     });
     if (cliente.saldoInicialCents > 0) {
       const account = await prisma.cuentaCorrienteAccount.findFirst({

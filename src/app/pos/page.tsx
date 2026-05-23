@@ -71,6 +71,27 @@ type Sale = {
   payments: SalePayment[];
 };
 
+type SessionSale = {
+  id: string;
+  saleType: SaleType;
+  status: SaleStatus;
+  totalCents: number;
+  createdAt: string;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+  customerNameFreeText: string | null;
+  customer: { displayName: string } | null;
+  cuentaCorrienteAccount: { customer: { displayName: string } } | null;
+  table: { label: string } | null;
+  items: Array<{ qty: number; product: { name: string } }>;
+  payments: Array<{
+    method: PaymentMethod;
+    amountCents: number;
+    cuentaCorrienteAccount?: { customer: { displayName: string } } | null;
+    employee?: { displayName: string } | null;
+  }>;
+};
+
 async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
@@ -93,6 +114,12 @@ async function apiJson<T>(path: string, init: RequestInit): Promise<T> {
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
+
+const MODE_CONFIG: Record<SaleType, { label: string; activeBg: string; badgeBg: string; borderL: string; btnActive: string }> = {
+  MOSTRADOR: { label: "Mostrador", activeBg: "bg-green-600 text-white",  badgeBg: "bg-green-600",  borderL: "border-l-green-500",  btnActive: "bg-green-600 text-white" },
+  MESA:      { label: "Mesas",     activeBg: "bg-amber-500 text-white",  badgeBg: "bg-amber-500",  borderL: "border-l-amber-400",  btnActive: "bg-amber-500 text-white" },
+  RESERVA:   { label: "Reservas",  activeBg: "bg-violet-600 text-white", badgeBg: "bg-violet-600", borderL: "border-l-violet-500", btnActive: "bg-violet-600 text-white" },
+};
 
 export default function PosPage() {
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +159,18 @@ export default function PosPage() {
 
   const [pendingCustomerName, setPendingCustomerName] = useState("");
 
+  const [cancelDraftOpen, setCancelDraftOpen] = useState(false);
+  const [cancelDraftLoading, setCancelDraftLoading] = useState(false);
+  const [cancelDraftError, setCancelDraftError] = useState<string | null>(null);
+
+  const [sessionSalesOpen, setSessionSalesOpen] = useState(false);
+  const [sessionSales, setSessionSales] = useState<SessionSale[]>([]);
+  const [sessionSalesLoading, setSessionSalesLoading] = useState(false);
+  const [voidTarget, setVoidTarget] = useState<SessionSale | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidLoading, setVoidLoading] = useState(false);
+  const [voidError, setVoidError] = useState<string | null>(null);
+
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [lossForm, setLossForm] = useState<{
     inventoryItemId: string;
@@ -146,6 +185,18 @@ export default function PosPage() {
   async function refreshSale(id: string) {
     const details = await apiGet<{ sale: Sale; paidTotalCents: number }>(`/api/pos/sales/${id}`);
     setSale(details.sale);
+  }
+
+  async function loadSessionSales() {
+    setSessionSalesLoading(true);
+    try {
+      const data = await apiGet<{ sales: SessionSale[] }>("/api/pos/sales/session-sales");
+      setSessionSales(data.sales);
+    } catch {
+      // ignore
+    } finally {
+      setSessionSalesLoading(false);
+    }
   }
 
   async function ensureSale(): Promise<string> {
@@ -272,10 +323,7 @@ export default function PosPage() {
     })();
   }, [saleId]);
 
-  const hasCustomer = useMemo(
-    () => !!sale?.cuentaCorrienteAccountId || !!sale?.customerNameFreeText?.trim(),
-    [sale]
-  );
+  const hasCustomer = useMemo(() => true, []);
 
   const hasCoverCount = useMemo(() => {
     if (!saleId || !sale) return false;
@@ -294,6 +342,7 @@ export default function PosPage() {
     }> = {
       CORPO1:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
       CORPO1_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
+      CORPO2:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
       CORPO2_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
       CORPO2_CARTA_LIBRE: { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: true,  capCentsPerPerson: null },
     };
@@ -335,22 +384,8 @@ export default function PosPage() {
     <div className="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
       <div className="flex flex-col gap-3">
         <div className="rounded-lg border bg-white p-3">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2">
             <div className="text-sm font-semibold">Categorías</div>
-            <button
-              type="button"
-              className="rounded-md border px-2 py-1 text-xs"
-              onClick={() => {
-                setSaleId(null);
-                setSale(null);
-                setPaymentsOpen(false);
-                setSaleSuccess(null);
-                setError(null);
-                setPendingCustomerName("");
-              }}
-            >
-              Nuevo
-            </button>
           </div>
           <div className="space-y-1">
             {categories
@@ -414,7 +449,7 @@ export default function PosPage() {
       </div>
 
       <div className="space-y-3">
-        <div className="rounded-lg border bg-white p-3">
+        <div className={cn("rounded-lg border bg-white p-3 border-l-4", MODE_CONFIG[sale?.saleType ?? saleTypeDraft].borderL)}>
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-sm font-semibold">Venta</div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -540,15 +575,10 @@ export default function PosPage() {
               <div className="space-y-2">
                 <label className="block text-xs font-medium">
                   ¿Cómo se llama?{" "}
-                  <span className={cn("font-normal", saleId && !sale?.customerNameFreeText?.trim() ? "text-red-500" : "text-neutral-400")}>
-                    (obligatorio)
-                  </span>
+                  <span className="font-normal text-neutral-400">(opcional)</span>
                 </label>
                 <input
-                  className={cn(
-                    "w-full rounded-md border px-3 py-2 text-sm",
-                    saleId && !sale?.customerNameFreeText?.trim() ? "border-red-300" : ""
-                  )}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   placeholder="Ej: Gimena"
                   value={sale?.customerNameFreeText ?? pendingCustomerName}
                   onChange={(e) => {
@@ -789,15 +819,49 @@ export default function PosPage() {
 
       <div className="rounded-lg border bg-white p-3">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Carrito</div>
-          <button
-            type="button"
-            className="rounded-md border px-3 py-2 text-sm"
-            onClick={() => setPaymentsOpen(true)}
-            disabled={!saleId}
-          >
-            Cobrar
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-semibold">Carrito</div>
+            <span className={cn("rounded px-2 py-0.5 text-xs font-semibold text-white", MODE_CONFIG[sale?.saleType ?? saleTypeDraft].badgeBg)}>
+              {MODE_CONFIG[sale?.saleType ?? saleTypeDraft].label}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border px-2 py-1.5 text-xs hover:bg-neutral-50"
+              onClick={() => { loadSessionSales(); setSessionSalesOpen(true); }}
+            >
+              Ventas del turno
+            </button>
+            {saleId && sale && (sale.status === "DRAFT" || sale.status === "CONFIRMED") ? (
+              <button
+                type="button"
+                className="rounded-md border border-red-200 px-2 py-1.5 text-xs text-red-700 hover:bg-red-50"
+                onClick={() => { setCancelDraftError(null); setCancelDraftOpen(true); }}
+              >
+                Cancelar venta
+              </button>
+            ) : saleId && sale && (sale.status === "PAID" || sale.status === "CANCELLED") ? (
+              <button
+                type="button"
+                className="rounded-md border px-2 py-1.5 text-xs hover:bg-neutral-50"
+                onClick={() => {
+                  setSaleId(null); setSale(null); setPaymentsOpen(false);
+                  setSaleSuccess(null); setError(null); setPendingCustomerName("");
+                }}
+              >
+                Nueva venta
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="rounded-md border px-3 py-2 text-sm"
+              onClick={() => setPaymentsOpen(true)}
+              disabled={!saleId}
+            >
+              Cobrar
+            </button>
+          </div>
         </div>
 
         <div className="mt-3 space-y-2">
@@ -917,7 +981,7 @@ export default function PosPage() {
                 type="button"
                 className={cn(
                   "col-span-2 rounded-md px-3 py-2 text-sm font-medium",
-                  canFinalizeMostrador ? "bg-green-700 text-white" : "bg-neutral-200 text-neutral-500"
+                  canFinalizeMostrador ? MODE_CONFIG.MOSTRADOR.btnActive : "bg-neutral-200 text-neutral-500"
                 )}
                 disabled={!canFinalizeMostrador || !saleId}
                 onClick={async () => {
@@ -943,13 +1007,11 @@ export default function PosPage() {
                   ? "Finalizar venta"
                   : !sale.items.length
                     ? "Agregá productos primero"
-                    : !hasCustomer
-                      ? "Falta el nombre del cliente"
-                      : !hasCoverCount
-                        ? "Indicá cuántas personas son"
-                        : paidTotalCents < sale.totalCents
-                          ? "Falta registrar el pago"
-                          : "Finalizar venta"}
+                    : !hasCoverCount
+                      ? "Indicá cuántas personas son"
+                      : paidTotalCents < sale.totalCents
+                        ? "Falta registrar el pago"
+                        : "Finalizar venta"}
               </button>
             ) : (
               <>
@@ -957,7 +1019,7 @@ export default function PosPage() {
                   type="button"
                   className={cn(
                     "rounded-md px-3 py-2 text-sm font-medium",
-                    canConfirm ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-500"
+                    canConfirm ? MODE_CONFIG[sale?.saleType === "MESA" ? "MESA" : "RESERVA"].btnActive : "bg-neutral-200 text-neutral-500"
                   )}
                   disabled={!canConfirm || !saleId}
                   onClick={async () => {
@@ -978,7 +1040,7 @@ export default function PosPage() {
                     }
                   }}
                 >
-                  Confirmar pedido
+                  {sale?.saleType === "RESERVA" ? "Guardar reserva" : "Confirmar pedido"}
                 </button>
                 <button
                   type="button"
@@ -1320,6 +1382,268 @@ export default function PosPage() {
         </div>
       ) : null}
 
+      {cancelDraftOpen && sale && saleId ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl">
+            <div className="text-base font-semibold">¿Cancelar la venta en curso?</div>
+
+            <div className="mt-2 text-sm text-neutral-600">
+              {sale.items.length === 0
+                ? "La venta está vacía."
+                : `${sale.items.length} ítem${sale.items.length > 1 ? "s" : ""} · ${formatArsFromCents(sale.totalCents)}`}
+            </div>
+
+            {sale.status === "CONFIRMED" ? (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                El pedido está confirmado — se revertirá el descuento de stock.
+              </div>
+            ) : null}
+
+            {cancelDraftError ? (
+              <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {cancelDraftError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50"
+                disabled={cancelDraftLoading}
+                onClick={() => setCancelDraftOpen(false)}
+              >
+                No, seguir
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:bg-neutral-200 disabled:text-neutral-500"
+                disabled={cancelDraftLoading}
+                onClick={async () => {
+                  setCancelDraftLoading(true);
+                  setCancelDraftError(null);
+                  try {
+                    await apiJson(`/api/pos/sales/${saleId}/cancel`, { method: "POST" });
+                    setCancelDraftOpen(false);
+                    setSaleId(null);
+                    setSale(null);
+                    setPaymentsOpen(false);
+                    setSaleSuccess(null);
+                    setError(null);
+                    setPendingCustomerName("");
+                  } catch (e) {
+                    setCancelDraftError(e instanceof Error ? e.message : "Error al cancelar");
+                  } finally {
+                    setCancelDraftLoading(false);
+                  }
+                }}
+              >
+                {cancelDraftLoading ? "Cancelando..." : "Sí, cancelar venta"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sessionSalesOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 p-4 border-b">
+              <div className="text-base font-semibold">Ventas del turno</div>
+              <button
+                type="button"
+                className="rounded-md border px-2 py-1 text-sm"
+                onClick={() => setSessionSalesOpen(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {sessionSalesLoading ? (
+                <div className="py-8 text-center text-sm text-neutral-500">Cargando...</div>
+              ) : sessionSales.length === 0 ? (
+                <div className="py-8 text-center text-sm text-neutral-500">
+                  No hay ventas finalizadas en este turno.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {sessionSales.map((s) => {
+                    const isCancelled = s.status === "CANCELLED";
+                    const customerLabel =
+                      s.cuentaCorrienteAccount?.customer.displayName ??
+                      s.customer?.displayName ??
+                      s.customerNameFreeText ??
+                      "Mostrador";
+                    const itemsLabel = s.items
+                      .map((it) => `${it.qty}× ${it.product.name}`)
+                      .join(", ");
+                    const payLabel = s.payments
+                      .map((p) => {
+                        const methodNames: Record<string, string> = {
+                          EFECTIVO: "Efectivo",
+                          CREDITO: "Crédito",
+                          DEBITO: "Débito",
+                          TRANSFERENCIA: "Transf.",
+                          QR: "QR",
+                          CUENTA_CORRIENTE: "CC",
+                          CUENTAS_INTERNAS: "Interno",
+                        };
+                        const name = methodNames[p.method] ?? p.method;
+                        const who =
+                          p.cuentaCorrienteAccount?.customer.displayName ??
+                          p.employee?.displayName ??
+                          null;
+                        return who ? `${name} (${who})` : name;
+                      })
+                      .join(" + ");
+
+                    return (
+                      <div
+                        key={s.id}
+                        className={cn(
+                          "rounded-lg border p-3",
+                          isCancelled ? "opacity-50" : ""
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold">{customerLabel}</span>
+                              <span className="text-xs text-neutral-500">
+                                {new Date(s.createdAt).toLocaleTimeString("es-AR", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              {isCancelled ? (
+                                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 line-through">
+                                  Anulada
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                                  Pagada
+                                </span>
+                              )}
+                              {s.table ? (
+                                <span className="text-xs text-neutral-500">{s.table.label}</span>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 text-xs text-neutral-600 truncate">{itemsLabel}</div>
+                            <div className="mt-0.5 text-xs text-neutral-500">{payLabel}</div>
+                            {isCancelled && s.cancellationReason ? (
+                              <div className="mt-1 text-xs text-red-600">
+                                Motivo: {s.cancellationReason}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            <span className="text-sm font-semibold">
+                              {formatArsFromCents(s.totalCents)}
+                            </span>
+                            {!isCancelled ? (
+                              <button
+                                type="button"
+                                className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                                onClick={() => {
+                                  setVoidTarget(s);
+                                  setVoidReason("");
+                                  setVoidError(null);
+                                }}
+                              >
+                                Anular
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {voidTarget ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <div className="text-base font-semibold">Anular venta</div>
+            <div className="mt-1 text-sm text-neutral-600">
+              {(
+                voidTarget.cuentaCorrienteAccount?.customer.displayName ??
+                voidTarget.customer?.displayName ??
+                voidTarget.customerNameFreeText ??
+                "Mostrador"
+              )} · {formatArsFromCents(voidTarget.totalCents)}
+            </div>
+
+            <div className="mt-3 rounded-md border bg-neutral-50 p-2 text-xs text-neutral-700 max-h-24 overflow-y-auto">
+              {voidTarget.items.map((it, i) => (
+                <div key={i}>{it.qty}× {it.product.name}</div>
+              ))}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <label className="block text-xs font-medium">Motivo (obligatorio)</label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+              >
+                <option value="">— Seleccioná un motivo —</option>
+                <option value="Error en método de pago">Error en método de pago</option>
+                <option value="Cuenta corriente incorrecta">Cuenta corriente incorrecta</option>
+                <option value="Productos o cantidades incorrectas">Productos o cantidades incorrectas</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+
+            {voidError ? (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {voidError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50"
+                disabled={voidLoading}
+                onClick={() => { setVoidTarget(null); setVoidError(null); }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:bg-neutral-200 disabled:text-neutral-500"
+                disabled={!voidReason || voidLoading}
+                onClick={async () => {
+                  if (!voidTarget || !voidReason) return;
+                  setVoidLoading(true);
+                  setVoidError(null);
+                  try {
+                    await apiJson(`/api/pos/sales/${voidTarget.id}/cancel`, {
+                      method: "POST",
+                      body: JSON.stringify({ reason: voidReason }),
+                    });
+                    setVoidTarget(null);
+                    setVoidReason("");
+                    await loadSessionSales();
+                  } catch (e) {
+                    setVoidError(e instanceof Error ? e.message : "Error al anular la venta");
+                  } finally {
+                    setVoidLoading(false);
+                  }
+                }}
+              >
+                {voidLoading ? "Anulando..." : "Confirmar anulación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {lossModalOpen ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 p-4 sm:items-center">
           <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
@@ -1459,7 +1783,7 @@ function SaleTypeTabs(props: { value: SaleType; onChange: (v: SaleType) => void 
           type="button"
           className={cn(
             "rounded-md px-3 py-1 text-xs font-medium",
-            props.value === o.id ? "bg-neutral-900 text-white" : "text-neutral-700 hover:bg-neutral-100"
+            props.value === o.id ? MODE_CONFIG[o.id].activeBg : "text-neutral-700 hover:bg-neutral-100"
           )}
           onClick={() => props.onChange(o.id)}
         >

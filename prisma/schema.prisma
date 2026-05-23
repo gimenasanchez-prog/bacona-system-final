@@ -89,17 +89,49 @@ model Customer {
 }
 
 model CuentaCorrienteAccount {
-  id         String       @id @default(cuid())
-  customerId String
-  planCode   String?
-  isActive   Boolean      @default(true)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  customer   Customer     @relation(fields: [customerId], references: [id])
-  payments   PosPayment[]
-  sales      PosSale[]    @relation("SaleCuentaCorriente")
+  id           String                   @id @default(cuid())
+  customerId   String
+  planCode     String?
+  billingCycle BillingCycle             @default(MENSUAL)
+  isActive     Boolean                  @default(true)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  customer     Customer                 @relation(fields: [customerId], references: [id])
+  invoices     CuentaCorrienteInvoice[]
+  payments     PosPayment[]
+  sales        PosSale[]                @relation("SaleCuentaCorriente")
 
   @@index([customerId, isActive])
+}
+
+model CuentaCorrienteInvoice {
+  id                   String                 @id @default(cuid())
+  accountId            String
+  periodFrom           DateTime
+  periodTo             DateTime
+  billingDate          DateTime               @default(now())
+  estimatedPaymentDate DateTime
+  subtotalCents        Int
+  ivaExento            Boolean                @default(false)
+  ivaDiscriminado      Boolean                @default(false)
+  ivaAmountCents       Int                    @default(0)
+  bankWithholdingCents Int                    @default(0)
+  bankFeesCents        Int                    @default(0)
+  totalAmountCents     Int
+  isPaid               Boolean                @default(false)
+  paidAt               DateTime?
+  paidAmountCents      Int                    @default(0)
+  paymentDate          DateTime?
+  paymentReference     String?
+  digitalInvoiceUrl    String?
+  notes                String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  account              CuentaCorrienteAccount @relation(fields: [accountId], references: [id])
+  sales                PosSale[]              @relation("InvoicedSales")
+
+  @@index([accountId, isPaid])
+  @@index([estimatedPaymentDate])
 }
 
 model Employee {
@@ -271,32 +303,37 @@ model PosTable {
 }
 
 model PosSale {
-  id                       String                  @id @default(cuid())
-  saleType                 PosSaleType
-  status                   PosSaleStatus           @default(DRAFT)
-  customerId               String?
-  cuentaCorrienteAccountId String?
-  customerNameFreeText     String?
-  tableId                  String?
-  reservationAt            DateTime?
-  subtotalCents            Int                     @default(0)
-  totalCents               Int                     @default(0)
-  externalRefs             Json?
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
-  cashSessionId            String?
-  payments                 PosPayment[]
-  cashSession              CashSession?            @relation(fields: [cashSessionId], references: [id])
-  cuentaCorrienteAccount   CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
-  customer                 Customer?               @relation(fields: [customerId], references: [id])
-  table                    PosTable?               @relation(fields: [tableId], references: [id])
-  items                    PosSaleItem[]
-  stockMovement            StockMovement?          @relation("SaleStockMovement")
+  id                         String                  @id @default(cuid())
+  saleType                   PosSaleType
+  status                     PosSaleStatus           @default(DRAFT)
+  customerId                 String?
+  cuentaCorrienteAccountId   String?
+  cuentaCorrienteInvoiceId   String?
+  customerNameFreeText       String?
+  tableId                    String?
+  reservationAt              DateTime?
+  subtotalCents              Int                     @default(0)
+  totalCents                 Int                     @default(0)
+  externalRefs               Json?
+  cancellationReason         String?
+  cancelledAt                DateTime?
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  cashSessionId              String?
+  payments                   PosPayment[]
+  cashSession                CashSession?            @relation(fields: [cashSessionId], references: [id])
+  cuentaCorrienteAccount     CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
+  cuentaCorrienteInvoice     CuentaCorrienteInvoice? @relation("InvoicedSales", fields: [cuentaCorrienteInvoiceId], references: [id])
+  customer                   Customer?               @relation(fields: [customerId], references: [id])
+  table                      PosTable?               @relation(fields: [tableId], references: [id])
+  items                      PosSaleItem[]
+  stockMovement              StockMovement?          @relation("SaleStockMovement")
 
   @@index([saleType, status, createdAt])
   @@index([cashSessionId, createdAt])
   @@index([customerId])
   @@index([cuentaCorrienteAccountId])
+  @@index([cuentaCorrienteInvoiceId])
   @@index([tableId])
 }
 
@@ -736,4 +773,9 @@ enum EmployeeRole {
   ASOCIADO
   CAJA_LOCAL
   GERENCIA
+}
+
+enum BillingCycle {
+  QUINCENAL
+  MENSUAL
 }
