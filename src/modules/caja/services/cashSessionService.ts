@@ -93,7 +93,7 @@ export class CashSessionService {
     if (!cashSession) throw new Error("Cash session not found");
 
     const payments = await prisma.posPayment.findMany({
-      where: { sale: { cashSessionId } },
+      where: { sale: { cashSessionId, status: { not: "CANCELLED" } } },
       include: {
         cuentaCorrienteAccount: { include: { customer: true } },
         employee: true,

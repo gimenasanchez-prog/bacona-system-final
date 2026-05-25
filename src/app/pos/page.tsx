@@ -1548,7 +1548,7 @@ export default function PosPage() {
                             <span className="text-sm font-semibold">
                               {formatArsFromCents(s.totalCents)}
                             </span>
-                            {!isCancelled && s.status !== "DRAFT" ? (
+                            {!isCancelled ? (
                               <button
                                 type="button"
                                 className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
