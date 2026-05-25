@@ -12,7 +12,7 @@ export async function GET() {
   const sales = await prisma.posSale.findMany({
     where: {
       cashSessionId,
-      status: { in: ["PAID", "CANCELLED"] },
+      status: { in: ["CONFIRMED", "PAID", "CANCELLED"] },
     },
     include: {
       items: {
