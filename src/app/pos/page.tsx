@@ -1519,6 +1519,14 @@ export default function PosPage() {
                                 <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 line-through">
                                   Anulada
                                 </span>
+                              ) : s.status === "DRAFT" ? (
+                                <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">
+                                  Sin confirmar
+                                </span>
+                              ) : s.status === "CONFIRMED" ? (
+                                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+                                  Confirmada
+                                </span>
                               ) : (
                                 <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
                                   Pagada
@@ -1540,7 +1548,7 @@ export default function PosPage() {
                             <span className="text-sm font-semibold">
                               {formatArsFromCents(s.totalCents)}
                             </span>
-                            {!isCancelled ? (
+                            {!isCancelled && s.status !== "DRAFT" ? (
                               <button
                                 type="button"
                                 className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
