@@ -438,7 +438,7 @@ const CATALOGO: Array<{
 const CLIENTES_CC: Array<{ displayName: string; saldoInicialCents: number; planCode: string; billingCycle: "QUINCENAL" | "MENSUAL" }> = [
   { displayName: "Runa",             saldoInicialCents: 0, planCode: "CORPO1_SNACKS",       billingCycle: "MENSUAL" },
   { displayName: "Ecco SAU",         saldoInicialCents: 0, planCode: "CORPO2",              billingCycle: "MENSUAL" },
-  { displayName: "MVA",              saldoInicialCents: 0, planCode: "CORPO1",              billingCycle: "MENSUAL" },
+  { displayName: "MVA",              saldoInicialCents: 0, planCode: "CORPO1_BEBIDAS",     billingCycle: "MENSUAL" },
   { displayName: "DINATEC",          saldoInicialCents: 0, planCode: "CORPO1_SNACKS",       billingCycle: "QUINCENAL" },
   { displayName: "CyS",              saldoInicialCents: 0, planCode: "CORPO1_SNACKS",       billingCycle: "QUINCENAL" },
   { displayName: "Tmo del Norte",    saldoInicialCents: 0, planCode: "CORPO1",              billingCycle: "QUINCENAL" },

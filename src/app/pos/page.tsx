@@ -341,6 +341,7 @@ export default function PosPage() {
       capCentsPerPerson: number | null;
     }> = {
       CORPO1:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
+      CORPO1_BEBIDAS:     { showSnacks: false, showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
       CORPO1_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
       CORPO2:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
       CORPO2_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
