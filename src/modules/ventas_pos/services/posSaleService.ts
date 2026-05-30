@@ -264,6 +264,26 @@ export class PosSaleService {
     });
   }
 
+  static async cancelSaleByGerencia(saleId: string, reason: string) {
+    return prisma.$transaction(async (tx) => {
+      const sale = await tx.posSale.findUnique({
+        where: { id: saleId },
+        select: { status: true },
+      });
+      if (!sale) throw new Error("Venta no encontrada");
+      if (sale.status === "CANCELLED") return tx.posSale.findUnique({ where: { id: saleId } });
+
+      if (sale.status === "CONFIRMED" || sale.status === "PAID") {
+        await StockMovementService.ensureReversalForSaleMovement(tx, saleId);
+      }
+
+      return tx.posSale.update({
+        where: { id: saleId },
+        data: { status: "CANCELLED", cancellationReason: reason.trim(), cancelledAt: new Date() },
+      });
+    });
+  }
+
   static async cancelSale(saleId: string, reason?: string) {
     return prisma.$transaction(async (tx) => {
       const sale = await tx.posSale.findUnique({
