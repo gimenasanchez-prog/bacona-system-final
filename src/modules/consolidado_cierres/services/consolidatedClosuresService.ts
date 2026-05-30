@@ -29,6 +29,38 @@ export class ConsolidatedClosuresService {
     });
   }
 
+  static async deleteCashSession(cashSessionId: string): Promise<void> {
+    const session = await prisma.cashSession.findUnique({
+      where: { id: cashSessionId },
+      include: {
+        sales: { where: { status: { not: "CANCELLED" } }, select: { id: true } },
+        envelope: { select: { id: true, status: true } },
+      },
+    });
+    if (!session) throw new Error("Sesión no encontrada");
+
+    if (session.sales.length > 0) {
+      throw new Error(
+        `No se puede eliminar: la sesión tiene ${session.sales.length} venta(s) no cancelada(s). Anulá las ventas primero desde Ver cierre.`
+      );
+    }
+
+    if (session.envelope && session.envelope.status !== "CLOSED") {
+      throw new Error(
+        `No se puede eliminar: el sobre está en estado ${session.envelope.status}. Solo se puede eliminar si el sobre está CLOSED.`
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.cashSessionPaymentBreakdownDetail.deleteMany({ where: { cashSessionId } });
+      await tx.localExpense.deleteMany({ where: { cashSessionId } });
+      if (session.envelope) {
+        await tx.envelope.delete({ where: { id: session.envelope.id } });
+      }
+      await tx.cashSession.delete({ where: { id: cashSessionId } });
+    });
+  }
+
   static async getCashClosureDetail(cashSessionId: string) {
     const cashSession = await prisma.cashSession.findUnique({
       where: { id: cashSessionId },

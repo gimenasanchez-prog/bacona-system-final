@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { formatArsFromCents } from "@/lib/money";
 import { ConsolidatedClosuresService } from "@/modules/consolidado_cierres/services/consolidatedClosuresService";
 import { updateEnvelopeStatusAction } from "@/modules/sobres/actions/envelopeActions";
+import { DeleteSessionButton } from "./DeleteSessionButton";
 
 function EnvelopeBadge(props: { status: string | null }) {
   const status = props.status ?? "—";
@@ -58,6 +59,23 @@ export default async function ConsolidadoCierresPage(props: {
       envelopeStatus,
     }),
   ]);
+
+  const totals =
+    rows.length > 0
+      ? {
+          income: rows.reduce((s, r) => s + r.totalIncomeCents, 0),
+          expenses: rows.reduce((s, r) => s + r.totalExpensesCents, 0),
+          net: rows.reduce((s, r) => s + r.totalNetCents, 0),
+          cash: rows.reduce((s, r) => s + r.totalCashCents, 0),
+          debit: rows.reduce((s, r) => s + r.totalDebitCents, 0),
+          credit: rows.reduce((s, r) => s + r.totalCreditCents, 0),
+          transfer: rows.reduce((s, r) => s + r.totalTransferCents, 0),
+          qr: rows.reduce((s, r) => s + r.totalQrCents, 0),
+          cc: rows.reduce((s, r) => s + r.totalCuentaCorrienteCents, 0),
+          internal: rows.reduce((s, r) => s + r.totalCuentasInternasCents, 0),
+          envelope: rows.reduce((s, r) => s + (r.envelope?.expectedAmountCents ?? 0), 0),
+        }
+      : null;
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4">
@@ -126,6 +144,62 @@ export default async function ConsolidadoCierresPage(props: {
         </form>
       </div>
 
+      {totals ? (
+        <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
+          <div className="text-xs text-neutral-500 mb-3">
+            Resumen período · {rows.length} {rows.length === 1 ? "cierre" : "cierres"}
+          </div>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div>
+              <div className="text-xs text-neutral-500">Ingresos</div>
+              <div className="text-lg font-semibold">{formatArsFromCents(totals.income)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Egresos</div>
+              <div className="text-lg font-semibold">{formatArsFromCents(totals.expenses)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Neto</div>
+              <div className="text-lg font-semibold">{formatArsFromCents(totals.net)}</div>
+            </div>
+          </div>
+          <div className="border-t pt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Efectivo</span>
+              <span className="font-medium">{formatArsFromCents(totals.cash)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Débito</span>
+              <span className="font-medium">{formatArsFromCents(totals.debit)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Crédito</span>
+              <span className="font-medium">{formatArsFromCents(totals.credit)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Transferencia</span>
+              <span className="font-medium">{formatArsFromCents(totals.transfer)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">QR</span>
+              <span className="font-medium">{formatArsFromCents(totals.qr)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Cta. corriente</span>
+              <span className="font-medium">{formatArsFromCents(totals.cc)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Ctas. internas</span>
+              <span className="font-medium">{formatArsFromCents(totals.internal)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Efectivo sobres</span>
+              <span className="font-medium">{formatArsFromCents(totals.envelope)}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-4 overflow-auto rounded-lg border bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-white">
@@ -187,6 +261,11 @@ export default async function ConsolidadoCierresPage(props: {
                         </button>
                       </form>
                     ) : null}
+
+                    <DeleteSessionButton
+                      cashSessionId={r.id}
+                      label={`${new Date(r.businessDate).toLocaleDateString("es-AR")} ${r.shift} — ${r.employee.displayName}`}
+                    />
                   </div>
                 </td>
               </tr>

@@ -81,6 +81,51 @@ export default async function CierreDetailPage(props: { params: Promise<{ id: st
         </div>
       </div>
 
+      {(() => {
+        const ccDetails = cashSession.paymentDetails.filter((d) => d.type === "CUENTA_CORRIENTE");
+        const internalDetails = cashSession.paymentDetails.filter((d) => d.type === "CUENTA_INTERNA");
+        if (!ccDetails.length && !internalDetails.length) return null;
+        return (
+          <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
+            <div className="text-sm font-semibold">Detalle por cuenta</div>
+            {ccDetails.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs text-neutral-500 mb-1">Cuentas corrientes</div>
+                <div className="overflow-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {ccDetails.map((d) => (
+                        <tr key={d.id} className="border-b last:border-b-0">
+                          <td className="px-3 py-2">{d.referenceName}</td>
+                          <td className="px-3 py-2 text-right font-semibold">{formatArsFromCents(d.amountCents)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {internalDetails.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs text-neutral-500 mb-1">Cuentas internas</div>
+                <div className="overflow-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {internalDetails.map((d) => (
+                        <tr key={d.id} className="border-b last:border-b-0">
+                          <td className="px-3 py-2">{d.referenceName}</td>
+                          <td className="px-3 py-2 text-right font-semibold">{formatArsFromCents(d.amountCents)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {cashSession.localExpenses.length ? (
         <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold">Egresos locales</div>
