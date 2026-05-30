@@ -52,13 +52,19 @@ export class ConsolidatedClosuresService {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Desvinculá las ventas canceladas (no se eliminan, quedan para auditoría)
+      // Desvinculá registros con FK nullable sin cascade hacia CashSession
       await tx.posSale.updateMany({ where: { cashSessionId }, data: { cashSessionId: null } });
-      await tx.cashSessionPaymentBreakdownDetail.deleteMany({ where: { cashSessionId } });
       await tx.localExpense.deleteMany({ where: { cashSessionId } });
+
+      // Desvinculá LocalCashMovements que apunten al sobre (FK nullable sin cascade)
       if (session.envelope) {
-        await tx.envelope.delete({ where: { id: session.envelope.id } });
+        await tx.localCashMovement.updateMany({
+          where: { relatedEnvelopeId: session.envelope.id },
+          data: { relatedEnvelopeId: null },
+        });
       }
+
+      // Eliminá la sesión — Envelope y CashSessionPaymentBreakdownDetail se cascade-deletean
       await tx.cashSession.delete({ where: { id: cashSessionId } });
     });
   }
