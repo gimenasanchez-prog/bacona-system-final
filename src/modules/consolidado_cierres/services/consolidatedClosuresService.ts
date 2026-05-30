@@ -52,6 +52,8 @@ export class ConsolidatedClosuresService {
     }
 
     await prisma.$transaction(async (tx) => {
+      // Desvinculá las ventas canceladas (no se eliminan, quedan para auditoría)
+      await tx.posSale.updateMany({ where: { cashSessionId }, data: { cashSessionId: null } });
       await tx.cashSessionPaymentBreakdownDetail.deleteMany({ where: { cashSessionId } });
       await tx.localExpense.deleteMany({ where: { cashSessionId } });
       if (session.envelope) {
