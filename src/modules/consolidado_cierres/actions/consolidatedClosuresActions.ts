@@ -20,14 +20,22 @@ export async function getCashClosureDetailAction(cashSessionId: string) {
   return ConsolidatedClosuresService.getCashClosureDetail(cashSessionId);
 }
 
-export async function deleteCashSessionAction(formData: FormData) {
+export async function deleteCashSessionAction(
+  _prev: { error: string } | null,
+  formData: FormData
+): Promise<{ error: string } | null> {
   const role = (await cookies()).get("bcn_role")?.value;
-  if (role !== "GERENCIA") throw new Error("No autorizado");
+  if (role !== "GERENCIA") return { error: "No autorizado" };
 
   const cashSessionId = formData.get("cashSessionId");
-  if (typeof cashSessionId !== "string" || !cashSessionId) throw new Error("ID inválido");
+  if (typeof cashSessionId !== "string" || !cashSessionId) return { error: "ID inválido" };
 
-  await ConsolidatedClosuresService.deleteCashSession(cashSessionId);
+  try {
+    await ConsolidatedClosuresService.deleteCashSession(cashSessionId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error al eliminar" };
+  }
+
   redirect("/caja/consolidado");
 }
 
