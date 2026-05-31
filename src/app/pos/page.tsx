@@ -187,6 +187,13 @@ export default function PosPage() {
     setSale(details.sale);
   }
 
+  async function refreshOpenTableSales() {
+    try {
+      const data = await apiGet<{ sales: OpenTableSale[] }>("/api/pos/sales/open");
+      setOpenTableSales(data.sales);
+    } catch { /* ignore */ }
+  }
+
   async function loadSessionSales() {
     setSessionSalesLoading(true);
     try {
@@ -295,12 +302,8 @@ export default function PosPage() {
   }, [sale?.totalCents, paidTotalCents]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiGet<{ sales: OpenTableSale[] }>("/api/pos/sales/open");
-        setOpenTableSales(data.sales);
-      } catch { /* ignore */ }
-    })();
+    refreshOpenTableSales();
+   
   }, [saleId]);
 
   useEffect(() => {
@@ -367,6 +370,7 @@ export default function PosPage() {
   const canConfirm = useMemo(() => {
     if (!sale) return false;
     if (sale.saleType === "MOSTRADOR") return false;
+    if (sale.status !== "DRAFT") return false;
     if (sale.items.length === 0) return false;
     if (!hasCustomer) return false;
     if (sale.saleType === "MESA" && !sale.tableId) return false;
@@ -645,28 +649,6 @@ export default function PosPage() {
             </div>
           </div>
 
-          {sale?.saleType === "MESA" ? (
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Mesa (obligatorio)</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={sale.tableId ?? ""}
-                  onChange={async (ev) => {
-                    const id = ev.target.value || null;
-                    await patchSale({ tableId: id });
-                  }}
-                >
-                  <option value="">—</option>
-                  {tables.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          ) : null}
 
           {sale?.saleType === "RESERVA" ? (
             <div className="mt-3 space-y-2">
@@ -1035,6 +1017,7 @@ export default function PosPage() {
                         setPaymentsOpen(false);
                       } else {
                         await refreshSale(saleId);
+                        await refreshOpenTableSales();
                       }
                     } catch (e) {
                       setError(e instanceof Error ? e.message : "Error");
@@ -1055,7 +1038,9 @@ export default function PosPage() {
                     try {
                       setError(null);
                       await apiJson(`/api/pos/sales/${saleId}/mark-paid`, { method: "POST" });
-                      await refreshSale(saleId);
+                      setSaleId(null);
+                      setSale(null);
+                      setPaymentsOpen(false);
                     } catch (e) {
                       setError(e instanceof Error ? e.message : "Error");
                     }
