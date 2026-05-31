@@ -13,11 +13,15 @@ const UpdateInvoiceSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("update"),
     estimatedPaymentDate: z.string().datetime().optional(),
+    arcaFacturaNumber: z.string().nullable().optional(),
     ivaExento: z.boolean().optional(),
     ivaDiscriminado: z.boolean().optional(),
     ivaAmountCents: z.number().int().min(0).optional(),
     bankWithholdingCents: z.number().int().min(0).optional(),
     bankFeesCents: z.number().int().min(0).optional(),
+    ivaRetentionCents: z.number().int().min(0).optional(),
+    gananciasRetentionCents: z.number().int().min(0).optional(),
+    rentasRetentionCents: z.number().int().min(0).optional(),
     digitalInvoiceUrl: z.string().url().nullable().optional(),
     notes: z.string().nullable().optional(),
   }),
@@ -72,6 +76,20 @@ export async function PATCH(
     return NextResponse.json(updated);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al actualizar factura.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ invoiceId: string }> }
+) {
+  try {
+    const { invoiceId } = await params;
+    await CuentaCorrienteService.voidInvoice(invoiceId);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error al anular factura.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

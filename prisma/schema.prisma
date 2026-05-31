@@ -118,6 +118,10 @@ model CuentaCorrienteInvoice {
   bankWithholdingCents Int                    @default(0)
   bankFeesCents        Int                    @default(0)
   totalAmountCents     Int
+  arcaFacturaNumber       String?
+  ivaRetentionCents       Int                    @default(0)
+  gananciasRetentionCents Int                    @default(0)
+  rentasRetentionCents    Int                    @default(0)
   isPaid               Boolean                @default(false)
   paidAt               DateTime?
   paidAmountCents      Int                    @default(0)
@@ -773,6 +777,7 @@ enum EmployeeRole {
   ASOCIADO
   CAJA_LOCAL
   GERENCIA
+  ADMINISTRATIVO
 }
 
 enum BillingCycle {

@@ -27,7 +27,7 @@ export default async function ConsolidadoCierresPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const role = (await cookies()).get("bcn_role")?.value;
-  if (role !== "GERENCIA") redirect("/");
+  if (role !== "GERENCIA" && role !== "ADMINISTRATIVO") redirect("/");
 
   const sp = await props.searchParams;
   const from = typeof sp.from === "string" && sp.from ? new Date(`${sp.from}T00:00:00`) : undefined;

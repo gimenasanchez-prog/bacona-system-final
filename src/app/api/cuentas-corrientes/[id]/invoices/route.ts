@@ -6,11 +6,15 @@ const CreateInvoiceSchema = z.object({
   periodFrom: z.string().datetime(),
   periodTo: z.string().datetime(),
   estimatedPaymentDate: z.string().datetime(),
+  arcaFacturaNumber: z.string().optional(),
   ivaExento: z.boolean(),
   ivaDiscriminado: z.boolean(),
   ivaAmountCents: z.number().int().min(0),
   bankWithholdingCents: z.number().int().min(0),
   bankFeesCents: z.number().int().min(0),
+  ivaRetentionCents: z.number().int().min(0),
+  gananciasRetentionCents: z.number().int().min(0),
+  rentasRetentionCents: z.number().int().min(0),
   notes: z.string().optional(),
 });
 
@@ -32,11 +36,15 @@ export async function POST(
       periodFrom: new Date(d.periodFrom),
       periodTo: new Date(d.periodTo),
       estimatedPaymentDate: new Date(d.estimatedPaymentDate),
+      arcaFacturaNumber: d.arcaFacturaNumber,
       ivaExento: d.ivaExento,
       ivaDiscriminado: d.ivaDiscriminado,
       ivaAmountCents: d.ivaAmountCents,
       bankWithholdingCents: d.bankWithholdingCents,
       bankFeesCents: d.bankFeesCents,
+      ivaRetentionCents: d.ivaRetentionCents,
+      gananciasRetentionCents: d.gananciasRetentionCents,
+      rentasRetentionCents: d.rentasRetentionCents,
       notes: d.notes,
     });
 

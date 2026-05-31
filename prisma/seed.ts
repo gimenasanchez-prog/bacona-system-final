@@ -15,14 +15,14 @@ const prisma = new PrismaClient({
 // DATOS REALES DE BCN
 // ============================================================
 
-const EMPLEADOS: Array<{ displayName: string; role: "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" }> = [
+const EMPLEADOS: Array<{ displayName: string; role: "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" | "ADMINISTRATIVO" }> = [
   { displayName: "Gimena",           role: "GERENCIA" },
   { displayName: "Pio",              role: "GERENCIA" },
   { displayName: "Yanet Condori",    role: "CAJA_LOCAL" },
   { displayName: "Noelia Calpanchay", role: "ASOCIADO" },
   { displayName: "Magali Cordoba",   role: "ASOCIADO" },
   { displayName: "Cintia Soriano",   role: "ASOCIADO" },
-  { displayName: "Alfredo Maidana",  role: "ASOCIADO" },
+  { displayName: "Alfredo Maidana",  role: "ADMINISTRATIVO" },
 ];
 
 const MESAS: string[] = [

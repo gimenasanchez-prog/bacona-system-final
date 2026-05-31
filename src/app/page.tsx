@@ -95,6 +95,20 @@ export default async function HomePage() {
         </div>
       )}
 
+      {role === "ADMINISTRATIVO" && (
+        <div className="space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Administración</div>
+          <div className="flex flex-wrap gap-2">
+            <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" primary />
+            <NavButton href="/caja/consolidado" label="Consolidado de Caja" />
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
+          <div className="flex flex-wrap gap-2">
+            <NavButton href="/stock" label="Stock" />
+          </div>
+        </div>
+      )}
+
       {role === "ASOCIADO" && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">

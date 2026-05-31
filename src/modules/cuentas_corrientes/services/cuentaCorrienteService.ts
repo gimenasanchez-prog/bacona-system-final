@@ -41,12 +41,16 @@ export type InvoiceSummary = {
   periodTo: Date;
   billingDate: Date;
   estimatedPaymentDate: Date;
+  arcaFacturaNumber: string | null;
   subtotalCents: number;
   ivaExento: boolean;
   ivaDiscriminado: boolean;
   ivaAmountCents: number;
   bankWithholdingCents: number;
   bankFeesCents: number;
+  ivaRetentionCents: number;
+  gananciasRetentionCents: number;
+  rentasRetentionCents: number;
   totalAmountCents: number;
   isPaid: boolean;
   paidAt: Date | null;
@@ -75,11 +79,15 @@ export type CreateInvoiceParams = {
   periodFrom: Date;
   periodTo: Date;
   estimatedPaymentDate: Date;
+  arcaFacturaNumber?: string;
   ivaExento: boolean;
   ivaDiscriminado: boolean;
   ivaAmountCents: number;
   bankWithholdingCents: number;
   bankFeesCents: number;
+  ivaRetentionCents: number;
+  gananciasRetentionCents: number;
+  rentasRetentionCents: number;
   notes?: string;
 };
 
@@ -90,12 +98,16 @@ export type InvoiceDetail = {
     periodTo: Date;
     billingDate: Date;
     estimatedPaymentDate: Date;
+    arcaFacturaNumber: string | null;
     subtotalCents: number;
     ivaExento: boolean;
     ivaDiscriminado: boolean;
     ivaAmountCents: number;
     bankWithholdingCents: number;
     bankFeesCents: number;
+    ivaRetentionCents: number;
+    gananciasRetentionCents: number;
+    rentasRetentionCents: number;
     totalAmountCents: number;
     isPaid: boolean;
     paidAt: Date | null;
@@ -118,6 +130,26 @@ export type InvoiceDetail = {
     items: { qty: number; productName: string; unitPriceCents: number; lineTotalCents: number }[];
   }[];
 };
+
+function calcTotal(
+  subtotalCents: number,
+  ivaAmountCents: number,
+  bankWithholdingCents: number,
+  bankFeesCents: number,
+  ivaRetentionCents: number,
+  gananciasRetentionCents: number,
+  rentasRetentionCents: number
+): number {
+  return (
+    subtotalCents +
+    ivaAmountCents -
+    bankWithholdingCents -
+    bankFeesCents -
+    ivaRetentionCents -
+    gananciasRetentionCents -
+    rentasRetentionCents
+  );
+}
 
 export class CuentaCorrienteService {
   static async getAccountsWithBillingState(): Promise<AccountWithBillingState[]> {
@@ -178,12 +210,16 @@ export class CuentaCorrienteService {
           periodTo: inv.periodTo,
           billingDate: inv.billingDate,
           estimatedPaymentDate: inv.estimatedPaymentDate,
+          arcaFacturaNumber: inv.arcaFacturaNumber,
           subtotalCents: inv.subtotalCents,
           ivaExento: inv.ivaExento,
           ivaDiscriminado: inv.ivaDiscriminado,
           ivaAmountCents: inv.ivaAmountCents,
           bankWithholdingCents: inv.bankWithholdingCents,
           bankFeesCents: inv.bankFeesCents,
+          ivaRetentionCents: inv.ivaRetentionCents,
+          gananciasRetentionCents: inv.gananciasRetentionCents,
+          rentasRetentionCents: inv.rentasRetentionCents,
           totalAmountCents: inv.totalAmountCents,
           isPaid: inv.isPaid,
           paidAt: inv.paidAt,
@@ -248,12 +284,16 @@ export class CuentaCorrienteService {
         periodTo: inv.periodTo,
         billingDate: inv.billingDate,
         estimatedPaymentDate: inv.estimatedPaymentDate,
+        arcaFacturaNumber: inv.arcaFacturaNumber,
         subtotalCents: inv.subtotalCents,
         ivaExento: inv.ivaExento,
         ivaDiscriminado: inv.ivaDiscriminado,
         ivaAmountCents: inv.ivaAmountCents,
         bankWithholdingCents: inv.bankWithholdingCents,
         bankFeesCents: inv.bankFeesCents,
+        ivaRetentionCents: inv.ivaRetentionCents,
+        gananciasRetentionCents: inv.gananciasRetentionCents,
+        rentasRetentionCents: inv.rentasRetentionCents,
         totalAmountCents: inv.totalAmountCents,
         isPaid: inv.isPaid,
         paidAt: inv.paidAt,
@@ -318,8 +358,15 @@ export class CuentaCorrienteService {
       0
     );
 
-    const totalAmountCents =
-      subtotalCents - params.bankWithholdingCents - params.bankFeesCents + params.ivaAmountCents;
+    const totalAmountCents = calcTotal(
+      subtotalCents,
+      params.ivaAmountCents,
+      params.bankWithholdingCents,
+      params.bankFeesCents,
+      params.ivaRetentionCents,
+      params.gananciasRetentionCents,
+      params.rentasRetentionCents
+    );
 
     return prisma.$transaction(async (tx) => {
       const invoice = await tx.cuentaCorrienteInvoice.create({
@@ -328,12 +375,16 @@ export class CuentaCorrienteService {
           periodFrom,
           periodTo,
           estimatedPaymentDate: params.estimatedPaymentDate,
+          arcaFacturaNumber: params.arcaFacturaNumber ?? null,
           subtotalCents,
           ivaExento: params.ivaExento,
           ivaDiscriminado: params.ivaDiscriminado,
           ivaAmountCents: params.ivaAmountCents,
           bankWithholdingCents: params.bankWithholdingCents,
           bankFeesCents: params.bankFeesCents,
+          ivaRetentionCents: params.ivaRetentionCents,
+          gananciasRetentionCents: params.gananciasRetentionCents,
+          rentasRetentionCents: params.rentasRetentionCents,
           totalAmountCents,
           notes: params.notes ?? null,
         },
@@ -381,11 +432,15 @@ export class CuentaCorrienteService {
     invoiceId: string,
     data: Partial<{
       estimatedPaymentDate: Date;
+      arcaFacturaNumber: string | null;
       ivaExento: boolean;
       ivaDiscriminado: boolean;
       ivaAmountCents: number;
       bankWithholdingCents: number;
       bankFeesCents: number;
+      ivaRetentionCents: number;
+      gananciasRetentionCents: number;
+      rentasRetentionCents: number;
       digitalInvoiceUrl: string | null;
       notes: string | null;
     }>
@@ -397,12 +452,40 @@ export class CuentaCorrienteService {
     const bankWithholdingCents = data.bankWithholdingCents ?? current.bankWithholdingCents;
     const bankFeesCents = data.bankFeesCents ?? current.bankFeesCents;
     const ivaAmountCents = data.ivaAmountCents ?? current.ivaAmountCents;
-    const totalAmountCents =
-      current.subtotalCents - bankWithholdingCents - bankFeesCents + ivaAmountCents;
+    const ivaRetentionCents = data.ivaRetentionCents ?? current.ivaRetentionCents;
+    const gananciasRetentionCents = data.gananciasRetentionCents ?? current.gananciasRetentionCents;
+    const rentasRetentionCents = data.rentasRetentionCents ?? current.rentasRetentionCents;
+
+    const totalAmountCents = calcTotal(
+      current.subtotalCents,
+      ivaAmountCents,
+      bankWithholdingCents,
+      bankFeesCents,
+      ivaRetentionCents,
+      gananciasRetentionCents,
+      rentasRetentionCents
+    );
 
     return prisma.cuentaCorrienteInvoice.update({
       where: { id: invoiceId },
       data: { ...data, totalAmountCents },
+    });
+  }
+
+  static async voidInvoice(invoiceId: string) {
+    const inv = await prisma.cuentaCorrienteInvoice.findUniqueOrThrow({
+      where: { id: invoiceId },
+    });
+    if (inv.isPaid || inv.paidAmountCents > 0) {
+      throw new Error("No se puede anular una factura con pago registrado.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await tx.posSale.updateMany({
+        where: { cuentaCorrienteInvoiceId: invoiceId },
+        data: { cuentaCorrienteInvoiceId: null },
+      });
+      await tx.cuentaCorrienteInvoice.delete({ where: { id: invoiceId } });
     });
   }
 }
