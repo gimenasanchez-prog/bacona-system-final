@@ -3,13 +3,12 @@ import { BillingCycle } from "@prisma/client";
 
 export type BillingPeriod = { from: Date; to: Date };
 
-function getCurrentPeriod(cycle: BillingCycle, now: Date): BillingPeriod {
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const day = now.getDate();
+function getPeriodForDate(date: Date, cycle: BillingCycle): BillingPeriod {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
 
   if (cycle === "MENSUAL") {
-    // Acumula todo el mes; cierre al fin de Q2
     const from = new Date(year, month, 1, 0, 0, 0, 0);
     const to = new Date(year, month + 1, 0, 23, 59, 59, 999);
     return { from, to };
@@ -25,6 +24,10 @@ function getCurrentPeriod(cycle: BillingCycle, now: Date): BillingPeriod {
     const to = new Date(year, month + 1, 0, 23, 59, 59, 999);
     return { from, to };
   }
+}
+
+function periodKey(from: Date): string {
+  return from.toISOString().split("T")[0];
 }
 
 export type UnbilledSale = {
@@ -62,6 +65,14 @@ export type InvoiceSummary = {
   salesCount: number;
 };
 
+export type PeriodSummary = {
+  period: BillingPeriod;
+  isCurrentPeriod: boolean;
+  sales: UnbilledSale[];
+  totalConsumptionCents: number;
+  invoice: InvoiceSummary | null;
+};
+
 export type AccountWithBillingState = {
   id: string;
   customerId: string;
@@ -69,10 +80,13 @@ export type AccountWithBillingState = {
   planCode: string | null;
   billingCycle: BillingCycle;
   currentPeriod: BillingPeriod;
-  unbilledSales: UnbilledSale[];
+  periods: PeriodSummary[];
+  // Dashboard chips
   unbilledTotalCents: number;
-  pendingInvoices: InvoiceSummary[];
-  overdueInvoices: InvoiceSummary[];
+  pendingInvoicesTotalCents: number;
+  overdueInvoicesTotalCents: number;
+  paidAmountActiveCents: number;
+  totalRetencionesCents: number;
 };
 
 export type CreateInvoiceParams = {
@@ -151,6 +165,60 @@ function calcTotal(
   );
 }
 
+function buildInvoiceSummary(inv: {
+  id: string;
+  periodFrom: Date;
+  periodTo: Date;
+  billingDate: Date;
+  estimatedPaymentDate: Date;
+  arcaFacturaNumber: string | null;
+  subtotalCents: number;
+  ivaExento: boolean;
+  ivaDiscriminado: boolean;
+  ivaAmountCents: number;
+  bankWithholdingCents: number;
+  bankFeesCents: number;
+  ivaRetentionCents: number;
+  gananciasRetentionCents: number;
+  rentasRetentionCents: number;
+  totalAmountCents: number;
+  isPaid: boolean;
+  paidAt: Date | null;
+  paidAmountCents: number;
+  paymentDate: Date | null;
+  paymentReference: string | null;
+  digitalInvoiceUrl: string | null;
+  notes: string | null;
+  sales: { id: string }[];
+}): InvoiceSummary {
+  return {
+    id: inv.id,
+    periodFrom: inv.periodFrom,
+    periodTo: inv.periodTo,
+    billingDate: inv.billingDate,
+    estimatedPaymentDate: inv.estimatedPaymentDate,
+    arcaFacturaNumber: inv.arcaFacturaNumber,
+    subtotalCents: inv.subtotalCents,
+    ivaExento: inv.ivaExento,
+    ivaDiscriminado: inv.ivaDiscriminado,
+    ivaAmountCents: inv.ivaAmountCents,
+    bankWithholdingCents: inv.bankWithholdingCents,
+    bankFeesCents: inv.bankFeesCents,
+    ivaRetentionCents: inv.ivaRetentionCents,
+    gananciasRetentionCents: inv.gananciasRetentionCents,
+    rentasRetentionCents: inv.rentasRetentionCents,
+    totalAmountCents: inv.totalAmountCents,
+    isPaid: inv.isPaid,
+    paidAt: inv.paidAt,
+    paidAmountCents: inv.paidAmountCents,
+    paymentDate: inv.paymentDate,
+    paymentReference: inv.paymentReference,
+    digitalInvoiceUrl: inv.digitalInvoiceUrl,
+    notes: inv.notes,
+    salesCount: inv.sales.length,
+  };
+}
+
 export class CuentaCorrienteService {
   static async getAccountsWithBillingState(): Promise<AccountWithBillingState[]> {
     const now = new Date();
@@ -160,17 +228,14 @@ export class CuentaCorrienteService {
       where: { isActive: true },
       include: {
         customer: { select: { displayName: true } },
+        // Traer TODAS las facturas (pagadas y no pagadas)
         invoices: {
-          where: { isPaid: false },
-          orderBy: { estimatedPaymentDate: "asc" },
+          orderBy: { periodFrom: "desc" },
           include: { sales: { select: { id: true } } },
         },
-        // Traer TODAS las sin invoice — filtrar por período en memoria
+        // Traer TODAS las ventas de CC (sin filtro de fecha ni de factura)
         sales: {
-          where: {
-            status: { in: ["CONFIRMED", "PAID"] },
-            cuentaCorrienteInvoiceId: null,
-          },
+          where: { status: { in: ["CONFIRMED", "PAID"] } },
           include: {
             items: { select: { qty: true, product: { select: { name: true } } } },
             payments: {
@@ -185,55 +250,94 @@ export class CuentaCorrienteService {
     });
 
     return accounts.map((acc) => {
-      const currentPeriod = getCurrentPeriod(acc.billingCycle, now);
+      const cycle = acc.billingCycle;
+      const currentPeriod = getPeriodForDate(now, cycle);
 
-      // Filtrar por período activo en memoria
-      const unbilledSales: UnbilledSale[] = acc.sales
-        .filter((s) => s.createdAt >= currentPeriod.from && s.createdAt <= currentPeriod.to)
-        .map((s) => ({
-          id: s.id,
-          totalCents: s.totalCents,
-          ccAmountCents: s.payments.reduce((sum, p) => sum + p.amountCents, 0),
-          createdAt: s.createdAt,
-          items: s.items.map((i) => ({ qty: i.qty, productName: i.product.name })),
-        }));
+      // Convertir ventas a UnbilledSale
+      const allSales: UnbilledSale[] = acc.sales.map((s) => ({
+        id: s.id,
+        totalCents: s.totalCents,
+        ccAmountCents: s.payments.reduce((sum, p) => sum + p.amountCents, 0),
+        createdAt: s.createdAt,
+        items: s.items.map((i) => ({ qty: i.qty, productName: i.product.name })),
+      }));
 
-      const unbilledTotalCents = unbilledSales.reduce((sum, s) => sum + s.ccAmountCents, 0);
-
-      const pendingInvoices: InvoiceSummary[] = [];
-      const overdueInvoices: InvoiceSummary[] = [];
-
+      // Construir mapa de facturas por período (key = periodFrom ISO date)
+      const invoiceByPeriodKey = new Map<string, InvoiceSummary>();
       for (const inv of acc.invoices) {
-        const summary: InvoiceSummary = {
-          id: inv.id,
-          periodFrom: inv.periodFrom,
-          periodTo: inv.periodTo,
-          billingDate: inv.billingDate,
-          estimatedPaymentDate: inv.estimatedPaymentDate,
-          arcaFacturaNumber: inv.arcaFacturaNumber,
-          subtotalCents: inv.subtotalCents,
-          ivaExento: inv.ivaExento,
-          ivaDiscriminado: inv.ivaDiscriminado,
-          ivaAmountCents: inv.ivaAmountCents,
-          bankWithholdingCents: inv.bankWithholdingCents,
-          bankFeesCents: inv.bankFeesCents,
-          ivaRetentionCents: inv.ivaRetentionCents,
-          gananciasRetentionCents: inv.gananciasRetentionCents,
-          rentasRetentionCents: inv.rentasRetentionCents,
-          totalAmountCents: inv.totalAmountCents,
-          isPaid: inv.isPaid,
-          paidAt: inv.paidAt,
-          paidAmountCents: inv.paidAmountCents,
-          paymentDate: inv.paymentDate,
-          paymentReference: inv.paymentReference,
-          digitalInvoiceUrl: inv.digitalInvoiceUrl,
-          notes: inv.notes,
-          salesCount: inv.sales.length,
-        };
-        if (inv.estimatedPaymentDate <= today) {
-          overdueInvoices.push(summary);
+        const key = periodKey(inv.periodFrom);
+        // Si hay múltiples facturas para el mismo período (edge case), guardar la más reciente
+        if (!invoiceByPeriodKey.has(key)) {
+          invoiceByPeriodKey.set(key, buildInvoiceSummary(inv));
+        }
+      }
+
+      // Construir set de todos los períodos con actividad
+      const periodKeys = new Set<string>();
+
+      // Períodos de ventas
+      for (const sale of allSales) {
+        const p = getPeriodForDate(sale.createdAt, cycle);
+        periodKeys.add(periodKey(p.from));
+      }
+
+      // Períodos de facturas
+      for (const inv of acc.invoices) {
+        periodKeys.add(periodKey(inv.periodFrom));
+      }
+
+      // Siempre incluir el período actual
+      periodKeys.add(periodKey(currentPeriod.from));
+
+      // Construir PeriodSummary[] para cada período
+      const currentKey = periodKey(currentPeriod.from);
+      const periods: PeriodSummary[] = Array.from(periodKeys)
+        .map((key) => {
+          const period = getPeriodForDate(new Date(key + "T12:00:00.000Z"), cycle);
+          const periodSales = allSales.filter(
+            (s) => s.createdAt >= period.from && s.createdAt <= period.to
+          );
+          const invoice = invoiceByPeriodKey.get(key) ?? null;
+          return {
+            period,
+            isCurrentPeriod: key === currentKey,
+            sales: periodSales,
+            totalConsumptionCents: periodSales.reduce((s, x) => s + x.ccAmountCents, 0),
+            invoice,
+          };
+        })
+        // Ordenar más reciente primero
+        .sort((a, b) => b.period.from.getTime() - a.period.from.getTime());
+
+      // Dashboard chips
+      let unbilledTotalCents = 0;
+      let pendingInvoicesTotalCents = 0;
+      let overdueInvoicesTotalCents = 0;
+      let paidAmountActiveCents = 0;
+      let totalRetencionesCents = 0;
+
+      for (const p of periods) {
+        if (!p.invoice) {
+          unbilledTotalCents += p.totalConsumptionCents;
         } else {
-          pendingInvoices.push(summary);
+          const inv = p.invoice;
+          if (!inv.isPaid) {
+            const outstanding = inv.totalAmountCents - inv.paidAmountCents;
+            if (inv.estimatedPaymentDate <= today) {
+              overdueInvoicesTotalCents += outstanding;
+            } else {
+              pendingInvoicesTotalCents += outstanding;
+            }
+            if (inv.paidAmountCents > 0) {
+              paidAmountActiveCents += inv.paidAmountCents;
+            }
+            totalRetencionesCents +=
+              inv.bankWithholdingCents +
+              inv.bankFeesCents +
+              inv.ivaRetentionCents +
+              inv.gananciasRetentionCents +
+              inv.rentasRetentionCents;
+          }
         }
       }
 
@@ -244,10 +348,12 @@ export class CuentaCorrienteService {
         planCode: acc.planCode,
         billingCycle: acc.billingCycle,
         currentPeriod,
-        unbilledSales,
+        periods,
         unbilledTotalCents,
-        pendingInvoices,
-        overdueInvoices,
+        pendingInvoicesTotalCents,
+        overdueInvoicesTotalCents,
+        paidAmountActiveCents,
+        totalRetencionesCents,
       };
     });
   }

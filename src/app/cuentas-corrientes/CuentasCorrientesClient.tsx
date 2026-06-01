@@ -5,8 +5,7 @@ import { formatArsFromCents } from "@/lib/money";
 import type {
   AccountWithBillingState,
   InvoiceSummary,
-  UnbilledSale,
-  BillingPeriod,
+  PeriodSummary,
   InvoiceDetail,
 } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 
@@ -25,13 +24,13 @@ function toDateInputValue(d: Date | string) {
   return new Date(d).toISOString().split("T")[0];
 }
 
-function ars(ars: string) {
-  return Math.round(parseFloat(ars || "0") * 100);
+function ars(v: string) {
+  return Math.round(parseFloat(v || "0") * 100);
 }
 
 // ─── Print helpers ────────────────────────────────────────────────────────────
 
-function printConsumosWindow(customerName: string, period: string, sales: UnbilledSale[]) {
+function printConsumosWindow(customerName: string, period: string, sales: PeriodSummary["sales"]) {
   const win = window.open("", "_blank");
   if (!win) return;
   const rows = sales
@@ -181,21 +180,11 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
                 {!detail.invoice.ivaExento && detail.invoice.ivaDiscriminado && detail.invoice.ivaAmountCents > 0 && (
                   <div className="flex justify-between"><span className="text-neutral-600">IVA discriminado</span><span>+ {formatArsFromCents(detail.invoice.ivaAmountCents)}</span></div>
                 )}
-                {detail.invoice.bankWithholdingCents > 0 && (
-                  <div className="flex justify-between text-neutral-500"><span>Ret. bancaria (0.94%)</span><span>− {formatArsFromCents(detail.invoice.bankWithholdingCents)}</span></div>
-                )}
-                {detail.invoice.bankFeesCents > 0 && (
-                  <div className="flex justify-between text-neutral-500"><span>Comisión bancaria (2.5%)</span><span>− {formatArsFromCents(detail.invoice.bankFeesCents)}</span></div>
-                )}
-                {detail.invoice.ivaRetentionCents > 0 && (
-                  <div className="flex justify-between text-neutral-500"><span>Ret. IVA</span><span>− {formatArsFromCents(detail.invoice.ivaRetentionCents)}</span></div>
-                )}
-                {detail.invoice.gananciasRetentionCents > 0 && (
-                  <div className="flex justify-between text-neutral-500"><span>Ret. Ganancias</span><span>− {formatArsFromCents(detail.invoice.gananciasRetentionCents)}</span></div>
-                )}
-                {detail.invoice.rentasRetentionCents > 0 && (
-                  <div className="flex justify-between text-neutral-500"><span>Ret. Rentas</span><span>− {formatArsFromCents(detail.invoice.rentasRetentionCents)}</span></div>
-                )}
+                {detail.invoice.bankWithholdingCents > 0 && <div className="flex justify-between text-neutral-500"><span>Ret. bancaria (0.94%)</span><span>− {formatArsFromCents(detail.invoice.bankWithholdingCents)}</span></div>}
+                {detail.invoice.bankFeesCents > 0 && <div className="flex justify-between text-neutral-500"><span>Comisión bancaria (2.5%)</span><span>− {formatArsFromCents(detail.invoice.bankFeesCents)}</span></div>}
+                {detail.invoice.ivaRetentionCents > 0 && <div className="flex justify-between text-neutral-500"><span>Ret. IVA</span><span>− {formatArsFromCents(detail.invoice.ivaRetentionCents)}</span></div>}
+                {detail.invoice.gananciasRetentionCents > 0 && <div className="flex justify-between text-neutral-500"><span>Ret. Ganancias</span><span>− {formatArsFromCents(detail.invoice.gananciasRetentionCents)}</span></div>}
+                {detail.invoice.rentasRetentionCents > 0 && <div className="flex justify-between text-neutral-500"><span>Ret. Rentas</span><span>− {formatArsFromCents(detail.invoice.rentasRetentionCents)}</span></div>}
                 <div className="flex justify-between font-bold text-blue-800 border-t pt-2 mt-1"><span>Total neto a cobrar</span><span>{formatArsFromCents(detail.invoice.totalAmountCents)}</span></div>
               </div>
               {(detail.invoice.paidAmountCents > 0 || detail.invoice.isPaid) && (
@@ -217,11 +206,7 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
           )}
         </div>
         <div className="border-t px-6 py-3 flex justify-between">
-          <button
-            onClick={() => detail && printInvoiceDetailWindow(detail)}
-            disabled={!detail}
-            className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-          >
+          <button onClick={() => detail && printInvoiceDetailWindow(detail)} disabled={!detail} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-40">
             Imprimir / PDF
           </button>
           <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cerrar</button>
@@ -233,12 +218,14 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
 
 // ─── Consumos Preview Modal ───────────────────────────────────────────────────
 
-function ConsumosPreviewModal({ customerName, currentPeriod, unbilledSales, onClose }: {
-  customerName: string; currentPeriod: BillingPeriod;
-  unbilledSales: UnbilledSale[]; onClose: () => void;
+function ConsumosPreviewModal({ customerName, period, sales, onClose }: {
+  customerName: string;
+  period: { from: Date | string; to: Date | string };
+  sales: PeriodSummary["sales"];
+  onClose: () => void;
 }) {
-  const total = unbilledSales.reduce((s, x) => s + x.ccAmountCents, 0);
-  const period = formatPeriod(currentPeriod.from, currentPeriod.to);
+  const total = sales.reduce((s, x) => s + x.ccAmountCents, 0);
+  const periodStr = formatPeriod(period.from, period.to);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -246,48 +233,47 @@ function ConsumosPreviewModal({ customerName, currentPeriod, unbilledSales, onCl
         <div className="border-b px-6 py-4 flex items-center justify-between">
           <div>
             <div className="font-semibold text-neutral-800">{customerName}</div>
-            <div className="text-xs text-neutral-400 mt-0.5">Consumos sin facturar — {period}</div>
+            <div className="text-xs text-neutral-400 mt-0.5">Consumos — {periodStr}</div>
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 text-xl leading-none">×</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-4">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="text-xs text-neutral-400 uppercase tracking-wide border-b">
-                <th className="text-left pb-2 font-medium pr-4">Fecha</th>
-                <th className="text-left pb-2 font-medium pr-4">Consumo</th>
-                <th className="text-right pb-2 font-medium">Monto</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {unbilledSales.map((sale) => (
-                <tr key={sale.id}>
-                  <td className="py-2 pr-4 text-neutral-600 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
-                  <td className="py-2 pr-4 text-neutral-700">
-                    {sale.items.length > 0
-                      ? sale.items.map((i) => `${i.qty}× ${i.productName}`).join(", ")
-                      : "Consumo"}
-                  </td>
-                  <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(sale.ccAmountCents)}</td>
+          {sales.length === 0 ? (
+            <p className="text-sm text-neutral-400">Sin consumos en este período.</p>
+          ) : (
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-xs text-neutral-400 uppercase tracking-wide border-b">
+                  <th className="text-left pb-2 font-medium pr-4">Fecha</th>
+                  <th className="text-left pb-2 font-medium pr-4">Consumo</th>
+                  <th className="text-right pb-2 font-medium">Monto</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-neutral-300">
-                <td colSpan={2} className="pt-3 font-bold text-neutral-800">Total a pagar</td>
-                <td className="pt-3 text-right font-bold text-neutral-900">{formatArsFromCents(total)}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {sales.map((sale) => (
+                  <tr key={sale.id}>
+                    <td className="py-2 pr-4 text-neutral-600 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
+                    <td className="py-2 pr-4 text-neutral-700">
+                      {sale.items.length > 0 ? sale.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") : "Consumo"}
+                    </td>
+                    <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(sale.ccAmountCents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-neutral-300">
+                  <td colSpan={2} className="pt-3 font-bold text-neutral-800">Total</td>
+                  <td className="pt-3 text-right font-bold text-neutral-900">{formatArsFromCents(total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
         </div>
         <div className="border-t px-6 py-3 flex justify-between items-center">
-          <p className="text-xs text-neutral-400">{unbilledSales.length} venta{unbilledSales.length !== 1 ? "s" : ""} · Sin factura ARCA asignada aún</p>
+          <p className="text-xs text-neutral-400">{sales.length} venta{sales.length !== 1 ? "s" : ""}</p>
           <div className="flex gap-3">
             <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cerrar</button>
-            <button
-              onClick={() => printConsumosWindow(customerName, period, unbilledSales)}
-              className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900"
-            >
+            <button onClick={() => printConsumosWindow(customerName, periodStr, sales)} className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900">
               Imprimir / PDF
             </button>
           </div>
@@ -363,17 +349,19 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
 
 // ─── Ingresar Factura Modal ───────────────────────────────────────────────────
 
-function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilledSales, onClose, onSuccess }: {
-  accountId: string; customerName: string; currentPeriod: BillingPeriod;
-  unbilledSales: UnbilledSale[]; onClose: () => void; onSuccess: () => void;
+function IngresarFacturaModal({ accountId, customerName, period, sales, onClose, onSuccess }: {
+  accountId: string; customerName: string;
+  period: { from: Date | string; to: Date | string };
+  sales: PeriodSummary["sales"];
+  onClose: () => void; onSuccess: () => void;
 }) {
-  const subtotalCents = unbilledSales.reduce((sum, s) => sum + s.ccAmountCents, 0);
+  const subtotalCents = sales.reduce((sum, s) => sum + s.ccAmountCents, 0);
   const defaultPaymentDate = new Date();
   defaultPaymentDate.setDate(defaultPaymentDate.getDate() + 30);
 
   const [arcaFacturaNumber, setArcaFacturaNumber] = useState("");
-  const [periodFrom, setPeriodFrom] = useState(toDateInputValue(currentPeriod.from));
-  const [periodTo, setPeriodTo] = useState(toDateInputValue(currentPeriod.to));
+  const [periodFrom, setPeriodFrom] = useState(toDateInputValue(period.from));
+  const [periodTo, setPeriodTo] = useState(toDateInputValue(period.to));
   const [estimatedPaymentDate, setEstimatedPaymentDate] = useState(toDateInputValue(defaultPaymentDate));
   const [ivaExento, setIvaExento] = useState(true);
   const [ivaDiscriminado, setIvaDiscriminado] = useState(false);
@@ -431,22 +419,13 @@ function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilled
       <div className="w-full max-w-lg rounded-xl bg-white shadow-xl flex flex-col max-h-[90vh]">
         <div className="border-b px-6 py-4">
           <div className="font-semibold text-neutral-800">Ingresar Factura ARCA — {customerName}</div>
-          <div className="text-xs text-neutral-400 mt-0.5">Registrá la factura generada en ARCA para este período</div>
+          <div className="text-xs text-neutral-400 mt-0.5">Período {formatPeriod(period.from, period.to)}</div>
         </div>
         <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
-          {/* Nro. ARCA */}
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Número de factura ARCA <span className="text-neutral-400">(opcional)</span></label>
-            <input
-              type="text"
-              value={arcaFacturaNumber}
-              onChange={(e) => setArcaFacturaNumber(e.target.value)}
-              placeholder="Ej: 00001-000083"
-              className="w-full rounded border px-3 py-2 text-sm"
-            />
+            <input type="text" value={arcaFacturaNumber} onChange={(e) => setArcaFacturaNumber(e.target.value)} placeholder="Ej: 00001-000083" className="w-full rounded border px-3 py-2 text-sm" />
           </div>
-
-          {/* Período */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-neutral-500 mb-1">Período desde</label>
@@ -457,29 +436,23 @@ function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilled
               <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
             </div>
           </div>
-
-          {/* Vencimiento */}
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha de vencimiento <span className="text-amber-600 font-medium">(Mora si se supera)</span></label>
             <input type="date" value={estimatedPaymentDate} onChange={(e) => setEstimatedPaymentDate(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
           </div>
-
-          {/* Consumos del período */}
           <div className="rounded-lg bg-neutral-50 px-4 py-3 space-y-1.5 text-sm">
             <div className="flex justify-between font-medium text-neutral-700">
-              <span>{unbilledSales.length} ventas en el período</span>
+              <span>{sales.length} ventas en el período</span>
               <span>{formatArsFromCents(subtotalCents)}</span>
             </div>
-            {unbilledSales.slice(0, 5).map((s) => (
+            {sales.slice(0, 5).map((s) => (
               <div key={s.id} className="flex justify-between text-xs text-neutral-400">
                 <span>{formatDate(s.createdAt)} · {s.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") || "Venta"}</span>
                 <span>{formatArsFromCents(s.ccAmountCents)}</span>
               </div>
             ))}
-            {unbilledSales.length > 5 && <div className="text-xs text-neutral-400">+ {unbilledSales.length - 5} más...</div>}
+            {sales.length > 5 && <div className="text-xs text-neutral-400">+ {sales.length - 5} más...</div>}
           </div>
-
-          {/* IVA */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={ivaExento} onChange={(e) => setIvaExento(e.target.checked)} className="rounded" />
@@ -500,8 +473,6 @@ function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilled
               </div>
             )}
           </div>
-
-          {/* Retenciones bancarias */}
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Retenciones bancarias</div>
             <div className="grid grid-cols-2 gap-3">
@@ -515,8 +486,6 @@ function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilled
               </div>
             </div>
           </div>
-
-          {/* Retenciones impositivas */}
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Retenciones impositivas</div>
             <div className="grid grid-cols-3 gap-3">
@@ -534,8 +503,6 @@ function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilled
               </div>
             </div>
           </div>
-
-          {/* Resumen */}
           <div className="rounded-lg bg-blue-50 px-4 py-3 text-sm space-y-1">
             <div className="flex justify-between text-neutral-600"><span>Subtotal</span><span>{formatArsFromCents(subtotalCents)}</span></div>
             {ivaAmountCents > 0 && <div className="flex justify-between text-neutral-600"><span>+ IVA discriminado</span><span>{formatArsFromCents(ivaAmountCents)}</span></div>}
@@ -546,18 +513,15 @@ function IngresarFacturaModal({ accountId, customerName, currentPeriod, unbilled
             {rentasRetentionCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. Rentas</span><span>{formatArsFromCents(rentasRetentionCents)}</span></div>}
             <div className="flex justify-between font-semibold text-blue-800 border-t border-blue-200 pt-2 mt-1"><span>Neto esperado a cobrar</span><span>{formatArsFromCents(totalAmountCents)}</span></div>
           </div>
-
-          {/* Notas */}
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Notas (opcional)</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded border px-3 py-2 text-sm resize-none" placeholder="Observaciones..." />
           </div>
-
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <div className="border-t px-6 py-4 flex justify-end gap-3">
           <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
-          <button onClick={handleSubmit} disabled={loading || unbilledSales.length === 0} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {loading ? "Guardando..." : "Ingresar factura"}
           </button>
         </div>
@@ -645,8 +609,6 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
     await onVoid(invoice.id);
   }
 
-  const canVoid = !invoice.isPaid && invoice.paidAmountCents === 0;
-
   return (
     <div className="relative" ref={ref}>
       <button
@@ -657,10 +619,8 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
         {toggling ? "..." : "···"}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-20 w-44 rounded-lg border bg-white shadow-lg py-1 text-sm">
-          <button onClick={() => { setOpen(false); onOpenDetail(invoice.id); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
-            Ver detalle
-          </button>
+        <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-lg border bg-white shadow-lg py-1 text-sm">
+          <button onClick={() => { setOpen(false); onOpenDetail(invoice.id); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">Ver detalle</button>
           <button onClick={() => { setOpen(false); onOpenPayment(invoice); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
             {invoice.paidAmountCents > 0 ? "Editar pago" : "Registrar pago"}
           </button>
@@ -670,10 +630,8 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
           <button onClick={() => { setOpen(false); onEditUrl(invoice.id, invoice.digitalInvoiceUrl); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
             {invoice.digitalInvoiceUrl ? "📎 Ver/editar URL" : "+ URL factura"}
           </button>
-          {canVoid && (
-            <button onClick={handleVoid} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">
-              Anular factura
-            </button>
+          {!invoice.isPaid && (
+            <button onClick={handleVoid} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">Anular factura</button>
           )}
         </div>
       )}
@@ -681,14 +639,25 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
   );
 }
 
-// ─── Invoices Sub-Table ───────────────────────────────────────────────────────
+// ─── Period Row ───────────────────────────────────────────────────────────────
 
-function InvoicesSubTable({ account, onRefresh }: { account: AccountWithBillingState; onRefresh: () => void }) {
-  const [ingresarModal, setIngresarModal] = useState(false);
+function PeriodRow({ ps, customerName, accountId, onRefresh }: {
+  ps: PeriodSummary;
+  customerName: string;
+  accountId: string;
+  onRefresh: () => void;
+}) {
   const [consumosModal, setConsumosModal] = useState(false);
+  const [ingresarModal, setIngresarModal] = useState(false);
   const [paymentModal, setPaymentModal] = useState<InvoiceSummary | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editUrlState, setEditUrlState] = useState<{ id: string; url: string | null } | null>(null);
+
+  const inv = ps.invoice;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const isOverdue = inv && !inv.isPaid && inv.estimatedPaymentDate <= today;
+  const outstanding = inv ? inv.totalAmountCents - inv.paidAmountCents : 0;
 
   async function handleTogglePaid(invoiceId: string) {
     await fetch(`/api/cuentas-corrientes/invoices/${invoiceId}`, {
@@ -706,113 +675,92 @@ function InvoicesSubTable({ account, onRefresh }: { account: AccountWithBillingS
     onRefresh();
   }
 
-  const allInvoices = [
-    ...account.overdueInvoices.map((i) => ({ ...i, _bucket: "mora" as const })),
-    ...account.pendingInvoices.map((i) => ({ ...i, _bucket: "pending" as const })),
-  ];
-
   return (
     <>
-      <div className="bg-neutral-50 border-t border-b px-6 py-4 space-y-3">
-        {/* Próxima factura banner */}
-        {account.unbilledSales.length > 0 && (
-          <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm">
-            <div className="text-green-800">
-              <span className="font-medium">Próxima factura:</span>{" "}
-              {formatArsFromCents(account.unbilledTotalCents)}
-              <span className="text-green-600 ml-2 text-xs">
-                {account.unbilledSales.length} venta{account.unbilledSales.length !== 1 ? "s" : ""} ·
-                período {formatDate(account.currentPeriod.from)}–{formatDate(account.currentPeriod.to)}
-              </span>
+      <div className={`flex items-start justify-between gap-4 px-4 py-3 border-b last:border-0 ${inv?.isPaid ? "opacity-50" : ""}`}>
+        {/* Izquierda: período + consumo */}
+        <div className="flex items-center gap-3 min-w-0">
+          {ps.isCurrentPeriod && <span className="shrink-0 text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Actual</span>}
+          <div>
+            <div className="text-sm font-medium text-neutral-700">{formatPeriod(ps.period.from, ps.period.to)}</div>
+            <div className="text-xs text-neutral-400 mt-0.5">
+              {formatArsFromCents(ps.totalConsumptionCents)} · {ps.sales.length} venta{ps.sales.length !== 1 ? "s" : ""}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setConsumosModal(true)}
-                className="rounded border border-green-600 px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors"
-              >
-                Ver consumos
-              </button>
+          </div>
+          <button
+            onClick={() => setConsumosModal(true)}
+            className="shrink-0 text-xs text-neutral-400 underline hover:text-neutral-600"
+          >
+            Ver consumos
+          </button>
+        </div>
+
+        {/* Derecha: estado de facturación */}
+        <div className="flex items-center gap-3 shrink-0">
+          {!inv ? (
+            // Sin factura
+            <>
+              <span className="text-xs text-neutral-400">Sin factura</span>
               <button
                 onClick={() => setIngresarModal(true)}
                 className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
               >
                 Ingresar Factura
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* Invoices table */}
-        {allInvoices.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-neutral-400 uppercase tracking-wide">
-                <th className="text-left pb-2 font-medium">Período</th>
-                <th className="text-left pb-2 font-medium">Factura ARCA</th>
-                <th className="text-left pb-2 font-medium">Vence</th>
-                <th className="text-right pb-2 font-medium">Subtotal</th>
-                <th className="text-right pb-2 font-medium">Neto</th>
-                <th className="text-center pb-2 font-medium">Estado</th>
-                <th className="pb-2"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {allInvoices.map((inv) => {
-                const isOverdue = inv._bucket === "mora";
-                return (
-                  <tr key={inv.id} className={`${inv.isPaid ? "opacity-50" : ""}`}>
-                    <td className="py-2 pr-4 text-neutral-700">{formatPeriod(inv.periodFrom, inv.periodTo)}</td>
-                    <td className="py-2 pr-4 text-neutral-500 text-xs">{inv.arcaFacturaNumber ?? <span className="text-neutral-300">—</span>}</td>
-                    <td className={`py-2 pr-4 ${isOverdue && !inv.isPaid ? "text-red-600 font-medium" : "text-neutral-500"}`}>
-                      {formatDate(inv.estimatedPaymentDate)}
-                    </td>
-                    <td className="py-2 pr-4 text-right text-neutral-700">{formatArsFromCents(inv.subtotalCents)}</td>
-                    <td className="py-2 pr-4 text-right text-neutral-500">
-                      {inv.bankWithholdingCents + inv.bankFeesCents + inv.ivaRetentionCents + inv.gananciasRetentionCents + inv.rentasRetentionCents > 0
-                        ? formatArsFromCents(inv.totalAmountCents)
-                        : "—"}
-                    </td>
-                    <td className="py-2 pr-2 text-center">
-                      {inv.isPaid ? (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Pagada</span>
-                      ) : isOverdue ? (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">Mora</span>
-                      ) : (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">Pendiente</span>
-                      )}
-                    </td>
-                    <td className="py-2 text-right">
-                      <InvoiceActionMenu
-                        invoice={inv}
-                        onOpenPayment={setPaymentModal}
-                        onOpenDetail={setDetailId}
-                        onTogglePaid={handleTogglePaid}
-                        onEditUrl={(id, url) => setEditUrlState({ id, url })}
-                        onVoid={handleVoid}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : account.unbilledSales.length === 0 ? (
-          <p className="text-xs text-neutral-400">Sin actividad en esta cuenta.</p>
-        ) : null}
+            </>
+          ) : (
+            // Con factura
+            <>
+              <div className="text-right">
+                {inv.arcaFacturaNumber && (
+                  <div className="text-xs font-medium text-neutral-600">{inv.arcaFacturaNumber}</div>
+                )}
+                <div className="text-xs text-neutral-400">
+                  {inv.isPaid ? (
+                    <span className="text-green-600 font-medium">Pagada ✓</span>
+                  ) : isOverdue ? (
+                    <span className="text-red-600 font-medium">Mora · {formatArsFromCents(outstanding)}</span>
+                  ) : (
+                    <span className="text-amber-600">Vence {formatDate(inv.estimatedPaymentDate)}</span>
+                  )}
+                </div>
+                {!inv.isPaid && inv.paidAmountCents > 0 && (
+                  <div className="text-xs text-green-600">Cobrado {formatArsFromCents(inv.paidAmountCents)}</div>
+                )}
+                {!inv.isPaid && outstanding > 0 && inv.paidAmountCents > 0 && (
+                  <div className="text-xs text-neutral-500">Pendiente {formatArsFromCents(outstanding)}</div>
+                )}
+                {!inv.isPaid && !isOverdue && inv.paidAmountCents === 0 && (
+                  <div className="text-xs text-neutral-500">{formatArsFromCents(inv.totalAmountCents)}</div>
+                )}
+              </div>
+              <InvoiceActionMenu
+                invoice={inv}
+                onOpenPayment={setPaymentModal}
+                onOpenDetail={setDetailId}
+                onTogglePaid={handleTogglePaid}
+                onEditUrl={(id, url) => setEditUrlState({ id, url })}
+                onVoid={handleVoid}
+              />
+            </>
+          )}
+        </div>
       </div>
 
       {consumosModal && (
         <ConsumosPreviewModal
-          customerName={account.customerName}
-          currentPeriod={account.currentPeriod}
-          unbilledSales={account.unbilledSales}
+          customerName={customerName}
+          period={ps.period}
+          sales={ps.sales}
           onClose={() => setConsumosModal(false)}
         />
       )}
       {ingresarModal && (
         <IngresarFacturaModal
-          accountId={account.id} customerName={account.customerName}
-          currentPeriod={account.currentPeriod} unbilledSales={account.unbilledSales}
+          accountId={accountId}
+          customerName={customerName}
+          period={ps.period}
+          sales={ps.sales}
           onClose={() => setIngresarModal(false)}
           onSuccess={() => { setIngresarModal(false); onRefresh(); }}
         />
@@ -831,6 +779,39 @@ function InvoicesSubTable({ account, onRefresh }: { account: AccountWithBillingS
   );
 }
 
+// ─── Periods Table ────────────────────────────────────────────────────────────
+
+function PeriodsTable({ account, onRefresh }: { account: AccountWithBillingState; onRefresh: () => void }) {
+  const [showPaid, setShowPaid] = useState(false);
+
+  const activePeriods = account.periods.filter((p) => !p.invoice?.isPaid);
+  const paidPeriods = account.periods.filter((p) => p.invoice?.isPaid);
+
+  return (
+    <div className="bg-neutral-50 border-t">
+      {activePeriods.length === 0 && paidPeriods.length === 0 && (
+        <p className="px-6 py-4 text-xs text-neutral-400">Sin actividad en esta cuenta.</p>
+      )}
+      {activePeriods.map((ps) => (
+        <PeriodRow key={ps.period.from.toString()} ps={ps} customerName={account.customerName} accountId={account.id} onRefresh={onRefresh} />
+      ))}
+      {paidPeriods.length > 0 && (
+        <>
+          <button
+            onClick={() => setShowPaid((v) => !v)}
+            className="w-full px-4 py-2 text-xs text-neutral-400 hover:text-neutral-600 text-left border-t"
+          >
+            {showPaid ? "▲" : "▼"} {paidPeriods.length} período{paidPeriods.length !== 1 ? "s" : ""} pagado{paidPeriods.length !== 1 ? "s" : ""}
+          </button>
+          {showPaid && paidPeriods.map((ps) => (
+            <PeriodRow key={ps.period.from.toString()} ps={ps} customerName={account.customerName} accountId={account.id} onRefresh={onRefresh} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Account Row ──────────────────────────────────────────────────────────────
 
 function AccountRow({ account, expanded, onToggle, onRefresh }: {
@@ -839,11 +820,9 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
   onToggle: () => void;
   onRefresh: () => void;
 }) {
-  const allInvoices = [...account.pendingInvoices, ...account.overdueInvoices];
-  const totalInvoicedDebt = allInvoices.reduce((s, i) => s + i.totalAmountCents, 0);
-  const totalDebt = totalInvoicedDebt + account.unbilledTotalCents;
-  const overdueTotal = account.overdueInvoices.reduce((s, i) => s + i.totalAmountCents, 0);
-  const hasActivity = totalDebt > 0 || allInvoices.length > 0;
+  const hasActivity = account.periods.length > 0;
+  const overdueTotal = account.overdueInvoicesTotalCents;
+  const totalDebt = account.unbilledTotalCents + account.pendingInvoicesTotalCents + account.overdueInvoicesTotalCents;
 
   return (
     <>
@@ -853,9 +832,7 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            {hasActivity && (
-              <span className="text-neutral-300 text-xs">{expanded ? "▼" : "▶"}</span>
-            )}
+            {hasActivity && <span className="text-neutral-300 text-xs">{expanded ? "▼" : "▶"}</span>}
             <div>
               <div className="font-medium text-neutral-800 text-sm">{account.customerName}</div>
               {account.planCode && <div className="text-xs text-neutral-400">{account.planCode}</div>}
@@ -871,8 +848,8 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
             : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          {totalInvoicedDebt - overdueTotal > 0
-            ? <span className="text-amber-600">{formatArsFromCents(totalInvoicedDebt - overdueTotal)}</span>
+          {account.pendingInvoicesTotalCents > 0
+            ? <span className="text-amber-600">{formatArsFromCents(account.pendingInvoicesTotalCents)}</span>
             : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
@@ -889,7 +866,7 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
       {expanded && (
         <tr>
           <td colSpan={6} className="p-0">
-            <InvoicesSubTable account={account} onRefresh={onRefresh} />
+            <PeriodsTable account={account} onRefresh={onRefresh} />
           </td>
         </tr>
       )}
@@ -914,19 +891,14 @@ export default function CuentasCorrientesClient({ initialAccounts }: { initialAc
     }
   }, []);
 
-  const allInvoices = accounts.flatMap((a) => [...a.pendingInvoices, ...a.overdueInvoices]);
   const totalUnbilled = accounts.reduce((s, a) => s + a.unbilledTotalCents, 0);
-  const totalInvoiced = allInvoices.reduce((s, i) => s + i.totalAmountCents, 0);
-  const totalOverdue = accounts.reduce((s, a) => s + a.overdueInvoices.reduce((si, i) => si + i.totalAmountCents, 0), 0);
-  const totalDebt = totalUnbilled + totalInvoiced;
-  const totalRetenciones = allInvoices.reduce(
-    (s, i) => s + i.bankWithholdingCents + i.bankFeesCents + i.ivaRetentionCents + i.gananciasRetentionCents + i.rentasRetentionCents,
-    0
-  );
+  const totalAdeudado = accounts.reduce((s, a) => s + a.pendingInvoicesTotalCents, 0);
+  const totalMora = accounts.reduce((s, a) => s + a.overdueInvoicesTotalCents, 0);
+  const totalCobrado = accounts.reduce((s, a) => s + a.paidAmountActiveCents, 0);
+  const totalRetenciones = accounts.reduce((s, a) => s + a.totalRetencionesCents, 0);
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Cuentas Corrientes</h1>
         <button onClick={refresh} disabled={refreshing} className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
@@ -937,38 +909,43 @@ export default function CuentasCorrientesClient({ initialAccounts }: { initialAc
       {/* Summary chips */}
       <div className="grid grid-cols-5 gap-3">
         <div className="rounded-lg border bg-white px-4 py-3">
-          <div className="text-xs text-neutral-400 font-medium uppercase tracking-wide">Deuda total</div>
-          <div className={`text-lg font-bold mt-1 ${totalDebt > 0 ? "text-neutral-800" : "text-neutral-400"}`}>{formatArsFromCents(totalDebt)}</div>
-        </div>
-        <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-neutral-400 font-medium uppercase tracking-wide">Sin facturar</div>
-          <div className="text-lg font-bold text-neutral-700 mt-1">{formatArsFromCents(totalUnbilled)}</div>
+          <div className={`text-lg font-bold mt-1 ${totalUnbilled > 0 ? "text-neutral-800" : "text-neutral-400"}`}>{formatArsFromCents(totalUnbilled)}</div>
+          <div className="text-xs text-neutral-300 mt-0.5">Consumo sin factura</div>
         </div>
         <div className="rounded-lg border bg-white px-4 py-3">
-          <div className="text-xs text-amber-500 font-medium uppercase tracking-wide">Facturado</div>
-          <div className="text-lg font-bold text-amber-600 mt-1">{formatArsFromCents(totalInvoiced)}</div>
+          <div className="text-xs text-amber-500 font-medium uppercase tracking-wide">Adeudado</div>
+          <div className={`text-lg font-bold mt-1 ${totalAdeudado > 0 ? "text-amber-600" : "text-neutral-400"}`}>{formatArsFromCents(totalAdeudado)}</div>
+          <div className="text-xs text-neutral-300 mt-0.5">Facturado, en plazo</div>
         </div>
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-red-400 font-medium uppercase tracking-wide">En mora</div>
-          <div className={`text-lg font-bold mt-1 ${totalOverdue > 0 ? "text-red-600" : "text-neutral-400"}`}>{formatArsFromCents(totalOverdue)}</div>
+          <div className={`text-lg font-bold mt-1 ${totalMora > 0 ? "text-red-600" : "text-neutral-400"}`}>{formatArsFromCents(totalMora)}</div>
+          <div className="text-xs text-neutral-300 mt-0.5">Facturado, vencido</div>
+        </div>
+        <div className="rounded-lg border bg-white px-4 py-3">
+          <div className="text-xs text-green-500 font-medium uppercase tracking-wide">Cobrado</div>
+          <div className={`text-lg font-bold mt-1 ${totalCobrado > 0 ? "text-green-600" : "text-neutral-400"}`}>{formatArsFromCents(totalCobrado)}</div>
+          <div className="text-xs text-neutral-300 mt-0.5">Pagos registrados</div>
         </div>
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-purple-400 font-medium uppercase tracking-wide">Retenciones est.</div>
           <div className={`text-lg font-bold mt-1 ${totalRetenciones > 0 ? "text-purple-600" : "text-neutral-400"}`}>{formatArsFromCents(totalRetenciones)}</div>
+          <div className="text-xs text-neutral-300 mt-0.5">Sobre facturas activas</div>
         </div>
       </div>
 
       {/* Accounts table */}
-      <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="rounded-lg border bg-white">
         <table className="w-full text-sm">
           <thead className="border-b bg-neutral-50">
             <tr className="text-xs text-neutral-400 uppercase tracking-wide">
               <th className="px-4 py-2 text-left font-medium">Cliente</th>
               <th className="px-4 py-2 text-left font-medium">Ciclo</th>
               <th className="px-4 py-2 text-right font-medium">Sin facturar</th>
-              <th className="px-4 py-2 text-right font-medium">Facturado</th>
+              <th className="px-4 py-2 text-right font-medium">Adeudado</th>
               <th className="px-4 py-2 text-right font-medium">Mora</th>
-              <th className="px-4 py-2 text-right font-medium">Deuda total</th>
+              <th className="px-4 py-2 text-right font-medium">Deuda activa</th>
             </tr>
           </thead>
           <tbody>
