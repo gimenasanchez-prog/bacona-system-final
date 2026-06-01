@@ -27,9 +27,14 @@ function TypeBadge(props: { type: string }) {
   );
 }
 
-export default async function CajaLocalPage() {
+export default async function CajaLocalPage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const role = (await cookies()).get("bcn_role")?.value;
   if (role !== "GERENCIA" && role !== "CAJA_LOCAL") redirect("/");
+
+  const sp = await props.searchParams;
+  const errorMsg = typeof sp.error === "string" ? decodeURIComponent(sp.error) : null;
 
   const box = await LocalCashBoxService.getActiveLocalCashBox();
   const [balanceCents, movements, envelopes] = await Promise.all([
@@ -58,6 +63,12 @@ export default async function CajaLocalPage() {
           </Link>
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMsg}
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border bg-white p-4 shadow-sm sm:col-span-1">
