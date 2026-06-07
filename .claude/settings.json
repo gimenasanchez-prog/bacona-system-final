@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsx -e ' *)",
+      "Bash(npx tsx *)",
+      "Bash(del \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\prisma\\\\set-alfredo-admin.ts\")"
+    ]
+  }
+}

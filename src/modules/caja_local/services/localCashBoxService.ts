@@ -26,7 +26,9 @@ export class LocalCashBoxService {
       where: { localCashBoxId },
       include: {
         relatedEnvelope: true,
-        relatedLocalExpense: true,
+        relatedLocalExpense: {
+          select: { id: true, supplierNameSnapshot: true, description: true },
+        },
         createdByEmployee: { select: { id: true, displayName: true } },
       },
       orderBy: { date: "desc" },
@@ -40,6 +42,102 @@ export class LocalCashBoxService {
       include: { cashSession: { include: { employee: true } } },
       orderBy: { depositedAt: "desc" },
       take: 200,
+    });
+  }
+
+  static async listOpenedEnvelopes() {
+    return prisma.envelope.findMany({
+      where: { status: "OPENED" },
+      include: {
+        cashSession: { include: { employee: true } },
+        openedByEmployee: { select: { id: true, displayName: true } },
+      },
+      orderBy: { openedAt: "desc" },
+    });
+  }
+
+  static async openAndControlEnvelope(params: {
+    envelopeId: string;
+    localCashBoxId: string;
+    actualAmountCents: number;
+    notes: string | null;
+    employeeId: string;
+  }) {
+    if (!Number.isInteger(params.actualAmountCents) || params.actualAmountCents < 0) {
+      throw new Error("El monto debe ser un número entero no negativo.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const env = await tx.envelope.findUnique({
+        where: { id: params.envelopeId },
+        select: { id: true, status: true, envelopeCode: true, expectedAmountCents: true },
+      });
+      if (!env) throw new Error("Sobre no encontrado.");
+      if (env.status !== "CLOSED") throw new Error("El sobre no está disponible para abrir.");
+
+      const finalStatus =
+        params.actualAmountCents === env.expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
+      const now = new Date();
+
+      await tx.envelope.update({
+        where: { id: params.envelopeId },
+        data: {
+          status: finalStatus,
+          openedAt: now,
+          openedByEmployeeId: params.employeeId,
+          controlledAt: now,
+          controlledByEmployeeId: params.employeeId,
+          actualAmountCents: params.actualAmountCents,
+          notes: params.notes,
+        },
+      });
+
+      await tx.localCashMovement.create({
+        data: {
+          localCashBoxId: params.localCashBoxId,
+          type: "IN",
+          sourceType: "ENVELOPE_OPENING",
+          relatedEnvelopeId: params.envelopeId,
+          amountCents: params.actualAmountCents,
+          date: now,
+          description: `Apertura sobre ${env.envelopeCode}`,
+          createdByEmployeeId: params.employeeId,
+        },
+      });
+    });
+  }
+
+  static async controlOpenedEnvelope(params: {
+    envelopeId: string;
+    actualAmountCents: number;
+    notes: string | null;
+    employeeId: string;
+  }) {
+    if (!Number.isInteger(params.actualAmountCents) || params.actualAmountCents < 0) {
+      throw new Error("El monto debe ser un número entero no negativo.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const env = await tx.envelope.findUnique({
+        where: { id: params.envelopeId },
+        select: { id: true, status: true, expectedAmountCents: true },
+      });
+      if (!env) throw new Error("Sobre no encontrado.");
+      if (env.status !== "OPENED") throw new Error("Solo se pueden controlar sobres en estado ABIERTO.");
+
+      const finalStatus =
+        params.actualAmountCents === env.expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
+
+      await tx.envelope.update({
+        where: { id: params.envelopeId },
+        data: {
+          status: finalStatus,
+          controlledAt: new Date(),
+          controlledByEmployeeId: params.employeeId,
+          actualAmountCents: params.actualAmountCents,
+          notes: params.notes,
+        },
+      });
     });
   }
 

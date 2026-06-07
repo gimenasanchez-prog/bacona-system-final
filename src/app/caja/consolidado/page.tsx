@@ -73,7 +73,10 @@ export default async function ConsolidadoCierresPage(props: {
           qr: rows.reduce((s, r) => s + r.totalQrCents, 0),
           cc: rows.reduce((s, r) => s + r.totalCuentaCorrienteCents, 0),
           internal: rows.reduce((s, r) => s + r.totalCuentasInternasCents, 0),
-          envelope: rows.reduce((s, r) => s + (r.envelope?.expectedAmountCents ?? 0), 0),
+          envelope: rows.reduce(
+            (s, r) => s + (r.envelope?.actualAmountCents ?? r.envelope?.expectedAmountCents ?? 0),
+            0
+          ),
         }
       : null;
 
@@ -225,8 +228,21 @@ export default async function ConsolidadoCierresPage(props: {
                 <td className="px-2 py-2 text-right font-semibold">{formatArsFromCents(r.totalIncomeCents)}</td>
                 <td className="px-2 py-2 text-right font-semibold">{formatArsFromCents(r.totalExpensesCents)}</td>
                 <td className="px-2 py-2 text-right font-semibold">{formatArsFromCents(r.totalNetCents)}</td>
-                <td className="px-2 py-2 text-right font-semibold">
-                  {formatArsFromCents(r.envelope?.expectedAmountCents ?? 0)}
+                <td className="px-2 py-2 text-right">
+                  <div className="font-semibold">
+                    {formatArsFromCents(
+                      r.envelope?.actualAmountCents ?? r.envelope?.expectedAmountCents ?? 0
+                    )}
+                  </div>
+                  {r.envelope && r.envelope.actualAmountCents == null && (
+                    <div className="text-xs text-neutral-400">esperado</div>
+                  )}
+                  {r.envelope?.actualAmountCents != null &&
+                    r.envelope.actualAmountCents !== r.envelope.expectedAmountCents && (
+                      <div className="text-xs text-orange-600">
+                        esperado {formatArsFromCents(r.envelope.expectedAmountCents)}
+                      </div>
+                    )}
                 </td>
                 <td className="px-2 py-2 font-mono text-xs">{r.envelope?.envelopeCode ?? "—"}</td>
                 <td className="px-2 py-2">

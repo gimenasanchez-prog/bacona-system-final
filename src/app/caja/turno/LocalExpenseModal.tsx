@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { formatArsFromCents } from "@/lib/money";
+import { PesosInput } from "@/components/PesosInput";
 import {
   createLocalExpenseAction,
   type CreateLocalExpenseState,
@@ -102,17 +103,8 @@ export function LocalExpenseModal(props: {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-xs font-medium">Monto (centavos)</label>
-                  <input
-                    type="number"
-                    name="amountCents"
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                    defaultValue={0}
-                    min={1}
-                    step={1}
-                    required
-                  />
-                  <div className="text-xs text-neutral-600">Se muestra en ARS al guardar.</div>
+                  <label className="block text-xs font-medium">Monto ($)</label>
+                  <PesosInput name="amountCents" required min={1} />
                 </div>
               </div>
 
@@ -174,7 +166,7 @@ export function LocalExpenseModal(props: {
 
               <div className="mt-2 flex items-center justify-between">
                 <div className="text-xs text-neutral-600">
-                  Al guardar, el monto se registra en centavos. {formatArsFromCents(0)}
+                  Ingresá el monto en pesos (ej: 28000 para $28.000).
                 </div>
                 <button
                   type="submit"

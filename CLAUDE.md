@@ -19,11 +19,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Deployment
 
-**Target: Railway (nube)** — Next.js + PostgreSQL managed, accesible desde cualquier dispositivo con internet.
+**Producción: Railway** — App en `baconagsd.up.railway.app`. Next.js + PostgreSQL managed, accesible desde cualquier dispositivo con internet.
 
 - El personal del restaurante accede desde el local (requiere internet en el local).
 - Gimena y Pio acceden remotamente desde cualquier browser.
-- Base de datos: PostgreSQL en Railway (migración desde Docker local en curso).
+- Base de datos: PostgreSQL en Railway. Migraciones se ejecutan automáticamente al deploy (`npx prisma migrate deploy && npm start` en `railway.json`).
 - Backups automáticos configurados en Railway; backup manual via `pg_dump` a MEGA como capa adicional.
 
 **Entorno local (desarrollo):** Docker + PostgreSQL en `localhost:5432`. Arrancar con `docker compose up -d` antes de `npm run dev`.
@@ -39,10 +39,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Cuentas corrientes (clientes corpo)
 - Stock (dashboard semáforo, movimientos)
 - Producción, Compras, Mermas
+- Seed completo con datos reales (7 empleados, 13 mesas, 41 proveedores, ~80 productos, 11 clientes CC)
 
-**Pendiente antes de producción:**
-- Deploy en Railway (base de datos + app)
-- Seed con datos reales (mesas confirmadas, catálogo completo con precios, clientes CC reales)
+**Pendiente antes de producción completa:**
 - Testing de flujos completos con datos reales
 - Arranque automático en Windows (PM2 o .bat en Startup) — solo si se decide mantener copia local también
 
@@ -98,7 +97,16 @@ src/lib/                     ← Shared utilities (prisma client, money helpers)
 
 **Client fetches** — plain `fetch` with `content-type: application/json`, no wrapper library.
 
-**Session** — HTTP-only cookies (`bcn_cashSessionId`, `bcn_employeeId`, `bcn_shift`). No auth library; managed manually in Server Actions via `next/headers`. On session close, cookies are cleared (`maxAge=0`).
+**Session** — HTTP-only cookies (`bcn_cashSessionId`, `bcn_employeeId`, `bcn_shift`, `bcn_role`). No auth library; managed manually in Server Actions via `next/headers`. On session close, cookies are cleared (`maxAge=0`).
+
+**Roles de empleado** (`EmployeeRole` enum):
+
+| Rol | Acceso |
+|-----|--------|
+| `ASOCIADO` | POS, Cierre de caja (propio turno) |
+| `CAJA_LOCAL` | Todo ASOCIADO + Caja BCN + apertura de sobres |
+| `GERENCIA` | Todo + Consolidado completo + control de sobres |
+| `ADMINISTRATIVO` | Cuentas Corrientes (lectura) + Consolidado (lectura), sin POS ni caja |
 
 **UI** — Tailwind CSS only, no component library. No global state library; local `useState`/`useEffect` plus cookies for session state.
 
@@ -260,10 +268,11 @@ Historical view of closed sessions, showing per-row: `businessDate`, `shift`, em
 
 Data source: snapshot persisted in `CashSession` at close time (single source of truth).
 
-**Role-based access (prepared):**
-- Asociada/o: own current shift only.
-- Caja local: access to Caja BCN + envelope opening.
-- Gerencia: full consolidado + envelope control.
+**Role-based access:**
+- `ASOCIADO`: own current shift only (no consolidado access).
+- `CAJA_LOCAL`: access to Caja BCN + envelope opening.
+- `GERENCIA`: full consolidado + envelope control.
+- `ADMINISTRATIVO`: read-only access to consolidado (same view as GERENCIA, no envelope actions).
 
 Admin actions on envelopes (state changes) are auditable.
 
