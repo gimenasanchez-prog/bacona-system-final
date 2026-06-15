@@ -220,6 +220,43 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
 
 // ─── Consumos Preview Modal ───────────────────────────────────────────────────
 
+function ComandaInlineEdit({ url, onSaved }: { url: string; onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!value.trim()) return;
+    setSaving(true);
+    await fetch(url, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ comandaNumber: value.trim() }),
+    });
+    setSaving(false);
+    onSaved();
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="N° comanda"
+        className="w-24 rounded border px-2 py-0.5 text-xs"
+        onKeyDown={(e) => e.key === "Enter" && handleSave()}
+      />
+      <button
+        onClick={handleSave}
+        disabled={saving || !value.trim()}
+        className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-white disabled:opacity-40"
+      >
+        {saving ? "..." : "Guardar"}
+      </button>
+    </div>
+  );
+}
+
 const CHARGE_CATEGORY_LABELS: Record<string, string> = {
   CONSUMO_OLVIDADO: "Consumo olvidado",
   SERVICIO_ESPECIAL: "Servicio especial",
@@ -227,12 +264,13 @@ const CHARGE_CATEGORY_LABELS: Record<string, string> = {
   OTRO: "Otro",
 };
 
-function ConsumosPreviewModal({ customerName, period, sales, directCharges, onClose }: {
+function ConsumosPreviewModal({ customerName, period, sales, directCharges, onClose, onRefresh }: {
   customerName: string;
   period: { from: Date | string; to: Date | string };
   sales: PeriodSummary["sales"];
   directCharges: DirectCharge[];
   onClose: () => void;
+  onRefresh: () => void;
 }) {
   const salesTotal = sales.reduce((s, x) => s + x.ccAmountCents, 0);
   const chargesTotal = directCharges.reduce((s, x) => s + x.amountCents, 0);
@@ -259,6 +297,7 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                 <tr className="text-xs text-neutral-400 uppercase tracking-wide border-b">
                   <th className="text-left pb-2 font-medium pr-4">Fecha</th>
                   <th className="text-left pb-2 font-medium pr-4">Consumo</th>
+                  <th className="text-left pb-2 font-medium pr-4">Comanda</th>
                   <th className="text-right pb-2 font-medium">Monto</th>
                 </tr>
               </thead>
@@ -268,6 +307,12 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                     <td className="py-2 pr-4 text-neutral-600 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
                     <td className="py-2 pr-4 text-neutral-700">
                       {sale.items.length > 0 ? sale.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") : "Consumo"}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {sale.comandaNumber
+                        ? <span className="font-mono text-neutral-700">#{sale.comandaNumber}</span>
+                        : <ComandaInlineEdit url={`/api/pos/sales/${sale.id}`} onSaved={onRefresh} />
+                      }
                     </td>
                     <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(sale.ccAmountCents)}</td>
                   </tr>
@@ -284,13 +329,19 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                       </div>
                       <div className="text-xs text-neutral-400 mt-0.5">Motivo: {charge.motive}</div>
                     </td>
+                    <td className="py-2 pr-4">
+                      {charge.comandaNumber
+                        ? <span className="font-mono text-neutral-700">#{charge.comandaNumber}</span>
+                        : <ComandaInlineEdit url={`/api/cuentas-corrientes/direct-charges/${charge.id}`} onSaved={onRefresh} />
+                      }
+                    </td>
                     <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(charge.amountCents)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-300">
-                  <td colSpan={2} className="pt-3 font-bold text-neutral-800">Total</td>
+                  <td colSpan={3} className="pt-3 font-bold text-neutral-800 pr-4">Total</td>
                   <td className="pt-3 text-right font-bold text-neutral-900">{formatArsFromCents(total)}</td>
                 </tr>
               </tfoot>
@@ -788,6 +839,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
           sales={ps.sales}
           directCharges={ps.directCharges}
           onClose={() => setConsumosModal(false)}
+          onRefresh={onRefresh}
         />
       )}
       {ingresarModal && (

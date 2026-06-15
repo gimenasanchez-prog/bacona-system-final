@@ -151,6 +151,7 @@ export default function PosPage() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentAccountId, setPaymentAccountId] = useState<string>("");
   const [paymentEmployeeId, setPaymentEmployeeId] = useState<string>("");
+  const [comandaNumber, setComandaNumber] = useState<string>("");
 
   const [openTableSales, setOpenTableSales] = useState<OpenTableSale[]>([]);
   const [saleSuccess, setSaleSuccess] = useState<number | null>(null);
@@ -1217,7 +1218,7 @@ export default function PosPage() {
                 <button
                   type="button"
                   className="rounded-md border px-2 py-1 text-sm"
-                  onClick={() => setPaymentsOpen(false)}
+                  onClick={() => { setPaymentsOpen(false); setComandaNumber(""); }}
                 >
                   Cerrar
                 </button>
@@ -1287,6 +1288,16 @@ export default function PosPage() {
                         ))}
                       </select>
                     )}
+                    <label className="block text-xs font-medium mt-2">
+                      N° de comanda <span className="text-red-500">(obligatorio)</span>
+                    </label>
+                    <input
+                      type="text"
+                      className={`w-full rounded-md border px-3 py-2 text-sm ${!comandaNumber.trim() ? "border-red-300" : ""}`}
+                      placeholder="Ej: 042"
+                      value={comandaNumber}
+                      onChange={(e) => setComandaNumber(e.target.value)}
+                    />
                   </div>
                 ) : null}
 
@@ -1321,6 +1332,10 @@ export default function PosPage() {
                     onClick={async () => {
                       try {
                         setError(null);
+                        if (paymentMethod === "CUENTA_CORRIENTE" && !comandaNumber.trim()) {
+                          setError("Ingresá el número de comanda antes de registrar el pago.");
+                          return;
+                        }
                         await apiJson(`/api/pos/sales/${saleId}/payments`, {
                           method: "POST",
                           body: JSON.stringify({
@@ -1332,8 +1347,11 @@ export default function PosPage() {
                                 : null,
                             employeeId:
                               paymentMethod === "CUENTAS_INTERNAS" ? paymentEmployeeId || null : null,
+                            comandaNumber:
+                              paymentMethod === "CUENTA_CORRIENTE" ? comandaNumber.trim() : undefined,
                           }),
                         });
+                        setComandaNumber("");
                         await refreshSale(saleId);
                       } catch (e) {
                         setError(e instanceof Error ? e.message : "Error");

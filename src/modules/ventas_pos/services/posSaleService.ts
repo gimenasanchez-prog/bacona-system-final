@@ -15,6 +15,7 @@ type SaleUpdateInput = {
   tableId?: string | null;
   reservationAt?: Date | null;
   externalRefs?: Record<string, any> | null;
+  comandaNumber?: string;
 };
 
 export class PosSaleService {
@@ -73,6 +74,7 @@ export class PosSaleService {
         tableId: input.tableId,
         reservationAt: input.reservationAt,
         externalRefs: input.externalRefs === null ? Prisma.DbNull : input.externalRefs,
+        comandaNumber: input.comandaNumber,
       },
     });
   }
@@ -213,8 +215,15 @@ export class PosSaleService {
     amountCents: number;
     cuentaCorrienteAccountId?: string | null;
     employeeId?: string | null;
+    comandaNumber?: string;
   }) {
     await PosPaymentService.addPayment(params);
+    if (params.method === "CUENTA_CORRIENTE" && params.comandaNumber) {
+      await prisma.posSale.update({
+        where: { id: params.saleId },
+        data: { comandaNumber: params.comandaNumber },
+      });
+    }
     return this.getSaleDetails(params.saleId);
   }
 

@@ -12,6 +12,7 @@ const schema = z.object({
   motive: z.string().min(1, "El motivo es obligatorio"),
   category: z.nativeEnum(CcDirectChargeCategory),
   amountCents: z.coerce.number().min(0.01, "El monto debe ser mayor a cero"),
+  comandaNumber: z.string().optional(),
 });
 
 export type CcDirectChargeState = { error: string | null; createdId: string | null };
@@ -36,7 +37,7 @@ export async function createCcDirectChargeAction(
     return { error: parsed.error.issues[0].message, createdId: null };
   }
 
-  const { cuentaCorrienteAccountId, date, description, motive, category, amountCents } = parsed.data;
+  const { cuentaCorrienteAccountId, date, description, motive, category, amountCents, comandaNumber } = parsed.data;
 
   const charge = await prisma.ccDirectCharge.create({
     data: {
@@ -46,6 +47,7 @@ export async function createCcDirectChargeAction(
       motive,
       category,
       amountCents: Math.round(amountCents * 100),
+      comandaNumber: comandaNumber?.trim() || null,
       createdByEmployeeId: employeeId,
     },
   });

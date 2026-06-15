@@ -134,6 +134,16 @@ export function CargosDirectosModal({ accounts, onCreated }: { accounts: Account
                 <div className="text-xs text-neutral-400">Ingresá el importe en pesos. Se guarda en centavos internamente.</div>
               </div>
 
+              <div className="space-y-1">
+                <label className="block text-xs font-medium">N° de comanda <span className="text-neutral-400">(opcional)</span></label>
+                <input
+                  type="text"
+                  name="comandaNumber"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="Ej: 042"
+                />
+              </div>
+
               {state.error && (
                 <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   {state.error}

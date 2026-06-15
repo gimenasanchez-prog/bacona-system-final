@@ -322,6 +322,7 @@ model PosSale {
   subtotalCents              Int                     @default(0)
   totalCents                 Int                     @default(0)
   externalRefs               Json?
+  comandaNumber              String?
   cancellationReason         String?
   cancelledAt                DateTime?
   createdAt                  DateTime                @default(now())
@@ -806,6 +807,7 @@ model CcDirectCharge {
   motive                   String
   category                 CcDirectChargeCategory
   amountCents              Int
+  comandaNumber            String?
   createdAt                DateTime                   @default(now())
   createdByEmployeeId      String
   createdByEmployee        Employee                   @relation("EmployeeCcDirectChargesCreated", fields: [createdByEmployeeId], references: [id])

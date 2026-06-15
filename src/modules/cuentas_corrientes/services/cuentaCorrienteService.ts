@@ -35,6 +35,7 @@ export type UnbilledSale = {
   totalCents: number;
   ccAmountCents: number;
   createdAt: Date;
+  comandaNumber: string | null;
   items: { qty: number; productName: string }[];
 };
 
@@ -45,6 +46,7 @@ export type DirectCharge = {
   motive: string;
   category: CcDirectChargeCategory;
   amountCents: number;
+  comandaNumber: string | null;
   createdAt: Date;
 };
 
@@ -273,6 +275,7 @@ export class CuentaCorrienteService {
         totalCents: s.totalCents,
         ccAmountCents: s.payments.reduce((sum, p) => sum + p.amountCents, 0),
         createdAt: s.createdAt,
+        comandaNumber: s.comandaNumber,
         items: s.items.map((i) => ({ qty: i.qty, productName: i.product.name })),
       }));
 
@@ -283,6 +286,7 @@ export class CuentaCorrienteService {
         motive: c.motive,
         category: c.category,
         amountCents: c.amountCents,
+        comandaNumber: c.comandaNumber,
         createdAt: c.createdAt,
       }));
 

@@ -16,6 +16,7 @@ const AddPaymentSchema = z.object({
   amountCents: z.number().int().positive(),
   cuentaCorrienteAccountId: z.string().nullable().optional(),
   employeeId: z.string().nullable().optional(),
+  comandaNumber: z.string().optional(),
 });
 
 export async function POST(
@@ -36,6 +37,7 @@ export async function POST(
       amountCents: parsed.data.amountCents,
       cuentaCorrienteAccountId: parsed.data.cuentaCorrienteAccountId ?? null,
       employeeId: parsed.data.employeeId ?? null,
+      comandaNumber: parsed.data.comandaNumber,
     });
     return NextResponse.json(details);
   } catch (e) {
