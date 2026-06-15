@@ -32,20 +32,35 @@ function ars(v: string) {
 
 // ─── Print helpers ────────────────────────────────────────────────────────────
 
-function printConsumosWindow(customerName: string, period: string, sales: PeriodSummary["sales"]) {
+function printConsumosWindow(customerName: string, period: string, sales: PeriodSummary["sales"], directCharges: DirectCharge[]) {
   const win = window.open("", "_blank");
   if (!win) return;
-  const rows = sales
+  const salesRows = sales
     .map(
       (s) =>
         `<tr>
           <td>${formatDate(s.createdAt)}</td>
           <td>${s.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") || "Consumo"}</td>
+          <td>${s.comandaNumber ? `#${s.comandaNumber}` : ""}</td>
           <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}</td>
         </tr>`
     )
     .join("");
-  const total = formatArsFromCents(sales.reduce((s, x) => s + x.ccAmountCents, 0));
+  const chargeRows = directCharges
+    .map(
+      (c) =>
+        `<tr style="background:#fffbeb">
+          <td>${formatDate(c.date)}</td>
+          <td>${CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — ${c.description}</td>
+          <td>${c.comandaNumber ? `#${c.comandaNumber}` : ""}</td>
+          <td style="text-align:right">${formatArsFromCents(c.amountCents)}</td>
+        </tr>`
+    )
+    .join("");
+  const total = formatArsFromCents(
+    sales.reduce((s, x) => s + x.ccAmountCents, 0) +
+    directCharges.reduce((s, x) => s + x.amountCents, 0)
+  );
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Consumos ${customerName}</title>
     <style>
       body{font-family:Arial,sans-serif;font-size:12px;margin:24px}
@@ -57,9 +72,9 @@ function printConsumosWindow(customerName: string, period: string, sales: Period
     </style></head><body>
     <h2>${customerName}</h2><p>Detalle de consumos — ${period}</p>
     <table>
-      <thead><tr><th>Fecha</th><th>Consumo</th><th class="right">Monto</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="2" class="bold right">Total a pagar</td><td class="bold right">${total}</td></tr></tfoot>
+      <thead><tr><th>Fecha</th><th>Consumo</th><th>Comanda</th><th class="right">Monto</th></tr></thead>
+      <tbody>${salesRows}${chargeRows}</tbody>
+      <tfoot><tr><td colspan="3" class="bold right">Total a pagar</td><td class="bold right">${total}</td></tr></tfoot>
     </table>
     </body></html>`);
   win.document.close();
@@ -355,7 +370,7 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
           </p>
           <div className="flex gap-3">
             <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cerrar</button>
-            <button onClick={() => printConsumosWindow(customerName, periodStr, sales)} className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900">
+            <button onClick={() => printConsumosWindow(customerName, periodStr, sales, directCharges)} className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900">
               Imprimir / PDF
             </button>
           </div>
