@@ -460,29 +460,17 @@ async function main() {
   ]);
   await linkProductToRecipe("Mix empanadas x8", rvMixEmpanadas);
 
-  // ── Postres ⚠️ COMPLETAR — reemplazar ingredientes placeholder antes de ejecutar ──
-
-  const rvTentacion = await ensureRecipe("Consumo: Postre Tentacion Bacona", "CONSUMPTION", [
-    // COMPLETAR: reemplazar con los ingredientes reales del Postre Tentación Bacoña
-    { itemName: "panqueque",      direction: "OUT", qty: 2 },
-    { itemName: "crema pastelera", direction: "OUT", qty: 150 },
-    { itemName: "dulce de leche", direction: "OUT", qty: 50 },
-  ]);
-  await linkProductToRecipe("Postre Tentacion Bacoña", rvTentacion);
-
-  const rvYogurtina = await ensureRecipe("Consumo: Postre Yogurtina", "CONSUMPTION", [
-    // COMPLETAR: reemplazar con los ingredientes reales del Postre Yogurtina
-    { itemName: "fruta porcion", direction: "OUT", qty: 1 },
-    { itemName: "granola",       direction: "OUT", qty: 80 },
-  ]);
-  await linkProductToRecipe("Postre Yogurtina", rvYogurtina);
-
-  const rvFrutos = await ensureRecipe("Consumo: Postre Frutos Secos", "CONSUMPTION", [
-    // COMPLETAR: reemplazar con los ingredientes reales del Postre Frutos Secos
-    { itemName: "fruta porcion", direction: "OUT", qty: 1 },
-    { itemName: "granola",       direction: "OUT", qty: 100 },
-  ]);
-  await linkProductToRecipe("Postre frutos secos", rvFrutos);
+  // ── Postres — pendiente documentar in situ con el personal ──
+  // Los ingredientes reales se obtienen en SAC y se agregan en migrate-stock-fix-02.ts
+  //
+  // const rvTentacion = await ensureRecipe("Consumo: Postre Tentacion Bacona", "CONSUMPTION", [...]);
+  // await linkProductToRecipe("Postre Tentacion Bacoña", rvTentacion);
+  //
+  // const rvYogurtina = await ensureRecipe("Consumo: Postre Yogurtina", "CONSUMPTION", [...]);
+  // await linkProductToRecipe("Postre Yogurtina", rvYogurtina);
+  //
+  // const rvFrutos = await ensureRecipe("Consumo: Postre Frutos Secos", "CONSUMPTION", [...]);
+  // await linkProductToRecipe("Postre frutos secos", rvFrutos);
 
   // ─── FASE H: Re-link bondiola y pollo (consumo aprox → item porcion batch) ─
   console.log("\n── FASE H: Re-link batch (bondiola + pollo) ────────────────");
