@@ -445,8 +445,9 @@ const CLIENTES_CC: Array<{ displayName: string; saldoInicialCents: number; planC
   { displayName: "Posco Enc",        saldoInicialCents: 0, planCode: "CORPO1",              billingCycle: "MENSUAL" },
   { displayName: "Posco SAU",        saldoInicialCents: 0, planCode: "CORPO2_CARTA_LIBRE",  billingCycle: "QUINCENAL" },
   { displayName: "Socompa",          saldoInicialCents: 0, planCode: "CORPO2_CARTA_LIBRE",  billingCycle: "QUINCENAL" },
-  { displayName: "Fundación Condor", saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
-  { displayName: "PECOM",            saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
+  { displayName: "Fundación Condor",       saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
+  { displayName: "PECOM",                  saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
+  { displayName: "Grupo SierraDelta SRL",  saldoInicialCents: 0, planCode: "CARTA_LIBRE",         billingCycle: "MENSUAL" },
 ];
 
 // ============================================================

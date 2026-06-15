@@ -10,5 +10,5 @@ export default async function CuentasCorrientesPage() {
   if (role !== "GERENCIA" && role !== "ADMINISTRATIVO") redirect("/");
 
   const accounts = await CuentaCorrienteService.getAccountsWithBillingState();
-  return <CuentasCorrientesClient initialAccounts={accounts} />;
+  return <CuentasCorrientesClient initialAccounts={accounts} role={role} />;
 }

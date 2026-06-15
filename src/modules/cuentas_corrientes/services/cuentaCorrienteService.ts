@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { BillingCycle } from "@prisma/client";
+import { BillingCycle, CcDirectChargeCategory } from "@prisma/client";
 
 export type BillingPeriod = { from: Date; to: Date };
 
@@ -38,6 +38,16 @@ export type UnbilledSale = {
   items: { qty: number; productName: string }[];
 };
 
+export type DirectCharge = {
+  id: string;
+  date: Date;
+  description: string;
+  motive: string;
+  category: CcDirectChargeCategory;
+  amountCents: number;
+  createdAt: Date;
+};
+
 export type InvoiceSummary = {
   id: string;
   periodFrom: Date;
@@ -69,6 +79,7 @@ export type PeriodSummary = {
   period: BillingPeriod;
   isCurrentPeriod: boolean;
   sales: UnbilledSale[];
+  directCharges: DirectCharge[];
   totalConsumptionCents: number;
   invoice: InvoiceSummary | null;
 };
@@ -245,6 +256,9 @@ export class CuentaCorrienteService {
           },
           orderBy: { createdAt: "desc" },
         },
+        directCharges: {
+          orderBy: { date: "desc" },
+        },
       },
       orderBy: { customer: { displayName: "asc" } },
     });
@@ -260,6 +274,16 @@ export class CuentaCorrienteService {
         ccAmountCents: s.payments.reduce((sum, p) => sum + p.amountCents, 0),
         createdAt: s.createdAt,
         items: s.items.map((i) => ({ qty: i.qty, productName: i.product.name })),
+      }));
+
+      const allDirectCharges: DirectCharge[] = acc.directCharges.map((c) => ({
+        id: c.id,
+        date: c.date,
+        description: c.description,
+        motive: c.motive,
+        category: c.category,
+        amountCents: c.amountCents,
+        createdAt: c.createdAt,
       }));
 
       // Construir mapa de facturas por período (key = periodFrom ISO date)
@@ -281,6 +305,12 @@ export class CuentaCorrienteService {
         periodKeys.add(periodKey(p.from));
       }
 
+      // Períodos de cargos directos
+      for (const charge of allDirectCharges) {
+        const p = getPeriodForDate(charge.date, cycle);
+        periodKeys.add(periodKey(p.from));
+      }
+
       // Períodos de facturas
       for (const inv of acc.invoices) {
         periodKeys.add(periodKey(inv.periodFrom));
@@ -297,12 +327,19 @@ export class CuentaCorrienteService {
           const periodSales = allSales.filter(
             (s) => s.createdAt >= period.from && s.createdAt <= period.to
           );
+          const periodCharges = allDirectCharges.filter(
+            (c) => c.date >= period.from && c.date <= period.to
+          );
           const invoice = invoiceByPeriodKey.get(key) ?? null;
+          const totalConsumptionCents =
+            periodSales.reduce((s, x) => s + x.ccAmountCents, 0) +
+            periodCharges.reduce((s, x) => s + x.amountCents, 0);
           return {
             period,
             isCurrentPeriod: key === currentKey,
             sales: periodSales,
-            totalConsumptionCents: periodSales.reduce((s, x) => s + x.ccAmountCents, 0),
+            directCharges: periodCharges,
+            totalConsumptionCents,
             invoice,
           };
         })
@@ -459,10 +496,17 @@ export class CuentaCorrienteService {
       },
     });
 
-    const subtotalCents = sales.reduce(
-      (sum, s) => sum + s.payments.reduce((ps, p) => ps + p.amountCents, 0),
-      0
-    );
+    const directCharges = await prisma.ccDirectCharge.findMany({
+      where: {
+        cuentaCorrienteAccountId: accountId,
+        cuentaCorrienteInvoiceId: null,
+        date: { gte: periodFrom, lte: periodTo },
+      },
+    });
+
+    const subtotalCents =
+      sales.reduce((sum, s) => sum + s.payments.reduce((ps, p) => ps + p.amountCents, 0), 0) +
+      directCharges.reduce((sum, c) => sum + c.amountCents, 0);
 
     const totalAmountCents = calcTotal(
       subtotalCents,
@@ -499,6 +543,13 @@ export class CuentaCorrienteService {
       if (sales.length > 0) {
         await tx.posSale.updateMany({
           where: { id: { in: sales.map((s) => s.id) } },
+          data: { cuentaCorrienteInvoiceId: invoice.id },
+        });
+      }
+
+      if (directCharges.length > 0) {
+        await tx.ccDirectCharge.updateMany({
+          where: { id: { in: directCharges.map((c) => c.id) } },
           data: { cuentaCorrienteInvoiceId: invoice.id },
         });
       }
@@ -588,6 +639,10 @@ export class CuentaCorrienteService {
 
     return prisma.$transaction(async (tx) => {
       await tx.posSale.updateMany({
+        where: { cuentaCorrienteInvoiceId: invoiceId },
+        data: { cuentaCorrienteInvoiceId: null },
+      });
+      await tx.ccDirectCharge.updateMany({
         where: { cuentaCorrienteInvoiceId: invoiceId },
         data: { cuentaCorrienteInvoiceId: null },
       });

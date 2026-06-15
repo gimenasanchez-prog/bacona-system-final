@@ -6,8 +6,10 @@ import type {
   AccountWithBillingState,
   InvoiceSummary,
   PeriodSummary,
+  DirectCharge,
   InvoiceDetail,
 } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
+import { CargosDirectosModal } from "./CargosDirectosModal";
 
 const BANK_WITHHOLDING_RATE = 0.0094;
 const BANK_FEES_RATE = 0.025;
@@ -218,14 +220,25 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
 
 // ─── Consumos Preview Modal ───────────────────────────────────────────────────
 
-function ConsumosPreviewModal({ customerName, period, sales, onClose }: {
+const CHARGE_CATEGORY_LABELS: Record<string, string> = {
+  CONSUMO_OLVIDADO: "Consumo olvidado",
+  SERVICIO_ESPECIAL: "Servicio especial",
+  CORRECCION: "Corrección",
+  OTRO: "Otro",
+};
+
+function ConsumosPreviewModal({ customerName, period, sales, directCharges, onClose }: {
   customerName: string;
   period: { from: Date | string; to: Date | string };
   sales: PeriodSummary["sales"];
+  directCharges: DirectCharge[];
   onClose: () => void;
 }) {
-  const total = sales.reduce((s, x) => s + x.ccAmountCents, 0);
+  const salesTotal = sales.reduce((s, x) => s + x.ccAmountCents, 0);
+  const chargesTotal = directCharges.reduce((s, x) => s + x.amountCents, 0);
+  const total = salesTotal + chargesTotal;
   const periodStr = formatPeriod(period.from, period.to);
+  const isEmpty = sales.length === 0 && directCharges.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -238,7 +251,7 @@ function ConsumosPreviewModal({ customerName, period, sales, onClose }: {
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 text-xl leading-none">×</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-4">
-          {sales.length === 0 ? (
+          {isEmpty ? (
             <p className="text-sm text-neutral-400">Sin consumos en este período.</p>
           ) : (
             <table className="w-full text-sm border-collapse">
@@ -259,6 +272,21 @@ function ConsumosPreviewModal({ customerName, period, sales, onClose }: {
                     <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(sale.ccAmountCents)}</td>
                   </tr>
                 ))}
+                {directCharges.map((charge) => (
+                  <tr key={charge.id} className="bg-amber-50/60">
+                    <td className="py-2 pr-4 text-neutral-600 whitespace-nowrap">{formatDate(charge.date)}</td>
+                    <td className="py-2 pr-4 text-neutral-700">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">
+                          {CHARGE_CATEGORY_LABELS[charge.category] ?? charge.category}
+                        </span>
+                        <span>{charge.description}</span>
+                      </div>
+                      <div className="text-xs text-neutral-400 mt-0.5">Motivo: {charge.motive}</div>
+                    </td>
+                    <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(charge.amountCents)}</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-300">
@@ -270,7 +298,10 @@ function ConsumosPreviewModal({ customerName, period, sales, onClose }: {
           )}
         </div>
         <div className="border-t px-6 py-3 flex justify-between items-center">
-          <p className="text-xs text-neutral-400">{sales.length} venta{sales.length !== 1 ? "s" : ""}</p>
+          <p className="text-xs text-neutral-400">
+            {sales.length} venta{sales.length !== 1 ? "s" : ""}
+            {directCharges.length > 0 && ` · ${directCharges.length} cargo${directCharges.length !== 1 ? "s" : ""} directo${directCharges.length !== 1 ? "s" : ""}`}
+          </p>
           <div className="flex gap-3">
             <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cerrar</button>
             <button onClick={() => printConsumosWindow(customerName, periodStr, sales)} className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900">
@@ -685,6 +716,9 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
             <div className="text-sm font-medium text-neutral-700">{formatPeriod(ps.period.from, ps.period.to)}</div>
             <div className="text-xs text-neutral-400 mt-0.5">
               {formatArsFromCents(ps.totalConsumptionCents)} · {ps.sales.length} venta{ps.sales.length !== 1 ? "s" : ""}
+              {ps.directCharges.length > 0 && (
+                <span className="ml-1 text-amber-600">· {ps.directCharges.length} cargo{ps.directCharges.length !== 1 ? "s" : ""} directo{ps.directCharges.length !== 1 ? "s" : ""}</span>
+              )}
             </div>
           </div>
           <button
@@ -752,6 +786,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
           customerName={customerName}
           period={ps.period}
           sales={ps.sales}
+          directCharges={ps.directCharges}
           onClose={() => setConsumosModal(false)}
         />
       )}
@@ -876,7 +911,7 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
 
 // ─── Main Client Component ────────────────────────────────────────────────────
 
-export default function CuentasCorrientesClient({ initialAccounts }: { initialAccounts: AccountWithBillingState[] }) {
+export default function CuentasCorrientesClient({ initialAccounts, role }: { initialAccounts: AccountWithBillingState[]; role: string }) {
   const [accounts, setAccounts] = useState(initialAccounts);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -901,9 +936,17 @@ export default function CuentasCorrientesClient({ initialAccounts }: { initialAc
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Cuentas Corrientes</h1>
-        <button onClick={refresh} disabled={refreshing} className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
-          {refreshing ? "Actualizando..." : "Actualizar"}
-        </button>
+        <div className="flex items-center gap-3">
+          {(role === "GERENCIA" || role === "ADMINISTRATIVO") && (
+            <CargosDirectosModal
+              accounts={accounts.map((a) => ({ id: a.id, customerName: a.customerName }))}
+              onCreated={refresh}
+            />
+          )}
+          <button onClick={refresh} disabled={refreshing} className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
+            {refreshing ? "Actualizando..." : "Actualizar"}
+          </button>
+        </div>
       </div>
 
       {/* Summary chips */}
