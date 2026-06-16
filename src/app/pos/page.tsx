@@ -340,7 +340,7 @@ export default function PosPage() {
     const configs: Record<string, {
       showSnacks: boolean;
       showBebidas: boolean;
-      corpoFilter: "all" | "corpo1" | "corpo2" | "corpo2_basic";
+      corpoFilter: "all" | "corpo1" | "corpo2" | "corpo2_basic" | "corpo3";
       cartaLibre: boolean;
       capCentsPerPerson: number | null;
     }> = {
@@ -350,6 +350,7 @@ export default function PosPage() {
       CORPO2:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
       CORPO2_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
       CORPO2_CARTA_LIBRE: { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: true,  capCentsPerPerson: null },
+      CORPO_BRUNCH:       { showSnacks: false, showBebidas: false, corpoFilter: "corpo3", cartaLibre: false, capCentsPerPerson: null },
     };
     return configs[selectedPlanCode] ?? null;
   }, [selectedPlanCode]);
@@ -745,6 +746,7 @@ export default function PosPage() {
                 if (corpoFilter === "corpo2") return pname.includes("corpo 2");
                 if (corpoFilter === "corpo2_basic")
                   return pname.includes("corpo 2") && (pname.includes("snack") || pname.includes("brunch"));
+                if (corpoFilter === "corpo3") return pname.includes("corpo 3");
                 return true;
               })
               .sort((a, b) => {

@@ -130,6 +130,8 @@ const MODIFIER_GROUPS: Array<{
       "Corpo 2 - Snack c/ bebida",
       "Corpo 2 - Brunch c/ bebida y postre",
       "Corpo 2 - Appetite c/ bebida y postre",
+      "Corpo 3 - Brunch c/ bebida",
+      "Corpo 3 - Brunch Supervisor c/ bebida",
     ],
   },
   {
@@ -232,6 +234,34 @@ const MODIFIER_GROUPS: Array<{
       { name: "Wok de ternera",                          priceDeltaCents: 0 },
     ],
     appliedTo: ["Corpo 2 - Appetite c/ bebida y postre"],
+  },
+  {
+    name: "Plato Brunch HY",
+    minSelect: 1, maxSelect: 1,
+    options: [
+      { name: "Medialuna x3",                             priceDeltaCents: 0 },
+      { name: "Churro x2",                                priceDeltaCents: 0 },
+      { name: "Miguelitos x4",                            priceDeltaCents: 0 },
+      { name: "Sándwich de miga jamón y queso x2",        priceDeltaCents: 0 },
+      { name: "Sándwich de miga huevo, jamón y queso x2", priceDeltaCents: 0 },
+      { name: "Chip de Jamón y Queso x4",                 priceDeltaCents: 0 },
+      { name: "Megacito",                                  priceDeltaCents: 0 },
+      { name: "Patitas de pollo x6un con papas rústicas", priceDeltaCents: 0 },
+      { name: "Pizza individual",                          priceDeltaCents: 0 },
+      { name: "Huevos BCÑ",                               priceDeltaCents: 0 },
+      { name: "Huevos duros x3 con salsa tereyaki",       priceDeltaCents: 0 },
+      { name: "Sopa c/ focaccia",                         priceDeltaCents: 0 },
+      { name: "Mix empanadas x5",                         priceDeltaCents: 0 },
+    ],
+    appliedTo: ["Corpo 3 - Brunch c/ bebida"],
+  },
+  {
+    name: "Plato Brunch Supervisor",
+    minSelect: 1, maxSelect: 1,
+    options: [
+      { name: "Ramen", priceDeltaCents: 0 },
+    ],
+    appliedTo: ["Corpo 3 - Brunch Supervisor c/ bebida"],
   },
   {
     name: "¿Le sumamos Bollo o Medialuna por $1500? o Chips o Miguelitos por $2.500?",
@@ -427,6 +457,8 @@ const CATALOGO: Array<{
       { name: "Corpo 2 - Snack c/ bebida",             priceCents: 690000  },
       { name: "Corpo 2 - Brunch c/ bebida y postre",   priceCents: 920000  },
       { name: "Corpo 2 - Appetite c/ bebida y postre", priceCents: 1550000 },
+      { name: "Corpo 3 - Brunch c/ bebida",            priceCents: 820000  },
+      { name: "Corpo 3 - Brunch Supervisor c/ bebida", priceCents: 820000  },
     ],
   },
 ];
@@ -448,6 +480,7 @@ const CLIENTES_CC: Array<{ displayName: string; saldoInicialCents: number; planC
   { displayName: "Fundación Condor",       saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
   { displayName: "PECOM",                  saldoInicialCents: 0, planCode: "CORPO2_SNACKS",       billingCycle: "QUINCENAL" },
   { displayName: "Grupo SierraDelta SRL",  saldoInicialCents: 0, planCode: "CARTA_LIBRE",         billingCycle: "MENSUAL" },
+  { displayName: "HY Ingenieria SAU",      saldoInicialCents: 0, planCode: "CORPO_BRUNCH",         billingCycle: "MENSUAL" },
 ];
 
 // ============================================================
@@ -468,6 +501,7 @@ async function main() {
   await prisma.posSaleItemModifier.deleteMany();
   await prisma.posSaleItem.deleteMany();
   await prisma.posPayment.deleteMany();
+  await prisma.ccDirectCharge.deleteMany();
   await prisma.cuentaCorrienteInvoice.deleteMany();
   await prisma.posSale.deleteMany();
   await prisma.productModifierGroup.deleteMany();
