@@ -36,7 +36,7 @@ export type UnbilledSale = {
   ccAmountCents: number;
   createdAt: Date;
   comandaNumber: string | null;
-  items: { qty: number; productName: string }[];
+  items: { qty: number; productName: string; modifiers: string[] }[];
 };
 
 export type DirectCharge = {
@@ -110,12 +110,8 @@ export type CreateInvoiceParams = {
   ivaExento: boolean;
   ivaDiscriminado: boolean;
   ivaAmountCents: number;
-  bankWithholdingCents: number;
-  bankFeesCents: number;
-  ivaRetentionCents: number;
-  gananciasRetentionCents: number;
-  rentasRetentionCents: number;
   notes?: string;
+  digitalInvoiceUrl?: string | null;
 };
 
 export type InvoiceDetail = {
@@ -154,7 +150,7 @@ export type InvoiceDetail = {
     createdAt: Date;
     totalCents: number;
     ccAmountCents: number;
-    items: { qty: number; productName: string; unitPriceCents: number; lineTotalCents: number }[];
+    items: { qty: number; productName: string; unitPriceCents: number; lineTotalCents: number; modifiers: string[] }[];
   }[];
 };
 
@@ -250,7 +246,13 @@ export class CuentaCorrienteService {
         sales: {
           where: { status: { in: ["CONFIRMED", "PAID"] } },
           include: {
-            items: { select: { qty: true, product: { select: { name: true } } } },
+            items: {
+              select: {
+                qty: true,
+                product: { select: { name: true } },
+                modifiers: { include: { modifierOption: { select: { name: true } } } },
+              },
+            },
             payments: {
               where: { method: "CUENTA_CORRIENTE" },
               select: { amountCents: true },
@@ -276,7 +278,11 @@ export class CuentaCorrienteService {
         ccAmountCents: s.payments.reduce((sum, p) => sum + p.amountCents, 0),
         createdAt: s.createdAt,
         comandaNumber: s.comandaNumber,
-        items: s.items.map((i) => ({ qty: i.qty, productName: i.product.name })),
+        items: s.items.map((i) => ({
+          qty: i.qty,
+          productName: i.product.name,
+          modifiers: i.modifiers.map((m) => m.modifierOption.name),
+        })),
       }));
 
       const allDirectCharges: DirectCharge[] = acc.directCharges.map((c) => ({
@@ -412,6 +418,7 @@ export class CuentaCorrienteService {
                 unitPriceCents: true,
                 lineTotalCents: true,
                 product: { select: { name: true } },
+                modifiers: { include: { modifierOption: { select: { name: true } } } },
               },
             },
             payments: {
@@ -465,6 +472,7 @@ export class CuentaCorrienteService {
           productName: i.product.name,
           unitPriceCents: i.unitPriceCents,
           lineTotalCents: i.lineTotalCents,
+          modifiers: i.modifiers.map((m) => m.modifierOption.name),
         })),
       })),
     };
@@ -512,15 +520,7 @@ export class CuentaCorrienteService {
       sales.reduce((sum, s) => sum + s.payments.reduce((ps, p) => ps + p.amountCents, 0), 0) +
       directCharges.reduce((sum, c) => sum + c.amountCents, 0);
 
-    const totalAmountCents = calcTotal(
-      subtotalCents,
-      params.ivaAmountCents,
-      params.bankWithholdingCents,
-      params.bankFeesCents,
-      params.ivaRetentionCents,
-      params.gananciasRetentionCents,
-      params.rentasRetentionCents
-    );
+    const totalAmountCents = subtotalCents;
 
     return prisma.$transaction(async (tx) => {
       const invoice = await tx.cuentaCorrienteInvoice.create({
@@ -534,13 +534,9 @@ export class CuentaCorrienteService {
           ivaExento: params.ivaExento,
           ivaDiscriminado: params.ivaDiscriminado,
           ivaAmountCents: params.ivaAmountCents,
-          bankWithholdingCents: params.bankWithholdingCents,
-          bankFeesCents: params.bankFeesCents,
-          ivaRetentionCents: params.ivaRetentionCents,
-          gananciasRetentionCents: params.gananciasRetentionCents,
-          rentasRetentionCents: params.rentasRetentionCents,
           totalAmountCents,
           notes: params.notes ?? null,
+          digitalInvoiceUrl: params.digitalInvoiceUrl ?? null,
         },
       });
 
@@ -564,7 +560,16 @@ export class CuentaCorrienteService {
 
   static async recordPayment(
     invoiceId: string,
-    params: { paidAmountCents: number; paymentDate: Date; paymentReference?: string }
+    params: {
+      paidAmountCents: number;
+      paymentDate: Date;
+      paymentReference?: string;
+      bankWithholdingCents?: number;
+      bankFeesCents?: number;
+      ivaRetentionCents?: number;
+      gananciasRetentionCents?: number;
+      rentasRetentionCents?: number;
+    }
   ) {
     return prisma.cuentaCorrienteInvoice.update({
       where: { id: invoiceId },
@@ -572,6 +577,11 @@ export class CuentaCorrienteService {
         paidAmountCents: params.paidAmountCents,
         paymentDate: params.paymentDate,
         paymentReference: params.paymentReference ?? null,
+        ...(params.bankWithholdingCents !== undefined && { bankWithholdingCents: params.bankWithholdingCents }),
+        ...(params.bankFeesCents !== undefined && { bankFeesCents: params.bankFeesCents }),
+        ...(params.ivaRetentionCents !== undefined && { ivaRetentionCents: params.ivaRetentionCents }),
+        ...(params.gananciasRetentionCents !== undefined && { gananciasRetentionCents: params.gananciasRetentionCents }),
+        ...(params.rentasRetentionCents !== undefined && { rentasRetentionCents: params.rentasRetentionCents }),
       },
     });
   }
@@ -610,22 +620,7 @@ export class CuentaCorrienteService {
       where: { id: invoiceId },
     });
 
-    const bankWithholdingCents = data.bankWithholdingCents ?? current.bankWithholdingCents;
-    const bankFeesCents = data.bankFeesCents ?? current.bankFeesCents;
-    const ivaAmountCents = data.ivaAmountCents ?? current.ivaAmountCents;
-    const ivaRetentionCents = data.ivaRetentionCents ?? current.ivaRetentionCents;
-    const gananciasRetentionCents = data.gananciasRetentionCents ?? current.gananciasRetentionCents;
-    const rentasRetentionCents = data.rentasRetentionCents ?? current.rentasRetentionCents;
-
-    const totalAmountCents = calcTotal(
-      current.subtotalCents,
-      ivaAmountCents,
-      bankWithholdingCents,
-      bankFeesCents,
-      ivaRetentionCents,
-      gananciasRetentionCents,
-      rentasRetentionCents
-    );
+    const totalAmountCents = current.subtotalCents;
 
     return prisma.cuentaCorrienteInvoice.update({
       where: { id: invoiceId },

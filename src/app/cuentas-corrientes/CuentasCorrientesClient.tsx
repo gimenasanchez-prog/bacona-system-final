@@ -40,7 +40,10 @@ function printConsumosWindow(customerName: string, period: string, sales: Period
       (s) =>
         `<tr>
           <td>${formatDate(s.createdAt)}</td>
-          <td>${s.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") || "Consumo"}</td>
+          <td>${s.items.map((i) => {
+            const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
+            return `${i.qty}× ${i.productName}${mods}`;
+          }).join(", ") || "Consumo"}</td>
           <td>${s.comandaNumber ? `#${s.comandaNumber}` : ""}</td>
           <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}</td>
         </tr>`
@@ -89,7 +92,10 @@ function printInvoiceDetailWindow(detail: InvoiceDetail) {
       (s) =>
         `<tr>
           <td>${formatDate(s.createdAt)}</td>
-          <td>${s.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") || "Consumo"}</td>
+          <td>${s.items.map((i) => {
+            const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
+            return `${i.qty}× ${i.productName}${mods}`;
+          }).join(", ") || "Consumo"}</td>
           <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}</td>
         </tr>`
     )
@@ -118,7 +124,7 @@ function printInvoiceDetailWindow(detail: InvoiceDetail) {
     </table>
     <div class="totales">
       <div class="totales-row"><span>Subtotal</span><span>${formatArsFromCents(inv.subtotalCents)}</span></div>
-      ${inv.ivaAmountCents > 0 ? `<div class="totales-row"><span>IVA discriminado</span><span>+ ${formatArsFromCents(inv.ivaAmountCents)}</span></div>` : ""}
+      ${inv.ivaAmountCents > 0 ? `<div class="totales-row"><span>del cual IVA discriminado</span><span>${formatArsFromCents(inv.ivaAmountCents)}</span></div>` : ""}
       ${inv.bankWithholdingCents > 0 ? `<div class="totales-row"><span>Ret. bancaria</span><span>− ${formatArsFromCents(inv.bankWithholdingCents)}</span></div>` : ""}
       ${inv.bankFeesCents > 0 ? `<div class="totales-row"><span>Comisión bancaria</span><span>− ${formatArsFromCents(inv.bankFeesCents)}</span></div>` : ""}
       ${inv.ivaRetentionCents > 0 ? `<div class="totales-row"><span>Ret. IVA</span><span>− ${formatArsFromCents(inv.ivaRetentionCents)}</span></div>` : ""}
@@ -181,7 +187,12 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
                         <div className="text-xs text-neutral-600 space-y-0.5">
                           {sale.items.map((item, idx) => (
                             <div key={idx} className="flex justify-between">
-                              <span>{item.qty}× {item.productName}</span>
+                              <span>
+                                {item.qty}× {item.productName}
+                                {item.modifiers.length > 0 && (
+                                  <span className="text-neutral-400 ml-1">({item.modifiers.join(", ")})</span>
+                                )}
+                              </span>
                               <span>{formatArsFromCents(item.lineTotalCents)}</span>
                             </div>
                           ))}
@@ -321,7 +332,12 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                   <tr key={sale.id}>
                     <td className="py-2 pr-4 text-neutral-600 whitespace-nowrap">{formatDate(sale.createdAt)}</td>
                     <td className="py-2 pr-4 text-neutral-700">
-                      {sale.items.length > 0 ? sale.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") : "Consumo"}
+                      {sale.items.length > 0
+                        ? sale.items.map((i) => {
+                            const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
+                            return `${i.qty}× ${i.productName}${mods}`;
+                          }).join(", ")
+                        : "Consumo"}
                     </td>
                     <td className="py-2 pr-4">
                       {sale.comandaNumber
@@ -383,11 +399,28 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
 // ─── Record Payment Modal ─────────────────────────────────────────────────────
 
 function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceSummary; onClose: () => void; onSuccess: () => void }) {
-  const [amountArs, setAmountArs] = useState((invoice.totalAmountCents / 100).toFixed(2));
+  const [ivaRetentionArs, setIvaRetentionArs] = useState("0.00");
+  const [gananciasRetentionArs, setGananciasRetentionArs] = useState("0.00");
+  const [rentasRetentionArs, setRentasRetentionArs] = useState("0.00");
+  const [bankWithholdingArs, setBankWithholdingArs] = useState((Math.round(invoice.totalAmountCents * BANK_WITHHOLDING_RATE) / 100).toFixed(2));
+  const [bankFeesArs, setBankFeesArs] = useState((Math.round(invoice.totalAmountCents * BANK_FEES_RATE) / 100).toFixed(2));
   const [paymentDate, setPaymentDate] = useState(toDateInputValue(new Date()));
   const [reference, setReference] = useState(invoice.paymentReference ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const ivaRetentionCents = ars(ivaRetentionArs);
+  const gananciasRetentionCents = ars(gananciasRetentionArs);
+  const rentasRetentionCents = ars(rentasRetentionArs);
+  const bankWithholdingCents = ars(bankWithholdingArs);
+  const bankFeesCents = ars(bankFeesArs);
+  const netoCents = invoice.totalAmountCents - ivaRetentionCents - gananciasRetentionCents - rentasRetentionCents - bankWithholdingCents - bankFeesCents;
+
+  const [amountArs, setAmountArs] = useState("");
+  const [amountManual, setAmountManual] = useState(false);
+
+  const displayedAmountArs = amountManual ? amountArs : (netoCents / 100).toFixed(2);
+  const paidAmountCents = amountManual ? ars(amountArs) : netoCents;
 
   async function handleSubmit() {
     setLoading(true);
@@ -398,9 +431,14 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "recordPayment",
-          paidAmountCents: Math.round(parseFloat(amountArs || "0") * 100),
+          paidAmountCents,
           paymentDate: new Date(paymentDate + "T12:00:00.000Z").toISOString(),
           paymentReference: reference || undefined,
+          bankWithholdingCents,
+          bankFeesCents,
+          ivaRetentionCents,
+          gananciasRetentionCents,
+          rentasRetentionCents,
         }),
       });
       const data = await res.json();
@@ -415,13 +453,55 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl p-6 space-y-4">
-        <div className="font-semibold text-neutral-800">Registrar pago recibido</div>
-        <div className="text-xs text-neutral-400">Período {formatPeriod(invoice.periodFrom, invoice.periodTo)} · Total {formatArsFromCents(invoice.totalAmountCents)}</div>
-        <div className="space-y-3">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+        <div className="border-b px-6 py-4">
+          <div className="font-semibold text-neutral-800">Registrar pago recibido</div>
+          <div className="text-xs text-neutral-400 mt-0.5">Período {formatPeriod(invoice.periodFrom, invoice.periodTo)} · Factura {formatArsFromCents(invoice.totalAmountCents)}</div>
+        </div>
+        <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
           <div>
-            <label className="block text-xs font-medium text-neutral-500 mb-1">Monto recibido ($)</label>
-            <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Retenciones impositivas (cliente)</div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">IVA ($)</label>
+                <input type="number" min="0" step="0.01" value={ivaRetentionArs} onChange={(e) => { setIvaRetentionArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">Ganancias ($)</label>
+                <input type="number" min="0" step="0.01" value={gananciasRetentionArs} onChange={(e) => { setGananciasRetentionArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">Rentas ($)</label>
+                <input type="number" min="0" step="0.01" value={rentasRetentionArs} onChange={(e) => { setRentasRetentionArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Gastos bancarios</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">Ret. bancaria (0.94%)</label>
+                <input type="number" min="0" step="0.01" value={bankWithholdingArs} onChange={(e) => { setBankWithholdingArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">Comisión bancaria (2.5%)</label>
+                <input type="number" min="0" step="0.01" value={bankFeesArs} onChange={(e) => { setBankFeesArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-lg bg-neutral-50 px-4 py-3 text-sm space-y-1">
+            <div className="flex justify-between text-neutral-600"><span>Total factura</span><span>{formatArsFromCents(invoice.totalAmountCents)}</span></div>
+            {(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents) > 0 && (
+              <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. impositivas</span><span>{formatArsFromCents(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents)}</span></div>
+            )}
+            {(bankWithholdingCents + bankFeesCents) > 0 && (
+              <div className="flex justify-between text-neutral-500 text-xs"><span>− Gastos bancarios</span><span>{formatArsFromCents(bankWithholdingCents + bankFeesCents)}</span></div>
+            )}
+            <div className="flex justify-between text-neutral-500 text-xs border-t border-neutral-200 pt-1 mt-1"><span>Neto estimado</span><span>{formatArsFromCents(netoCents)}</span></div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Monto recibido ($) <span className="text-neutral-400">(editable si difiere del neto estimado)</span></label>
+            <input type="number" min="0" step="0.01" value={displayedAmountArs} onChange={(e) => { setAmountArs(e.target.value); setAmountManual(true); }} className="w-full rounded border px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha de pago</label>
@@ -431,9 +511,9 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
             <label className="block text-xs font-medium text-neutral-500 mb-1">Referencia bancaria <span className="text-neutral-400">(opcional)</span></label>
             <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Nro. de transferencia..." className="w-full rounded border px-3 py-2 text-sm" />
           </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <div className="flex justify-end gap-3">
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
           <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
           <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {loading ? "Guardando..." : "Registrar pago"}
@@ -446,13 +526,16 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
 
 // ─── Ingresar Factura Modal ───────────────────────────────────────────────────
 
-function IngresarFacturaModal({ accountId, customerName, period, sales, onClose, onSuccess }: {
+function IngresarFacturaModal({ accountId, customerName, period, sales, directCharges, onClose, onSuccess }: {
   accountId: string; customerName: string;
   period: { from: Date | string; to: Date | string };
   sales: PeriodSummary["sales"];
+  directCharges: DirectCharge[];
   onClose: () => void; onSuccess: () => void;
 }) {
-  const subtotalCents = sales.reduce((sum, s) => sum + s.ccAmountCents, 0);
+  const subtotalCents =
+    sales.reduce((sum, s) => sum + s.ccAmountCents, 0) +
+    directCharges.reduce((sum, c) => sum + c.amountCents, 0);
   const defaultPaymentDate = new Date();
   defaultPaymentDate.setDate(defaultPaymentDate.getDate() + 30);
 
@@ -462,29 +545,18 @@ function IngresarFacturaModal({ accountId, customerName, period, sales, onClose,
   const [estimatedPaymentDate, setEstimatedPaymentDate] = useState(toDateInputValue(defaultPaymentDate));
   const [ivaExento, setIvaExento] = useState(true);
   const [ivaDiscriminado, setIvaDiscriminado] = useState(false);
-  const [ivaAmountCents, setIvaAmountCents] = useState(0);
-  const [bankWithholdingArs, setBankWithholdingArs] = useState((Math.round(subtotalCents * BANK_WITHHOLDING_RATE) / 100).toFixed(2));
-  const [bankFeesArs, setBankFeesArs] = useState((Math.round(subtotalCents * BANK_FEES_RATE) / 100).toFixed(2));
-  const [ivaRetentionArs, setIvaRetentionArs] = useState("0.00");
-  const [gananciasRetentionArs, setGananciasRetentionArs] = useState("0.00");
-  const [rentasRetentionArs, setRentasRetentionArs] = useState("0.00");
+  const [ivaAmountArs, setIvaAmountArs] = useState("0.00");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const bankWithholdingCents = ars(bankWithholdingArs);
-  const bankFeesCents = ars(bankFeesArs);
-  const ivaRetentionCents = ars(ivaRetentionArs);
-  const gananciasRetentionCents = ars(gananciasRetentionArs);
-  const rentasRetentionCents = ars(rentasRetentionArs);
-  const totalAmountCents =
-    subtotalCents + ivaAmountCents -
-    bankWithholdingCents - bankFeesCents -
-    ivaRetentionCents - gananciasRetentionCents - rentasRetentionCents;
+  const ivaAmountCents = ars(ivaAmountArs);
+  const totalAmountCents = subtotalCents;
 
   async function handleSubmit() {
     setLoading(true);
     setError(null);
+
     try {
       const res = await fetch(`/api/cuentas-corrientes/${accountId}/invoices`, {
         method: "POST",
@@ -496,8 +568,6 @@ function IngresarFacturaModal({ accountId, customerName, period, sales, onClose,
           arcaFacturaNumber: arcaFacturaNumber || undefined,
           ivaExento, ivaDiscriminado: ivaExento ? false : ivaDiscriminado,
           ivaAmountCents: ivaExento ? 0 : ivaAmountCents,
-          bankWithholdingCents, bankFeesCents,
-          ivaRetentionCents, gananciasRetentionCents, rentasRetentionCents,
           notes: notes || undefined,
         }),
       });
@@ -539,16 +609,28 @@ function IngresarFacturaModal({ accountId, customerName, period, sales, onClose,
           </div>
           <div className="rounded-lg bg-neutral-50 px-4 py-3 space-y-1.5 text-sm">
             <div className="flex justify-between font-medium text-neutral-700">
-              <span>{sales.length} ventas en el período</span>
+              <span>
+                {sales.length} venta{sales.length !== 1 ? "s" : ""}
+                {directCharges.length > 0 && ` · ${directCharges.length} cargo${directCharges.length !== 1 ? "s" : ""} directo${directCharges.length !== 1 ? "s" : ""}`}
+              </span>
               <span>{formatArsFromCents(subtotalCents)}</span>
             </div>
-            {sales.slice(0, 5).map((s) => (
+            {sales.slice(0, 4).map((s) => (
               <div key={s.id} className="flex justify-between text-xs text-neutral-400">
-                <span>{formatDate(s.createdAt)} · {s.items.map((i) => `${i.qty}× ${i.productName}`).join(", ") || "Venta"}</span>
+                <span>{formatDate(s.createdAt)} · {s.items.map((i) => {
+                  const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
+                  return `${i.qty}× ${i.productName}${mods}`;
+                }).join(", ") || "Venta"}</span>
                 <span>{formatArsFromCents(s.ccAmountCents)}</span>
               </div>
             ))}
-            {sales.length > 5 && <div className="text-xs text-neutral-400">+ {sales.length - 5} más...</div>}
+            {sales.length > 4 && <div className="text-xs text-neutral-400">+ {sales.length - 4} ventas más...</div>}
+            {directCharges.map((c) => (
+              <div key={c.id} className="flex justify-between text-xs text-amber-700 bg-amber-50/80 rounded px-1 py-0.5">
+                <span>{formatDate(c.date)} · {CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — {c.description}</span>
+                <span>{formatArsFromCents(c.amountCents)}</span>
+              </div>
+            ))}
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -564,51 +646,16 @@ function IngresarFacturaModal({ accountId, customerName, period, sales, onClose,
                 {ivaDiscriminado && (
                   <div>
                     <label className="block text-xs font-medium text-neutral-500 mb-1">Monto IVA ($)</label>
-                    <input type="number" min="0" step="0.01" value={(ivaAmountCents / 100).toFixed(2)} onChange={(e) => setIvaAmountCents(Math.round(parseFloat(e.target.value || "0") * 100))} className="w-full rounded border px-3 py-2 text-sm" />
+                    <input type="number" min="0" step="0.01" value={ivaAmountArs} onChange={(e) => setIvaAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
                   </div>
                 )}
               </div>
             )}
           </div>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Retenciones bancarias</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">Ret. bancaria (0.94%)</label>
-                <input type="number" min="0" step="0.01" value={bankWithholdingArs} onChange={(e) => setBankWithholdingArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">Comisión bancaria (2.5%)</label>
-                <input type="number" min="0" step="0.01" value={bankFeesArs} onChange={(e) => setBankFeesArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Retenciones impositivas</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">IVA ($)</label>
-                <input type="number" min="0" step="0.01" value={ivaRetentionArs} onChange={(e) => setIvaRetentionArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">Ganancias ($)</label>
-                <input type="number" min="0" step="0.01" value={gananciasRetentionArs} onChange={(e) => setGananciasRetentionArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">Rentas ($)</label>
-                <input type="number" min="0" step="0.01" value={rentasRetentionArs} onChange={(e) => setRentasRetentionArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-            </div>
-          </div>
           <div className="rounded-lg bg-blue-50 px-4 py-3 text-sm space-y-1">
             <div className="flex justify-between text-neutral-600"><span>Subtotal</span><span>{formatArsFromCents(subtotalCents)}</span></div>
-            {ivaAmountCents > 0 && <div className="flex justify-between text-neutral-600"><span>+ IVA discriminado</span><span>{formatArsFromCents(ivaAmountCents)}</span></div>}
-            {bankWithholdingCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. bancaria</span><span>{formatArsFromCents(bankWithholdingCents)}</span></div>}
-            {bankFeesCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>− Comisión bancaria</span><span>{formatArsFromCents(bankFeesCents)}</span></div>}
-            {ivaRetentionCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. IVA</span><span>{formatArsFromCents(ivaRetentionCents)}</span></div>}
-            {gananciasRetentionCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. Ganancias</span><span>{formatArsFromCents(gananciasRetentionCents)}</span></div>}
-            {rentasRetentionCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. Rentas</span><span>{formatArsFromCents(rentasRetentionCents)}</span></div>}
-            <div className="flex justify-between font-semibold text-blue-800 border-t border-blue-200 pt-2 mt-1"><span>Neto esperado a cobrar</span><span>{formatArsFromCents(totalAmountCents)}</span></div>
+            {ivaAmountCents > 0 && <div className="flex justify-between text-neutral-500 text-xs"><span>del cual IVA discriminado</span><span>{formatArsFromCents(ivaAmountCents)}</span></div>}
+            <div className="flex justify-between font-semibold text-blue-800 border-t border-blue-200 pt-2 mt-1"><span>Total factura</span><span>{formatArsFromCents(totalAmountCents)}</span></div>
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Notas (opcional)</label>
@@ -863,6 +910,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
           customerName={customerName}
           period={ps.period}
           sales={ps.sales}
+          directCharges={ps.directCharges}
           onClose={() => setIngresarModal(false)}
           onSuccess={() => { setIngresarModal(false); onRefresh(); }}
         />
