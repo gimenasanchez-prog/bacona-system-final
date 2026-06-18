@@ -10,12 +10,8 @@ const CreateInvoiceSchema = z.object({
   ivaExento: z.boolean(),
   ivaDiscriminado: z.boolean(),
   ivaAmountCents: z.number().int().min(0),
-  bankWithholdingCents: z.number().int().min(0),
-  bankFeesCents: z.number().int().min(0),
-  ivaRetentionCents: z.number().int().min(0),
-  gananciasRetentionCents: z.number().int().min(0),
-  rentasRetentionCents: z.number().int().min(0),
   notes: z.string().optional(),
+  digitalInvoiceUrl: z.string().url().nullable().optional(),
 });
 
 export async function POST(
@@ -40,12 +36,8 @@ export async function POST(
       ivaExento: d.ivaExento,
       ivaDiscriminado: d.ivaDiscriminado,
       ivaAmountCents: d.ivaAmountCents,
-      bankWithholdingCents: d.bankWithholdingCents,
-      bankFeesCents: d.bankFeesCents,
-      ivaRetentionCents: d.ivaRetentionCents,
-      gananciasRetentionCents: d.gananciasRetentionCents,
-      rentasRetentionCents: d.rentasRetentionCents,
       notes: d.notes,
+      digitalInvoiceUrl: d.digitalInvoiceUrl ?? null,
     });
 
     return NextResponse.json(invoice, { status: 201 });

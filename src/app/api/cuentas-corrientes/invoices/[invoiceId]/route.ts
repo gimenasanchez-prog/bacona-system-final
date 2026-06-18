@@ -9,6 +9,11 @@ const UpdateInvoiceSchema = z.discriminatedUnion("action", [
     paidAmountCents: z.number().int().min(0),
     paymentDate: z.string().datetime(),
     paymentReference: z.string().optional(),
+    bankWithholdingCents: z.number().int().min(0).optional(),
+    bankFeesCents: z.number().int().min(0).optional(),
+    ivaRetentionCents: z.number().int().min(0).optional(),
+    gananciasRetentionCents: z.number().int().min(0).optional(),
+    rentasRetentionCents: z.number().int().min(0).optional(),
   }),
   z.object({
     action: z.literal("update"),
@@ -60,10 +65,16 @@ export async function PATCH(
     }
 
     if (parsed.data.action === "recordPayment") {
+      const d = parsed.data;
       const updated = await CuentaCorrienteService.recordPayment(invoiceId, {
-        paidAmountCents: parsed.data.paidAmountCents,
-        paymentDate: new Date(parsed.data.paymentDate),
-        paymentReference: parsed.data.paymentReference,
+        paidAmountCents: d.paidAmountCents,
+        paymentDate: new Date(d.paymentDate),
+        paymentReference: d.paymentReference,
+        bankWithholdingCents: d.bankWithholdingCents,
+        bankFeesCents: d.bankFeesCents,
+        ivaRetentionCents: d.ivaRetentionCents,
+        gananciasRetentionCents: d.gananciasRetentionCents,
+        rentasRetentionCents: d.rentasRetentionCents,
       });
       return NextResponse.json(updated);
     }
