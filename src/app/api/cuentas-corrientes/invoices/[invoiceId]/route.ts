@@ -14,6 +14,8 @@ const UpdateInvoiceSchema = z.discriminatedUnion("action", [
     ivaRetentionCents: z.number().int().min(0).optional(),
     gananciasRetentionCents: z.number().int().min(0).optional(),
     rentasRetentionCents: z.number().int().min(0).optional(),
+    sussRetentionCents: z.number().int().min(0).optional(),
+    tisshRetentionCents: z.number().int().min(0).optional(),
   }),
   z.object({
     action: z.literal("update"),
@@ -75,6 +77,8 @@ export async function PATCH(
         ivaRetentionCents: d.ivaRetentionCents,
         gananciasRetentionCents: d.gananciasRetentionCents,
         rentasRetentionCents: d.rentasRetentionCents,
+        sussRetentionCents: d.sussRetentionCents,
+        tisshRetentionCents: d.tisshRetentionCents,
       });
       return NextResponse.json(updated);
     }

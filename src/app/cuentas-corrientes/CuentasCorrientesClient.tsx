@@ -402,6 +402,8 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
   const [ivaRetentionArs, setIvaRetentionArs] = useState("0.00");
   const [gananciasRetentionArs, setGananciasRetentionArs] = useState("0.00");
   const [rentasRetentionArs, setRentasRetentionArs] = useState("0.00");
+  const [sussRetentionArs, setSussRetentionArs] = useState("0.00");
+  const [tisshRetentionArs, setTisshRetentionArs] = useState("0.00");
   const [bankWithholdingArs, setBankWithholdingArs] = useState((Math.round(invoice.totalAmountCents * BANK_WITHHOLDING_RATE) / 100).toFixed(2));
   const [bankFeesArs, setBankFeesArs] = useState((Math.round(invoice.totalAmountCents * BANK_FEES_RATE) / 100).toFixed(2));
   const [paymentDate, setPaymentDate] = useState(toDateInputValue(new Date()));
@@ -412,9 +414,11 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
   const ivaRetentionCents = ars(ivaRetentionArs);
   const gananciasRetentionCents = ars(gananciasRetentionArs);
   const rentasRetentionCents = ars(rentasRetentionArs);
+  const sussRetentionCents = ars(sussRetentionArs);
+  const tisshRetentionCents = ars(tisshRetentionArs);
   const bankWithholdingCents = ars(bankWithholdingArs);
   const bankFeesCents = ars(bankFeesArs);
-  const netoCents = invoice.totalAmountCents - ivaRetentionCents - gananciasRetentionCents - rentasRetentionCents - bankWithholdingCents - bankFeesCents;
+  const netoCents = invoice.totalAmountCents - ivaRetentionCents - gananciasRetentionCents - rentasRetentionCents - sussRetentionCents - tisshRetentionCents - bankWithholdingCents - bankFeesCents;
 
   const [amountArs, setAmountArs] = useState("");
   const [amountManual, setAmountManual] = useState(false);
@@ -439,6 +443,8 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
           ivaRetentionCents,
           gananciasRetentionCents,
           rentasRetentionCents,
+          sussRetentionCents,
+          tisshRetentionCents,
         }),
       });
       const data = await res.json();
@@ -475,6 +481,16 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
                 <input type="number" min="0" step="0.01" value={rentasRetentionArs} onChange={(e) => { setRentasRetentionArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">SUSS ($)</label>
+                <input type="number" min="0" step="0.01" value={sussRetentionArs} onChange={(e) => { setSussRetentionArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">TISSH SAC ($)</label>
+                <input type="number" min="0" step="0.01" value={tisshRetentionArs} onChange={(e) => { setTisshRetentionArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+            </div>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Gastos bancarios</div>
@@ -491,8 +507,8 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
           </div>
           <div className="rounded-lg bg-neutral-50 px-4 py-3 text-sm space-y-1">
             <div className="flex justify-between text-neutral-600"><span>Total factura</span><span>{formatArsFromCents(invoice.totalAmountCents)}</span></div>
-            {(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents) > 0 && (
-              <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. impositivas</span><span>{formatArsFromCents(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents)}</span></div>
+            {(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents + sussRetentionCents + tisshRetentionCents) > 0 && (
+              <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. impositivas</span><span>{formatArsFromCents(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents + sussRetentionCents + tisshRetentionCents)}</span></div>
             )}
             {(bankWithholdingCents + bankFeesCents) > 0 && (
               <div className="flex justify-between text-neutral-500 text-xs"><span>− Gastos bancarios</span><span>{formatArsFromCents(bankWithholdingCents + bankFeesCents)}</span></div>

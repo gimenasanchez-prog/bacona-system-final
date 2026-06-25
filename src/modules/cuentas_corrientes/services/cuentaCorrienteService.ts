@@ -569,6 +569,8 @@ export class CuentaCorrienteService {
       ivaRetentionCents?: number;
       gananciasRetentionCents?: number;
       rentasRetentionCents?: number;
+      sussRetentionCents?: number;
+      tisshRetentionCents?: number;
     }
   ) {
     return prisma.cuentaCorrienteInvoice.update({
@@ -582,6 +584,8 @@ export class CuentaCorrienteService {
         ...(params.ivaRetentionCents !== undefined && { ivaRetentionCents: params.ivaRetentionCents }),
         ...(params.gananciasRetentionCents !== undefined && { gananciasRetentionCents: params.gananciasRetentionCents }),
         ...(params.rentasRetentionCents !== undefined && { rentasRetentionCents: params.rentasRetentionCents }),
+        ...(params.sussRetentionCents !== undefined && { sussRetentionCents: params.sussRetentionCents }),
+        ...(params.tisshRetentionCents !== undefined && { tisshRetentionCents: params.tisshRetentionCents }),
       },
     });
   }
