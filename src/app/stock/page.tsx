@@ -27,7 +27,8 @@ type DashboardItem = {
 type ItemDetail = {
   directProducts: { productId: string; productName: string; categoryName: string }[];
   recipeProducts: { productId: string; productName: string; categoryName: string; recipeName: string }[];
-  productionRecipes: { id: string; name: string }[];
+  productionRecipes: { id: string; name: string }[];      // recetas que PRODUCEN este ítem
+  productionConsumers: { id: string; name: string }[];    // recetas de producción que LO USAN como insumo
 };
 
 type Dashboard = {
@@ -89,70 +90,99 @@ function ItemDetailPanel({ detail }: { detail: ItemDetail | "loading" | "error" 
     return <div className="text-xs text-red-600">Error al cargar detalle.</div>;
   }
 
-  const allConsumers = [
+  const allSaleConsumers = [
     ...detail.directProducts.map((p) => ({ ...p, kind: "directo" as const })),
     ...detail.recipeProducts.map((p) => ({ ...p, kind: "receta" as const })),
   ];
 
-  const hasAnything = allConsumers.length > 0 || detail.productionRecipes.length > 0;
+  const hasAnything =
+    allSaleConsumers.length > 0 ||
+    detail.productionRecipes.length > 0 ||
+    detail.productionConsumers.length > 0;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 text-sm">
-      {/* Consumido por */}
-      <div>
-        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Consumido por
-        </div>
-        {allConsumers.length === 0 ? (
-          <div className="text-xs text-neutral-400">Sin productos vinculados.</div>
-        ) : (
-          <div className="space-y-1">
-            {allConsumers.map((p) => (
-              <div key={p.productId} className="flex items-center gap-2">
-                <span className="font-medium">{p.productName}</span>
-                <span className="text-xs text-neutral-400">{p.categoryName}</span>
-                {p.kind === "directo" ? (
-                  <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                    ítem directo
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
-                    receta
-                  </span>
-                )}
-              </div>
-            ))}
+    <div className="space-y-3 text-sm">
+      <div className="grid gap-3 sm:grid-cols-3">
+        {/* Al vender */}
+        <div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Al vender
           </div>
-        )}
-      </div>
+          {allSaleConsumers.length === 0 ? (
+            <div className="text-xs text-neutral-400">Sin productos vinculados.</div>
+          ) : (
+            <div className="space-y-1">
+              {allSaleConsumers.map((p) => (
+                <div key={p.productId} className="flex items-start gap-2">
+                  <span className="font-medium leading-tight">{p.productName}</span>
+                  {p.kind === "directo" ? (
+                    <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                      directo
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                      receta
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-      {/* Generado por */}
-      <div>
-        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Generado por
-        </div>
-        {detail.productionRecipes.length === 0 ? (
-          <div className="text-xs text-neutral-400">Sin receta de producción.</div>
-        ) : (
-          <div className="space-y-1.5">
-            {detail.productionRecipes.map((r) => (
-              <div key={r.id} className="flex items-center gap-2">
-                <span className="font-medium">{r.name}</span>
-                <Link
-                  href="/produccion"
-                  className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  Registrar producción →
-                </Link>
-              </div>
-            ))}
+        {/* Insumo de producción */}
+        <div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Insumo de producción
           </div>
-        )}
+          {detail.productionConsumers.length === 0 ? (
+            <div className="text-xs text-neutral-400">No se usa en ninguna receta de producción.</div>
+          ) : (
+            <div className="space-y-1.5">
+              {detail.productionConsumers.map((r) => (
+                <div key={r.id} className="flex items-center gap-2">
+                  <span className="font-medium">{r.name}</span>
+                  <Link
+                    href="/produccion"
+                    className="shrink-0 rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Registrar →
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Generado por */}
+        <div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Generado por
+          </div>
+          {detail.productionRecipes.length === 0 ? (
+            <div className="text-xs text-neutral-400">No se produce internamente.</div>
+          ) : (
+            <div className="space-y-1.5">
+              {detail.productionRecipes.map((r) => (
+                <div key={r.id} className="flex items-center gap-2">
+                  <span className="font-medium">{r.name}</span>
+                  <Link
+                    href="/produccion"
+                    className="shrink-0 rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Registrar →
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {!hasAnything && (
-        <div className="col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Sin vínculos registrados. Configurar en{" "}
           <Link href="/stock/admin" className="underline" onClick={(e) => e.stopPropagation()}>
             Gestión de vínculos
