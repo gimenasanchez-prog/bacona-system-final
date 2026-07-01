@@ -28,6 +28,16 @@ export class StockMovementService {
                 consumptionRecipeVersionId: true,
               },
             },
+            modifiers: {
+              include: {
+                modifierOption: {
+                  select: {
+                    inventoryItemId: true,
+                    inventoryQty: true,
+                  },
+                },
+              },
+            },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -78,6 +88,16 @@ export class StockMovementService {
         const qty = new Prisma.Decimal(item.qty);
         totals.set(key, (totals.get(key) ?? new Prisma.Decimal(0)).add(qty));
         directions.set(key, "OUT");
+      }
+
+      for (const mod of item.modifiers) {
+        const opt = mod.modifierOption;
+        if (opt.inventoryItemId && opt.inventoryQty) {
+          const key = `${opt.inventoryItemId}:OUT`;
+          const qty = opt.inventoryQty.mul(item.qty);
+          totals.set(key, (totals.get(key) ?? new Prisma.Decimal(0)).add(qty));
+          directions.set(key, "OUT");
+        }
       }
     }
 

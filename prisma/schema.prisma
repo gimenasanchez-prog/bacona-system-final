@@ -58,12 +58,16 @@ model ModifierOption {
   name            String
   priceDeltaCents Int                   @default(0)
   isActive        Boolean               @default(true)
+  inventoryItemId String?
+  inventoryQty    Decimal?              @db.Decimal(18, 3)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   group           ModifierGroup         @relation(fields: [groupId], references: [id])
+  inventoryItem   InventoryItem?        @relation(fields: [inventoryItemId], references: [id])
   saleItemLinks   PosSaleItemModifier[]
 
   @@index([groupId, isActive])
+  @@index([inventoryItemId])
 }
 
 model ProductModifierGroup {
@@ -434,6 +438,7 @@ model InventoryItem {
   updatedAt       DateTime              @updatedAt
   category        InventoryCategory     @relation(fields: [categoryId], references: [id])
   lossLines       LossEventLine[]
+  modifierOptions ModifierOption[]
   productLinks    Product[]             @relation("ProductInventoryItem")
   productionLines ProductionBatchLine[]
   purchaseLines   PurchaseLine[]
