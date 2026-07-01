@@ -154,26 +154,6 @@ export type InvoiceDetail = {
   }[];
 };
 
-function calcTotal(
-  subtotalCents: number,
-  ivaAmountCents: number,
-  bankWithholdingCents: number,
-  bankFeesCents: number,
-  ivaRetentionCents: number,
-  gananciasRetentionCents: number,
-  rentasRetentionCents: number
-): number {
-  return (
-    subtotalCents +
-    ivaAmountCents -
-    bankWithholdingCents -
-    bankFeesCents -
-    ivaRetentionCents -
-    gananciasRetentionCents -
-    rentasRetentionCents
-  );
-}
-
 function buildInvoiceSummary(inv: {
   id: string;
   periodFrom: Date;
@@ -576,11 +556,11 @@ export class CuentaCorrienteService {
     return prisma.cuentaCorrienteInvoice.update({
       where: { id: invoiceId },
       data: {
+        isPaid: true,
+        paidAt: new Date(),
         paidAmountCents: params.paidAmountCents,
         paymentDate: params.paymentDate,
         paymentReference: params.paymentReference ?? null,
-        ...(params.bankWithholdingCents !== undefined && { bankWithholdingCents: params.bankWithholdingCents }),
-        ...(params.bankFeesCents !== undefined && { bankFeesCents: params.bankFeesCents }),
         ...(params.ivaRetentionCents !== undefined && { ivaRetentionCents: params.ivaRetentionCents }),
         ...(params.gananciasRetentionCents !== undefined && { gananciasRetentionCents: params.gananciasRetentionCents }),
         ...(params.rentasRetentionCents !== undefined && { rentasRetentionCents: params.rentasRetentionCents }),

@@ -11,8 +11,6 @@ import type {
 } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 import { CargosDirectosModal } from "./CargosDirectosModal";
 
-const BANK_WITHHOLDING_RATE = 0.0094;
-const BANK_FEES_RATE = 0.025;
 
 function formatDate(d: Date | string) {
   return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -404,8 +402,6 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
   const [rentasRetentionArs, setRentasRetentionArs] = useState("0.00");
   const [sussRetentionArs, setSussRetentionArs] = useState("0.00");
   const [tisshRetentionArs, setTisshRetentionArs] = useState("0.00");
-  const [bankWithholdingArs, setBankWithholdingArs] = useState((Math.round(invoice.totalAmountCents * BANK_WITHHOLDING_RATE) / 100).toFixed(2));
-  const [bankFeesArs, setBankFeesArs] = useState((Math.round(invoice.totalAmountCents * BANK_FEES_RATE) / 100).toFixed(2));
   const [paymentDate, setPaymentDate] = useState(toDateInputValue(new Date()));
   const [reference, setReference] = useState(invoice.paymentReference ?? "");
   const [loading, setLoading] = useState(false);
@@ -416,9 +412,7 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
   const rentasRetentionCents = ars(rentasRetentionArs);
   const sussRetentionCents = ars(sussRetentionArs);
   const tisshRetentionCents = ars(tisshRetentionArs);
-  const bankWithholdingCents = ars(bankWithholdingArs);
-  const bankFeesCents = ars(bankFeesArs);
-  const netoCents = invoice.totalAmountCents - ivaRetentionCents - gananciasRetentionCents - rentasRetentionCents - sussRetentionCents - tisshRetentionCents - bankWithholdingCents - bankFeesCents;
+  const netoCents = invoice.totalAmountCents - ivaRetentionCents - gananciasRetentionCents - rentasRetentionCents - sussRetentionCents - tisshRetentionCents;
 
   const [amountArs, setAmountArs] = useState("");
   const [amountManual, setAmountManual] = useState(false);
@@ -438,8 +432,6 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
           paidAmountCents,
           paymentDate: new Date(paymentDate + "T12:00:00.000Z").toISOString(),
           paymentReference: reference || undefined,
-          bankWithholdingCents,
-          bankFeesCents,
           ivaRetentionCents,
           gananciasRetentionCents,
           rentasRetentionCents,
@@ -492,26 +484,10 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
               </div>
             </div>
           </div>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Gastos bancarios</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">Ret. bancaria (0.94%)</label>
-                <input type="number" min="0" step="0.01" value={bankWithholdingArs} onChange={(e) => { setBankWithholdingArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-neutral-500 mb-1">Comisión bancaria (2.5%)</label>
-                <input type="number" min="0" step="0.01" value={bankFeesArs} onChange={(e) => { setBankFeesArs(e.target.value); setAmountManual(false); }} className="w-full rounded border px-3 py-2 text-sm" />
-              </div>
-            </div>
-          </div>
           <div className="rounded-lg bg-neutral-50 px-4 py-3 text-sm space-y-1">
             <div className="flex justify-between text-neutral-600"><span>Total factura</span><span>{formatArsFromCents(invoice.totalAmountCents)}</span></div>
             {(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents + sussRetentionCents + tisshRetentionCents) > 0 && (
               <div className="flex justify-between text-neutral-500 text-xs"><span>− Ret. impositivas</span><span>{formatArsFromCents(ivaRetentionCents + gananciasRetentionCents + rentasRetentionCents + sussRetentionCents + tisshRetentionCents)}</span></div>
-            )}
-            {(bankWithholdingCents + bankFeesCents) > 0 && (
-              <div className="flex justify-between text-neutral-500 text-xs"><span>− Gastos bancarios</span><span>{formatArsFromCents(bankWithholdingCents + bankFeesCents)}</span></div>
             )}
             <div className="flex justify-between text-neutral-500 text-xs border-t border-neutral-200 pt-1 mt-1"><span>Neto estimado</span><span>{formatArsFromCents(netoCents)}</span></div>
           </div>
