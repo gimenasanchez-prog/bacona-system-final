@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 type Uom = {
   id: string;
@@ -22,6 +22,12 @@ type DashboardItem = {
   currentQty: string;
   recommendedQty: string;
   semaforo: "GREEN" | "YELLOW" | "RED";
+};
+
+type ItemDetail = {
+  directProducts: { productId: string; productName: string; categoryName: string }[];
+  recipeProducts: { productId: string; productName: string; categoryName: string; recipeName: string }[];
+  productionRecipes: { id: string; name: string }[];
 };
 
 type Dashboard = {
@@ -75,11 +81,108 @@ function badgeColor(semaforo: DashboardItem["semaforo"]) {
   return "bg-red-100 text-red-800 border-red-200";
 }
 
+function ItemDetailPanel({ detail }: { detail: ItemDetail | "loading" | "error" }) {
+  if (detail === "loading") {
+    return <div className="text-xs text-neutral-500">Cargando...</div>;
+  }
+  if (detail === "error") {
+    return <div className="text-xs text-red-600">Error al cargar detalle.</div>;
+  }
+
+  const allConsumers = [
+    ...detail.directProducts.map((p) => ({ ...p, kind: "directo" as const })),
+    ...detail.recipeProducts.map((p) => ({ ...p, kind: "receta" as const })),
+  ];
+
+  const hasAnything = allConsumers.length > 0 || detail.productionRecipes.length > 0;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 text-sm">
+      {/* Consumido por */}
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Consumido por
+        </div>
+        {allConsumers.length === 0 ? (
+          <div className="text-xs text-neutral-400">Sin productos vinculados.</div>
+        ) : (
+          <div className="space-y-1">
+            {allConsumers.map((p) => (
+              <div key={p.productId} className="flex items-center gap-2">
+                <span className="font-medium">{p.productName}</span>
+                <span className="text-xs text-neutral-400">{p.categoryName}</span>
+                {p.kind === "directo" ? (
+                  <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                    ítem directo
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                    receta
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Generado por */}
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Generado por
+        </div>
+        {detail.productionRecipes.length === 0 ? (
+          <div className="text-xs text-neutral-400">Sin receta de producción.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {detail.productionRecipes.map((r) => (
+              <div key={r.id} className="flex items-center gap-2">
+                <span className="font-medium">{r.name}</span>
+                <Link
+                  href="/produccion"
+                  className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Registrar producción →
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!hasAnything && (
+        <div className="col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Sin vínculos registrados. Configurar en{" "}
+          <Link href="/stock/admin" className="underline" onClick={(e) => e.stopPropagation()}>
+            Gestión de vínculos
+          </Link>
+          .
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StockPage() {
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
   const [items, setItems] = useState<InventoryItem[]>([]);
+
+  // Dashboard row expansion
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [detailCache, setDetailCache] = useState<Map<string, ItemDetail | "loading" | "error">>(new Map());
+
+  function toggleExpand(itemId: string) {
+    setExpandedItemId((prev) => (prev === itemId ? null : itemId));
+    if (!detailCache.has(itemId)) {
+      setDetailCache((prev) => new Map(prev).set(itemId, "loading"));
+      apiGet<ItemDetail>(`/api/stock/items/${itemId}/detail`)
+        .then((data) => setDetailCache((prev) => new Map(prev).set(itemId, data)))
+        .catch(() => setDetailCache((prev) => new Map(prev).set(itemId, "error")));
+    }
+  }
 
   // New item form
   const [newCatName, setNewCatName] = useState("");
@@ -191,27 +294,50 @@ export default function StockPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {arr.map((it) => (
-                          <tr key={it.id} className="border-t">
-                            <td className="px-3 py-2">
-                              <div className="font-medium">{it.name}</div>
-                              <div className="text-xs text-neutral-500">
-                                Unidad: <b>{it.displayUnit}</b> · Cover: <b>{it.targetDaysCover}d</b>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {it.currentQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {it.recommendedQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
-                            </td>
-                            <td className="px-3 py-2">
-                              <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeColor(it.semaforo)}`}>
-                                {it.semaforo}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {arr.map((it) => {
+                          const isOpen = expandedItemId === it.id;
+                          const detail = detailCache.get(it.id);
+                          return (
+                            <Fragment key={it.id}>
+                              <tr
+                                className="border-t cursor-pointer hover:bg-neutral-50"
+                                onClick={() => toggleExpand(it.id)}
+                              >
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-neutral-400 text-xs select-none">
+                                      {isOpen ? "▼" : "▶"}
+                                    </span>
+                                    <div>
+                                      <div className="font-medium">{it.name}</div>
+                                      <div className="text-xs text-neutral-500">
+                                        Unidad: <b>{it.displayUnit}</b> · Cover: <b>{it.targetDaysCover}d</b>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {it.currentQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {it.recommendedQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeColor(it.semaforo)}`}>
+                                    {it.semaforo}
+                                  </span>
+                                </td>
+                              </tr>
+                              {isOpen && (
+                                <tr className="border-t bg-neutral-50">
+                                  <td colSpan={4} className="px-4 py-3">
+                                    <ItemDetailPanel detail={detail ?? "loading"} />
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

@@ -1,8 +1,8 @@
-import { Fragment } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { StockAdminService } from "@/modules/stock/services/stockAdminService";
+import { ProductsTable } from "./ProductsTable";
 
 function fmtQty(qty: { toString(): string }) {
   const n = parseFloat(qty.toString());
@@ -13,8 +13,14 @@ export default async function StockAdminPage() {
   const role = (await cookies()).get("bcn_role")?.value;
   if (role !== "GERENCIA") redirect("/");
 
-  const { products, productionRecipes, consumptionRecipes } =
-    await StockAdminService.getAuditData();
+  const {
+    products,
+    productionRecipes,
+    consumptionRecipes,
+    inventoryItems,
+    consumptionRecipesForModal,
+    productionByOutputItemId,
+  } = await StockAdminService.getAuditData();
 
   const withRecipe = products.filter((p) => p.consumptionRecipeVersionId !== null);
   const withItem = products.filter(
@@ -46,8 +52,8 @@ export default async function StockAdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-lg font-semibold">Auditoría de Stock</div>
-        <div className="text-sm text-neutral-500">Solo lectura · Verificación de vínculos</div>
+        <div className="text-lg font-semibold">Gestión de vínculos de stock</div>
+        <div className="text-sm text-neutral-500">Editar el vínculo de cada producto con su insumo o receta</div>
       </div>
 
       {/* Summary cards */}
@@ -95,65 +101,12 @@ export default async function StockAdminPage() {
             categoría.
           </div>
         </div>
-        <div className="overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-xs text-neutral-600">
-              <tr>
-                <th className="px-3 py-2 text-left">Producto</th>
-                <th className="px-3 py-2 text-left">Categoría</th>
-                <th className="px-3 py-2 text-left">Estado</th>
-                <th className="px-3 py-2 text-left">Vinculado a</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedCategories.map(([catName, prods]) => (
-                <Fragment key={catName}>
-                  <tr className="bg-neutral-50">
-                    <td
-                      colSpan={4}
-                      className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
-                    >
-                      {catName}
-                    </td>
-                  </tr>
-                  {prods.map((p) => {
-                    const hasRecipe = !!p.consumptionRecipeVersionId;
-                    const hasItem = !!p.inventoryItemId;
-                    const linked = hasRecipe || hasItem;
-                    return (
-                      <tr key={p.id} className={`border-t ${!linked ? "bg-red-50" : ""}`}>
-                        <td className="px-3 py-2 font-medium">{p.name}</td>
-                        <td className="px-3 py-2 text-neutral-500">{p.category.name}</td>
-                        <td className="px-3 py-2">
-                          {hasRecipe ? (
-                            <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                              Receta
-                            </span>
-                          ) : hasItem ? (
-                            <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
-                              Item directo
-                            </span>
-                          ) : (
-                            <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                              Sin link
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-neutral-600">
-                          {hasRecipe
-                            ? p.consumptionRecipeVersion?.recipe.name
-                            : hasItem
-                              ? p.inventoryItem?.name
-                              : <span className="text-red-400">—</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ProductsTable
+          sortedCategories={sortedCategories}
+          inventoryItems={inventoryItems}
+          consumptionRecipes={consumptionRecipesForModal}
+          productionByOutputItemId={productionByOutputItemId}
+        />
       </div>
 
       {/* Production recipes */}
