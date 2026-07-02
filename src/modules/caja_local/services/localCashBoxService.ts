@@ -36,6 +36,19 @@ export class LocalCashBoxService {
     });
   }
 
+  static async getEnvelopeCashSummary() {
+    const grouped = await prisma.envelope.groupBy({
+      by: ["status"],
+      where: { status: { in: ["CLOSED", "OPENED"] } },
+      _sum: { expectedAmountCents: true },
+    });
+    const closedCents =
+      grouped.find((g) => g.status === "CLOSED")?._sum.expectedAmountCents ?? 0;
+    const openedPendingCents =
+      grouped.find((g) => g.status === "OPENED")?._sum.expectedAmountCents ?? 0;
+    return { closedCents, openedPendingCents };
+  }
+
   static async listAvailableEnvelopes() {
     return prisma.envelope.findMany({
       where: { status: "CLOSED" },

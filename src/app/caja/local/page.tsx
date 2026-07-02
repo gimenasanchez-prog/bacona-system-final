@@ -37,8 +37,9 @@ export default async function CajaLocalPage(props: {
   const errorMsg = typeof sp.error === "string" ? decodeURIComponent(sp.error) : null;
 
   const box = await LocalCashBoxService.getActiveLocalCashBox();
-  const [balanceCents, movements, envelopes, openedEnvelopes] = await Promise.all([
+  const [balanceCents, envelopeSummary, movements, envelopes, openedEnvelopes] = await Promise.all([
     LocalCashBoxService.getLocalCashBalance(box.id),
+    LocalCashBoxService.getEnvelopeCashSummary(),
     LocalCashBoxService.listMovements(box.id),
     LocalCashBoxService.listAvailableEnvelopes(),
     LocalCashBoxService.listOpenedEnvelopes(),
@@ -97,6 +98,47 @@ export default async function CajaLocalPage(props: {
                 },
               }))}
             />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
+        <div className="text-sm font-semibold">Efectivo real disponible</div>
+        <div className="mt-1 text-xs text-neutral-500">
+          Plata física entre la caja y los sobres cerrados todavía no abiertos.
+        </div>
+        <div className="mt-3 divide-y">
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm text-neutral-700">Caja BCÑ (efectivo en caja)</span>
+            <span className="font-semibold">{formatArsFromCents(balanceCents)}</span>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <span className="text-sm text-neutral-700">Sobres cerrados sin abrir</span>
+              {envelopes.length > 0 && (
+                <span className="ml-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+                  {envelopes.length}
+                </span>
+              )}
+            </div>
+            <span className="font-semibold">{formatArsFromCents(envelopeSummary.closedCents)}</span>
+          </div>
+          {envelopeSummary.openedPendingCents > 0 && (
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-orange-700">
+                Sobres abiertos sin controlar
+                <span className="ml-1 text-xs">(ya en caja, pendiente auditoría)</span>
+              </span>
+              <span className="font-semibold text-orange-700">
+                {formatArsFromCents(envelopeSummary.openedPendingCents)}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm font-semibold">Total efectivo real</span>
+            <span className="text-lg font-bold">
+              {formatArsFromCents(balanceCents + envelopeSummary.closedCents)}
+            </span>
           </div>
         </div>
       </div>
