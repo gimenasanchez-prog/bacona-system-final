@@ -985,30 +985,14 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
           {account.billingCycle === "QUINCENAL" ? "Quincenal" : "Mensual"}
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          {account.unbilledTotalCents > 0 ? (
-            <div>
-              <span className="text-neutral-700">{formatArsFromCents(account.unbilledTotalCents)}</span>
-              {account.unbilledClosedCents > 0 && (
-                <div className="text-xs text-amber-600 mt-0.5">↳ listo {formatArsFromCents(account.unbilledClosedCents)}</div>
-              )}
-              {account.unbilledOpenCents > 0 && (
-                <div className="text-xs text-neutral-400 mt-0.5">↳ en curso {formatArsFromCents(account.unbilledOpenCents)}</div>
-              )}
-            </div>
-          ) : <span className="text-neutral-300">—</span>}
+          {account.unbilledTotalCents > 0
+            ? <span className="text-neutral-700">{formatArsFromCents(account.unbilledTotalCents)}</span>
+            : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          {account.pendingInvoicesTotalCents > 0 ? (
-            <div>
-              <span className="text-amber-600">{formatArsFromCents(account.pendingInvoicesTotalCents)}</span>
-              {account.pendingDueSoonCents > 0 && (
-                <div className="text-xs text-orange-500 mt-0.5">↳ esta quincena {formatArsFromCents(account.pendingDueSoonCents)}</div>
-              )}
-              {account.pendingDueLaterCents > 0 && (
-                <div className="text-xs text-neutral-400 mt-0.5">↳ prox. quincena {formatArsFromCents(account.pendingDueLaterCents)}</div>
-              )}
-            </div>
-          ) : <span className="text-neutral-300">—</span>}
+          {account.pendingInvoicesTotalCents > 0
+            ? <span className="text-amber-600">{formatArsFromCents(account.pendingInvoicesTotalCents)}</span>
+            : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
           {overdueTotal > 0
@@ -1016,14 +1000,9 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
             : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          {account.cobradoCents > 0 ? (
-            <div>
-              <span className="text-green-700">{formatArsFromCents(account.cobradoCents)}</span>
-              {account.retencionesCobradoCents > 0 && (
-                <div className="text-xs text-neutral-400 mt-0.5">↳ ret. {formatArsFromCents(account.retencionesCobradoCents)}</div>
-              )}
-            </div>
-          ) : <span className="text-neutral-300">—</span>}
+          {account.cobradoCents > 0
+            ? <span className="text-green-700">{formatArsFromCents(account.cobradoCents)}</span>
+            : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right font-semibold">
           {totalDebt > 0
@@ -1060,9 +1039,14 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
   }, []);
 
   const totalUnbilled = accounts.reduce((s, a) => s + a.unbilledTotalCents, 0);
+  const totalUnbilledClosed = accounts.reduce((s, a) => s + a.unbilledClosedCents, 0);
+  const totalUnbilledOpen = accounts.reduce((s, a) => s + a.unbilledOpenCents, 0);
   const totalAdeudado = accounts.reduce((s, a) => s + a.pendingInvoicesTotalCents, 0);
+  const totalDueSoon = accounts.reduce((s, a) => s + a.pendingDueSoonCents, 0);
+  const totalDueLater = accounts.reduce((s, a) => s + a.pendingDueLaterCents, 0);
   const totalMora = accounts.reduce((s, a) => s + a.overdueInvoicesTotalCents, 0);
   const totalCobrado = accounts.reduce((s, a) => s + a.cobradoCents, 0);
+  const totalRetencionesCobrado = accounts.reduce((s, a) => s + a.retencionesCobradoCents, 0);
   const totalRetenciones = accounts.reduce((s, a) => s + a.totalRetencionesCents, 0);
 
   return (
@@ -1087,12 +1071,22 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-neutral-400 font-medium uppercase tracking-wide">Sin facturar</div>
           <div className={`text-lg font-bold mt-1 ${totalUnbilled > 0 ? "text-neutral-800" : "text-neutral-400"}`}>{formatArsFromCents(totalUnbilled)}</div>
-          <div className="text-xs text-neutral-300 mt-0.5">Consumo sin factura</div>
+          {totalUnbilledClosed > 0 && (
+            <div className="text-xs text-amber-600 mt-1">Listo para facturar: {formatArsFromCents(totalUnbilledClosed)}</div>
+          )}
+          {totalUnbilledOpen > 0 && (
+            <div className="text-xs text-neutral-400 mt-0.5">Período abierto: {formatArsFromCents(totalUnbilledOpen)}</div>
+          )}
         </div>
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-amber-500 font-medium uppercase tracking-wide">Adeudado</div>
           <div className={`text-lg font-bold mt-1 ${totalAdeudado > 0 ? "text-amber-600" : "text-neutral-400"}`}>{formatArsFromCents(totalAdeudado)}</div>
-          <div className="text-xs text-neutral-300 mt-0.5">Facturado, en plazo</div>
+          {totalDueSoon > 0 && (
+            <div className="text-xs text-orange-500 mt-1">Vence esta quincena: {formatArsFromCents(totalDueSoon)}</div>
+          )}
+          {totalDueLater > 0 && (
+            <div className="text-xs text-neutral-400 mt-0.5">Vence prox. quincena: {formatArsFromCents(totalDueLater)}</div>
+          )}
         </div>
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-red-400 font-medium uppercase tracking-wide">En mora</div>
@@ -1102,7 +1096,9 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-green-500 font-medium uppercase tracking-wide">Cobrado</div>
           <div className={`text-lg font-bold mt-1 ${totalCobrado > 0 ? "text-green-600" : "text-neutral-400"}`}>{formatArsFromCents(totalCobrado)}</div>
-          <div className="text-xs text-neutral-300 mt-0.5">Pagos registrados</div>
+          {totalRetencionesCobrado > 0 && (
+            <div className="text-xs text-neutral-400 mt-1">Retenciones: {formatArsFromCents(totalRetencionesCobrado)}</div>
+          )}
         </div>
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="text-xs text-purple-400 font-medium uppercase tracking-wide">Retenciones est.</div>
