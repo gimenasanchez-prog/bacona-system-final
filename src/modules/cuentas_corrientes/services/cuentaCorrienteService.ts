@@ -66,6 +66,8 @@ export type InvoiceSummary = {
   ivaRetentionCents: number;
   gananciasRetentionCents: number;
   rentasRetentionCents: number;
+  sussRetentionCents: number;
+  tisshRetentionCents: number;
   totalAmountCents: number;
   isPaid: boolean;
   paidAt: Date | null;
@@ -96,8 +98,14 @@ export type AccountWithBillingState = {
   periods: PeriodSummary[];
   // Dashboard chips
   unbilledTotalCents: number;
+  unbilledClosedCents: number;      // períodos cerrados sin facturar (listos)
+  unbilledOpenCents: number;        // período actual abierto sin facturar
   pendingInvoicesTotalCents: number;
+  pendingDueSoonCents: number;      // vence dentro de esta quincena calendario
+  pendingDueLaterCents: number;     // vence en quincena siguiente o más
   overdueInvoicesTotalCents: number;
+  cobradoCents: number;             // paidAmountCents de facturas isPaid=true
+  retencionesCobradoCents: number;  // retenciones impositivas en facturas pagadas
   paidAmountActiveCents: number;
   totalRetencionesCents: number;
 };
@@ -170,6 +178,8 @@ function buildInvoiceSummary(inv: {
   ivaRetentionCents: number;
   gananciasRetentionCents: number;
   rentasRetentionCents: number;
+  sussRetentionCents: number;
+  tisshRetentionCents: number;
   totalAmountCents: number;
   isPaid: boolean;
   paidAt: Date | null;
@@ -196,6 +206,8 @@ function buildInvoiceSummary(inv: {
     ivaRetentionCents: inv.ivaRetentionCents,
     gananciasRetentionCents: inv.gananciasRetentionCents,
     rentasRetentionCents: inv.rentasRetentionCents,
+    sussRetentionCents: inv.sussRetentionCents,
+    tisshRetentionCents: inv.tisshRetentionCents,
     totalAmountCents: inv.totalAmountCents,
     isPaid: inv.isPaid,
     paidAt: inv.paidAt,
@@ -336,16 +348,36 @@ export class CuentaCorrienteService {
         // Ordenar más reciente primero
         .sort((a, b) => b.period.from.getTime() - a.period.from.getTime());
 
+      // Fin de la quincena calendario actual (para split de ADEUDADO)
+      const todayDay = now.getDate();
+      const endOfCurrentFortnight = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        todayDay <= 15 ? 15 : new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+        23, 59, 59, 999
+      );
+
       // Dashboard chips
       let unbilledTotalCents = 0;
+      let unbilledClosedCents = 0;
+      let unbilledOpenCents = 0;
       let pendingInvoicesTotalCents = 0;
+      let pendingDueSoonCents = 0;
+      let pendingDueLaterCents = 0;
       let overdueInvoicesTotalCents = 0;
+      let cobradoCents = 0;
+      let retencionesCobradoCents = 0;
       let paidAmountActiveCents = 0;
       let totalRetencionesCents = 0;
 
       for (const p of periods) {
         if (!p.invoice) {
           unbilledTotalCents += p.totalConsumptionCents;
+          if (p.isCurrentPeriod) {
+            unbilledOpenCents += p.totalConsumptionCents;
+          } else {
+            unbilledClosedCents += p.totalConsumptionCents;
+          }
         } else {
           const inv = p.invoice;
           if (!inv.isPaid) {
@@ -354,6 +386,11 @@ export class CuentaCorrienteService {
               overdueInvoicesTotalCents += outstanding;
             } else {
               pendingInvoicesTotalCents += outstanding;
+              if (inv.estimatedPaymentDate <= endOfCurrentFortnight) {
+                pendingDueSoonCents += outstanding;
+              } else {
+                pendingDueLaterCents += outstanding;
+              }
             }
             if (inv.paidAmountCents > 0) {
               paidAmountActiveCents += inv.paidAmountCents;
@@ -364,6 +401,14 @@ export class CuentaCorrienteService {
               inv.ivaRetentionCents +
               inv.gananciasRetentionCents +
               inv.rentasRetentionCents;
+          } else {
+            cobradoCents += inv.paidAmountCents;
+            retencionesCobradoCents +=
+              inv.ivaRetentionCents +
+              inv.gananciasRetentionCents +
+              inv.rentasRetentionCents +
+              inv.sussRetentionCents +
+              inv.tisshRetentionCents;
           }
         }
       }
@@ -377,8 +422,14 @@ export class CuentaCorrienteService {
         currentPeriod,
         periods,
         unbilledTotalCents,
+        unbilledClosedCents,
+        unbilledOpenCents,
         pendingInvoicesTotalCents,
+        pendingDueSoonCents,
+        pendingDueLaterCents,
         overdueInvoicesTotalCents,
+        cobradoCents,
+        retencionesCobradoCents,
         paidAmountActiveCents,
         totalRetencionesCents,
       };

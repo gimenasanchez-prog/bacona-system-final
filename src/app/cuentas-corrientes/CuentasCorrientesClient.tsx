@@ -985,19 +985,45 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
           {account.billingCycle === "QUINCENAL" ? "Quincenal" : "Mensual"}
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          {account.unbilledTotalCents > 0
-            ? <span className="text-neutral-700">{formatArsFromCents(account.unbilledTotalCents)}</span>
-            : <span className="text-neutral-300">—</span>}
+          {account.unbilledTotalCents > 0 ? (
+            <div>
+              <span className="text-neutral-700">{formatArsFromCents(account.unbilledTotalCents)}</span>
+              {account.unbilledClosedCents > 0 && (
+                <div className="text-xs text-amber-600 mt-0.5">↳ listo {formatArsFromCents(account.unbilledClosedCents)}</div>
+              )}
+              {account.unbilledOpenCents > 0 && (
+                <div className="text-xs text-neutral-400 mt-0.5">↳ en curso {formatArsFromCents(account.unbilledOpenCents)}</div>
+              )}
+            </div>
+          ) : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
-          {account.pendingInvoicesTotalCents > 0
-            ? <span className="text-amber-600">{formatArsFromCents(account.pendingInvoicesTotalCents)}</span>
-            : <span className="text-neutral-300">—</span>}
+          {account.pendingInvoicesTotalCents > 0 ? (
+            <div>
+              <span className="text-amber-600">{formatArsFromCents(account.pendingInvoicesTotalCents)}</span>
+              {account.pendingDueSoonCents > 0 && (
+                <div className="text-xs text-orange-500 mt-0.5">↳ esta quincena {formatArsFromCents(account.pendingDueSoonCents)}</div>
+              )}
+              {account.pendingDueLaterCents > 0 && (
+                <div className="text-xs text-neutral-400 mt-0.5">↳ prox. quincena {formatArsFromCents(account.pendingDueLaterCents)}</div>
+              )}
+            </div>
+          ) : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right">
           {overdueTotal > 0
             ? <span className="font-medium text-red-600">{formatArsFromCents(overdueTotal)}</span>
             : <span className="text-neutral-300">—</span>}
+        </td>
+        <td className="px-4 py-3 text-sm text-right">
+          {account.cobradoCents > 0 ? (
+            <div>
+              <span className="text-green-700">{formatArsFromCents(account.cobradoCents)}</span>
+              {account.retencionesCobradoCents > 0 && (
+                <div className="text-xs text-neutral-400 mt-0.5">↳ ret. {formatArsFromCents(account.retencionesCobradoCents)}</div>
+              )}
+            </div>
+          ) : <span className="text-neutral-300">—</span>}
         </td>
         <td className="px-4 py-3 text-sm text-right font-semibold">
           {totalDebt > 0
@@ -1007,7 +1033,7 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={6} className="p-0">
+          <td colSpan={7} className="p-0">
             <PeriodsTable account={account} onRefresh={onRefresh} />
           </td>
         </tr>
@@ -1036,7 +1062,7 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
   const totalUnbilled = accounts.reduce((s, a) => s + a.unbilledTotalCents, 0);
   const totalAdeudado = accounts.reduce((s, a) => s + a.pendingInvoicesTotalCents, 0);
   const totalMora = accounts.reduce((s, a) => s + a.overdueInvoicesTotalCents, 0);
-  const totalCobrado = accounts.reduce((s, a) => s + a.paidAmountActiveCents, 0);
+  const totalCobrado = accounts.reduce((s, a) => s + a.cobradoCents, 0);
   const totalRetenciones = accounts.reduce((s, a) => s + a.totalRetencionesCents, 0);
 
   return (
@@ -1095,6 +1121,7 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
               <th className="px-4 py-2 text-right font-medium">Sin facturar</th>
               <th className="px-4 py-2 text-right font-medium">Adeudado</th>
               <th className="px-4 py-2 text-right font-medium">Mora</th>
+              <th className="px-4 py-2 text-right font-medium">Cobrado</th>
               <th className="px-4 py-2 text-right font-medium">Deuda activa</th>
             </tr>
           </thead>
