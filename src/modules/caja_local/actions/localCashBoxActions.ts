@@ -53,6 +53,7 @@ const OpenAndControlSchema = z.object({
 
 export async function openAndControlEnvelopeAction(formData: FormData) {
   let errorMsg: string | null = null;
+  const returnTo = String(formData.get("returnTo") ?? "/caja/local");
 
   try {
     const parsed = OpenAndControlSchema.safeParse({
@@ -65,7 +66,11 @@ export async function openAndControlEnvelopeAction(formData: FormData) {
     const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
     if (!employeeId) throw new Error("No hay sesión activa.");
 
-    const box = await LocalCashBoxService.getActiveLocalCashBox();
+    const localCashBoxIdOverride = String(formData.get("localCashBoxId") ?? "");
+    const box = localCashBoxIdOverride
+      ? { id: localCashBoxIdOverride }
+      : await LocalCashBoxService.getActiveLocalCashBox();
+
     await LocalCashBoxService.openAndControlEnvelope({
       envelopeId: parsed.data.envelopeId,
       localCashBoxId: box.id,
@@ -77,8 +82,8 @@ export async function openAndControlEnvelopeAction(formData: FormData) {
     errorMsg = err instanceof Error ? err.message : "Error al registrar el sobre.";
   }
 
-  if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);
-  redirect("/caja/local");
+  if (errorMsg) redirect(`${returnTo}?error=${encodeURIComponent(errorMsg)}`);
+  redirect(returnTo);
 }
 
 const ControlOpenedSchema = z.object({
@@ -122,6 +127,7 @@ const BatchItemSchema = z.object({
 
 export async function openAndControlEnvelopeBatchAction(formData: FormData) {
   let errorMsg: string | null = null;
+  const returnTo = String(formData.get("returnTo") ?? "/caja/local");
 
   try {
     const raw = String(formData.get("batch") ?? "[]");
@@ -131,14 +137,18 @@ export async function openAndControlEnvelopeBatchAction(formData: FormData) {
     const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
     if (!employeeId) throw new Error("No hay sesión activa.");
 
-    const box = await LocalCashBoxService.getActiveLocalCashBox();
+    const localCashBoxIdOverride = String(formData.get("localCashBoxId") ?? "");
+    const box = localCashBoxIdOverride
+      ? { id: localCashBoxIdOverride }
+      : await LocalCashBoxService.getActiveLocalCashBox();
+
     await LocalCashBoxService.openAndControlEnvelopeBatch(parsed.data, box.id, employeeId);
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : "Error al procesar el lote.";
   }
 
-  if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);
-  redirect("/caja/local");
+  if (errorMsg) redirect(`${returnTo}?error=${encodeURIComponent(errorMsg)}`);
+  redirect(returnTo);
 }
 
 const ManualMovementSchema = z.object({
@@ -150,6 +160,7 @@ const ManualMovementSchema = z.object({
 
 export async function createLocalCashManualMovementAction(formData: FormData) {
   let errorMsg: string | null = null;
+  const returnTo = String(formData.get("returnTo") ?? "/caja/local");
 
   try {
     const parsed = ManualMovementSchema.safeParse({
@@ -163,7 +174,11 @@ export async function createLocalCashManualMovementAction(formData: FormData) {
     const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
     if (!employeeId) throw new Error("No hay sesión activa. Cerrá y volvé a abrir la caja.");
 
-    const box = await LocalCashBoxService.getActiveLocalCashBox();
+    const localCashBoxIdOverride = String(formData.get("localCashBoxId") ?? "");
+    const box = localCashBoxIdOverride
+      ? { id: localCashBoxIdOverride }
+      : await LocalCashBoxService.getActiveLocalCashBox();
+
     await LocalCashBoxService.createManualMovement({
       localCashBoxId: box.id,
       type: parsed.data.type,
@@ -174,6 +189,35 @@ export async function createLocalCashManualMovementAction(formData: FormData) {
     });
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : "Error desconocido al registrar el movimiento.";
+  }
+
+  if (errorMsg) redirect(`${returnTo}?error=${encodeURIComponent(errorMsg)}`);
+  redirect(returnTo);
+}
+
+export async function transferToCajaGerenciaAction() {
+  let errorMsg: string | null = null;
+
+  try {
+    const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
+    if (!employeeId) throw new Error("No hay sesión activa.");
+
+    const cajaBCN = await LocalCashBoxService.getActiveLocalCashBox();
+    const cajaGerencia = await LocalCashBoxService.getCajaByName("Caja Gerencia");
+    const balance = await LocalCashBoxService.getLocalCashBalance(cajaBCN.id);
+
+    if (balance <= 0) throw new Error("El saldo de Caja BCN es cero, no hay nada que transferir.");
+
+    await LocalCashBoxService.transferBalance({
+      fromBoxId: cajaBCN.id,
+      toBoxId: cajaGerencia.id,
+      amountCents: balance,
+      employeeId,
+      fromDescription: "Entrega a Caja Gerencia",
+      toDescription: `Recepción de ${cajaBCN.name}`,
+    });
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : "Error al transferir el saldo.";
   }
 
   if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);

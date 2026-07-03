@@ -15,7 +15,15 @@ type Envelope = {
   };
 };
 
-export function OpenEnvelopeModal({ envelopes }: { envelopes: Envelope[] }) {
+export function OpenEnvelopeModal({
+  envelopes,
+  localCashBoxId,
+  returnTo,
+}: {
+  envelopes: Envelope[];
+  localCashBoxId?: string;
+  returnTo?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [selectedId, setSelectedId] = useState("");
@@ -279,6 +287,8 @@ export function OpenEnvelopeModal({ envelopes }: { envelopes: Envelope[] }) {
                   <input type="hidden" name="envelopeId" value={selected.id} />
                   <input type="hidden" name="actualAmountCents" value={actual} />
                   <input type="hidden" name="notes" value={notes} />
+                  {localCashBoxId && <input type="hidden" name="localCashBoxId" value={localCashBoxId} />}
+                  {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
                   <button
                     type="button"
                     onClick={() => setStep(3)}

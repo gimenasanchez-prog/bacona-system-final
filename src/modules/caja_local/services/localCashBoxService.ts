@@ -10,6 +10,50 @@ export class LocalCashBoxService {
     return box;
   }
 
+  static async getCajaByName(name: string) {
+    const box = await prisma.localCashBox.findFirst({ where: { name, active: true } });
+    if (!box) throw new Error(`No existe caja activa con nombre "${name}"`);
+    return box;
+  }
+
+  static async transferBalance(params: {
+    fromBoxId: string;
+    toBoxId: string;
+    amountCents: number;
+    employeeId: string;
+    fromDescription: string;
+    toDescription: string;
+  }) {
+    if (!Number.isInteger(params.amountCents) || params.amountCents <= 0) {
+      throw new Error("El monto a transferir debe ser mayor a cero.");
+    }
+    const now = new Date();
+    return prisma.$transaction(async (tx) => {
+      await tx.localCashMovement.create({
+        data: {
+          localCashBoxId: params.fromBoxId,
+          type: "OUT",
+          sourceType: "MANUAL_ADJUSTMENT",
+          amountCents: params.amountCents,
+          date: now,
+          description: params.fromDescription,
+          createdByEmployeeId: params.employeeId,
+        },
+      });
+      await tx.localCashMovement.create({
+        data: {
+          localCashBoxId: params.toBoxId,
+          type: "IN",
+          sourceType: "MANUAL_ADJUSTMENT",
+          amountCents: params.amountCents,
+          date: now,
+          description: params.toDescription,
+          createdByEmployeeId: params.employeeId,
+        },
+      });
+    });
+  }
+
   static async getLocalCashBalance(localCashBoxId: string) {
     const grouped = await prisma.localCashMovement.groupBy({
       by: ["type"],

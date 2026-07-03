@@ -4,12 +4,9 @@ import { redirect } from "next/navigation";
 
 import { formatArsFromCents } from "@/lib/money";
 import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxService";
-import {
-  createLocalCashManualMovementAction,
-  controlOpenedEnvelopeAction,
-} from "@/modules/caja_local/actions/localCashBoxActions";
-import { OpenEnvelopeModal } from "./OpenEnvelopeModal";
-import { EntregarGerenciaButton } from "./EntregarGerenciaButton";
+import { createLocalCashManualMovementAction } from "@/modules/caja_local/actions/localCashBoxActions";
+import { OpenEnvelopeModal } from "../local/OpenEnvelopeModal";
+import { BulkOpenEnvelopesPanel } from "../local/BulkOpenEnvelopesPanel";
 import { PesosInput } from "@/components/PesosInput";
 
 const SOURCE_TYPE_LABEL: Record<string, string> = {
@@ -28,37 +25,49 @@ function TypeBadge(props: { type: string }) {
   );
 }
 
-export default async function CajaLocalPage(props: {
+export default async function CajaGerenciaPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const role = (await cookies()).get("bcn_role")?.value;
-  if (role !== "CAJA_LOCAL") redirect("/");
+  if (role !== "GERENCIA") redirect("/");
 
   const sp = await props.searchParams;
   const errorMsg = typeof sp.error === "string" ? decodeURIComponent(sp.error) : null;
 
-  const box = await LocalCashBoxService.getActiveLocalCashBox();
-  const [balanceCents, movements, envelopes, openedEnvelopes] = await Promise.all([
+  const box = await LocalCashBoxService.getCajaByName("Caja Gerencia");
+  const [balanceCents, envelopeSummary, movements, envelopes] = await Promise.all([
     LocalCashBoxService.getLocalCashBalance(box.id),
+    LocalCashBoxService.getEnvelopeCashSummary(),
     LocalCashBoxService.listMovements(box.id),
     LocalCashBoxService.listAvailableEnvelopes(),
-    LocalCashBoxService.listOpenedEnvelopes(),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
+  const returnTo = "/caja/gerencia";
+
+  const envelopeProps = envelopes.map((e) => ({
+    id: e.id,
+    envelopeCode: e.envelopeCode,
+    expectedAmountCents: e.expectedAmountCents,
+    cashSession: {
+      businessDate: e.cashSession.businessDate.toISOString(),
+      shift: e.cashSession.shift,
+      employee: { displayName: e.cashSession.employee.displayName },
+    },
+  }));
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-lg font-semibold">Caja BCÑ</div>
+          <div className="text-lg font-semibold">Caja Gerencia</div>
           <div className="mt-1 text-sm text-neutral-600">
-            Acá ves cuánta plata hay en la caja y todos los movimientos registrados.
+            Efectivo acumulado de sobres y entregas del personal.
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50" href="/caja/turno">
-            Mi turno
+          <Link className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50" href="/caja/consolidado">
+            Consolidado
           </Link>
         </div>
       </div>
@@ -78,94 +87,75 @@ export default async function CajaLocalPage(props: {
         </div>
 
         <div className="rounded-lg border bg-white p-4 shadow-sm sm:col-span-2">
-          <div className="text-sm font-semibold">Vaciar el sobre en la caja</div>
+          <div className="text-sm font-semibold">Apertura de sobres</div>
           <div className="mt-1 text-sm text-neutral-600">
-            Seleccioná el sobre, contá el dinero y confirmá el ingreso paso a paso.
+            Abrí sobres uno por uno o todos juntos. El efectivo va a Caja Gerencia.
           </div>
-          <div className="mt-4">
+          <div className="mt-4 flex gap-2">
             <OpenEnvelopeModal
-              envelopes={envelopes.map((e) => ({
-                id: e.id,
-                envelopeCode: e.envelopeCode,
-                expectedAmountCents: e.expectedAmountCents,
-                cashSession: {
-                  businessDate: e.cashSession.businessDate.toISOString(),
-                  shift: e.cashSession.shift,
-                  employee: { displayName: e.cashSession.employee.displayName },
-                },
-              }))}
+              envelopes={envelopeProps}
+              localCashBoxId={box.id}
+              returnTo={returnTo}
+            />
+            <BulkOpenEnvelopesPanel
+              envelopes={envelopeProps}
+              localCashBoxId={box.id}
+              returnTo={returnTo}
             />
           </div>
         </div>
       </div>
 
-      {openedEnvelopes.length > 0 && (
-        <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 shadow-sm">
-          <div className="text-sm font-semibold text-orange-900">
-            Sobres abiertos sin controlar ({openedEnvelopes.length})
-          </div>
-          <div className="mt-1 text-sm text-orange-700">
-            Estos sobres fueron abiertos pero no se registró el monto contado. Completá el control.
-          </div>
-          <div className="mt-3 space-y-3">
-            {openedEnvelopes.map((env) => (
-              <div key={env.id} className="rounded-lg border border-orange-200 bg-white p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="font-mono text-sm font-semibold">{env.envelopeCode}</div>
-                    <div className="text-xs text-neutral-500">
-                      {env.cashSession.employee.displayName} ·{" "}
-                      {new Date(env.cashSession.businessDate).toLocaleDateString("es-AR")} ·{" "}
-                      {env.cashSession.shift}
-                    </div>
-                    <div className="mt-1 text-xs text-neutral-500">
-                      Esperado:{" "}
-                      <span className="font-medium text-neutral-700">
-                        {formatArsFromCents(env.expectedAmountCents)}
-                      </span>
-                    </div>
-                  </div>
-                  <form action={controlOpenedEnvelopeAction} className="flex items-end gap-2">
-                    <input type="hidden" name="envelopeId" value={env.id} />
-                    <div>
-                      <div className="mb-1 text-xs text-neutral-500">Monto contado</div>
-                      <PesosInput name="actualAmountCents" required min={0} />
-                    </div>
-                    <button className="rounded-md bg-orange-700 px-3 py-2 text-xs font-medium text-white hover:bg-orange-800">
-                      Registrar control
-                    </button>
-                  </form>
-                </div>
-              </div>
-            ))}
-          </div>
+      <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
+        <div className="text-sm font-semibold">Efectivo real disponible</div>
+        <div className="mt-1 text-xs text-neutral-500">
+          Plata física entre la caja y los sobres cerrados todavía no abiertos.
         </div>
-      )}
-
-      {balanceCents > 0 && (
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4 shadow-sm">
-          <div className="text-sm font-semibold">Entregar a gerencia</div>
-          <div className="mt-1 text-sm text-neutral-600">
-            Transferí todo el efectivo de la caja a gerencia. La caja queda en cero.
+        <div className="mt-3 divide-y">
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm text-neutral-700">Caja Gerencia (efectivo en caja)</span>
+            <span className="font-semibold">{formatArsFromCents(balanceCents)}</span>
           </div>
-          <div className="mt-3 flex items-center justify-between">
+          <div className="flex items-center justify-between py-2">
             <div>
-              <div className="text-xs text-neutral-500">Monto a transferir</div>
-              <div className="text-xl font-bold">{formatArsFromCents(balanceCents)}</div>
+              <span className="text-sm text-neutral-700">Sobres cerrados sin abrir</span>
+              {envelopes.length > 0 && (
+                <span className="ml-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+                  {envelopes.length}
+                </span>
+              )}
             </div>
-            <EntregarGerenciaButton balanceCents={balanceCents} />
+            <span className="font-semibold">{formatArsFromCents(envelopeSummary.closedCents)}</span>
+          </div>
+          {envelopeSummary.openedPendingCents > 0 && (
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-orange-700">
+                Sobres abiertos sin controlar
+                <span className="ml-1 text-xs">(ya en caja, pendiente auditoría)</span>
+              </span>
+              <span className="font-semibold text-orange-700">
+                {formatArsFromCents(envelopeSummary.openedPendingCents)}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm font-semibold">Total efectivo real</span>
+            <span className="text-lg font-bold">
+              {formatArsFromCents(balanceCents + envelopeSummary.closedCents)}
+            </span>
           </div>
         </div>
-      )}
+      </div>
 
       <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
         <div className="text-sm font-semibold">Anotar entrada o salida de plata</div>
         <div className="mt-1 text-sm text-neutral-600">
-          Usalo cuando necesitás anotar plata que entró o salió fuera de lo normal. Queda registrado con nombre y fecha.
+          Usalo cuando necesitás anotar plata que entró o salió fuera de lo normal.
         </div>
 
         <form action={createLocalCashManualMovementAction} className="mt-3 grid gap-3 sm:grid-cols-4">
           <input type="hidden" name="localCashBoxId" value={box.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
           <div className="space-y-1">
             <div className="text-xs text-neutral-500">Tipo</div>
             <select name="type" className="w-full rounded-md border px-2 py-2 text-sm" defaultValue="IN">
@@ -183,7 +173,7 @@ export default async function CajaLocalPage(props: {
           </div>
           <div className="space-y-1">
             <div className="text-xs text-neutral-500">Motivo (opcional)</div>
-            <input name="description" type="text" className="w-full rounded-md border px-2 py-2 text-sm" placeholder="Ej: compra de insumos" />
+            <input name="description" type="text" className="w-full rounded-md border px-2 py-2 text-sm" placeholder="Ej: pago de sueldos" />
           </div>
           <div className="sm:col-span-4 flex justify-end">
             <button className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white">Registrar</button>

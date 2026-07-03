@@ -21,7 +21,15 @@ const SHIFT_LABEL: Record<string, string> = {
   NOCHE: "Noche",
 };
 
-export function BulkOpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
+export function BulkOpenEnvelopesPanel({
+  envelopes,
+  localCashBoxId,
+  returnTo,
+}: {
+  envelopes: Envelope[];
+  localCashBoxId?: string;
+  returnTo?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(envelopes.map((e) => [e.id, String(e.expectedAmountCents / 100)]))
@@ -160,6 +168,8 @@ export function BulkOpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] })
           onSubmit={() => setSubmitting(true)}
         >
           <input type="hidden" name="batch" value={JSON.stringify(batchPayload)} />
+          {localCashBoxId && <input type="hidden" name="localCashBoxId" value={localCashBoxId} />}
+          {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
           <button
             type="submit"
             disabled={!allFilled || submitting}

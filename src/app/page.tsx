@@ -57,7 +57,7 @@ export default async function HomePage() {
           <div className="flex flex-wrap gap-2">
             <NavButton href="/rentabilidad" label="Rentabilidad" primary />
             <NavButton href="/caja/consolidado" label="Consolidado de Caja" primary />
-            <NavButton href="/caja/local" label="Caja BCÑ" primary />
+            <NavButton href="/caja/gerencia" label="Caja Gerencia" primary />
             <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" />
             <NavButton href="/gerencia/empleados" label="Empleados" />
           </div>
