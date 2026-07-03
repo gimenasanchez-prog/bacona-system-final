@@ -115,6 +115,32 @@ export async function controlOpenedEnvelopeAction(formData: FormData) {
   redirect("/caja/local");
 }
 
+const BatchItemSchema = z.object({
+  envelopeId: z.string().min(1),
+  actualAmountCents: z.number().int().min(0),
+});
+
+export async function openAndControlEnvelopeBatchAction(formData: FormData) {
+  let errorMsg: string | null = null;
+
+  try {
+    const raw = String(formData.get("batch") ?? "[]");
+    const parsed = z.array(BatchItemSchema).safeParse(JSON.parse(raw));
+    if (!parsed.success) throw new Error("Datos inválidos en el lote.");
+
+    const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
+    if (!employeeId) throw new Error("No hay sesión activa.");
+
+    const box = await LocalCashBoxService.getActiveLocalCashBox();
+    await LocalCashBoxService.openAndControlEnvelopeBatch(parsed.data, box.id, employeeId);
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : "Error al procesar el lote.";
+  }
+
+  if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);
+  redirect("/caja/local");
+}
+
 const ManualMovementSchema = z.object({
   type: z.enum(["IN", "OUT"]),
   amountCents: z.coerce.number().int().positive(),

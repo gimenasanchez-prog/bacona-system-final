@@ -9,6 +9,7 @@ import {
   controlOpenedEnvelopeAction,
 } from "@/modules/caja_local/actions/localCashBoxActions";
 import { OpenEnvelopeModal } from "./OpenEnvelopeModal";
+import { BulkOpenEnvelopesPanel } from "./BulkOpenEnvelopesPanel";
 import { PesosInput } from "@/components/PesosInput";
 
 const SOURCE_TYPE_LABEL: Record<string, string> = {
@@ -85,8 +86,20 @@ export default async function CajaLocalPage(props: {
           <div className="mt-1 text-sm text-neutral-600">
             Seleccioná el sobre, contá el dinero y confirmá el ingreso paso a paso.
           </div>
-          <div className="mt-4">
+          <div className="mt-4 flex gap-2">
             <OpenEnvelopeModal
+              envelopes={envelopes.map((e) => ({
+                id: e.id,
+                envelopeCode: e.envelopeCode,
+                expectedAmountCents: e.expectedAmountCents,
+                cashSession: {
+                  businessDate: e.cashSession.businessDate.toISOString(),
+                  shift: e.cashSession.shift,
+                  employee: { displayName: e.cashSession.employee.displayName },
+                },
+              }))}
+            />
+            <BulkOpenEnvelopesPanel
               envelopes={envelopes.map((e) => ({
                 id: e.id,
                 envelopeCode: e.envelopeCode,

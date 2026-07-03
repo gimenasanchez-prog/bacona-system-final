@@ -49,6 +49,58 @@ export class LocalCashBoxService {
     return { closedCents, openedPendingCents };
   }
 
+  static async openAndControlEnvelopeBatch(
+    items: { envelopeId: string; actualAmountCents: number }[],
+    localCashBoxId: string,
+    employeeId: string
+  ) {
+    if (!items.length) throw new Error("No hay sobres para procesar.");
+    for (const item of items) {
+      if (!Number.isInteger(item.actualAmountCents) || item.actualAmountCents < 0) {
+        throw new Error("Todos los montos deben ser números enteros no negativos.");
+      }
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const now = new Date();
+      for (const item of items) {
+        const env = await tx.envelope.findUnique({
+          where: { id: item.envelopeId },
+          select: { id: true, status: true, envelopeCode: true, expectedAmountCents: true },
+        });
+        if (!env || env.status !== "CLOSED") continue;
+
+        const finalStatus =
+          item.actualAmountCents === env.expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
+
+        await tx.envelope.update({
+          where: { id: item.envelopeId },
+          data: {
+            status: finalStatus,
+            openedAt: now,
+            openedByEmployeeId: employeeId,
+            controlledAt: now,
+            controlledByEmployeeId: employeeId,
+            actualAmountCents: item.actualAmountCents,
+          },
+        });
+
+        await tx.localCashMovement.create({
+          data: {
+            localCashBoxId,
+            type: "IN",
+            sourceType: "ENVELOPE_OPENING",
+            relatedEnvelopeId: item.envelopeId,
+            amountCents: item.actualAmountCents,
+            date: now,
+            description: `Apertura sobre ${env.envelopeCode}`,
+            createdByEmployeeId: employeeId,
+          },
+        });
+      }
+    });
+  }
+
   static async listAvailableEnvelopes() {
     return prisma.envelope.findMany({
       where: { status: "CLOSED" },
