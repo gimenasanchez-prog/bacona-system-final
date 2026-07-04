@@ -14,3 +14,14 @@ export function assertIntCents(value: number, fieldName: string): void {
   }
 }
 
+export function parseArsToCents(input: string): number {
+  const normalized = input.trim().replace(/\./g, "").replace(",", ".");
+  const ars = Number(normalized);
+  if (!Number.isFinite(ars)) {
+    throw new Error("Monto inválido");
+  }
+  const cents = Math.round(ars * 100);
+  assertIntCents(cents, "priceCents");
+  return cents;
+}
+

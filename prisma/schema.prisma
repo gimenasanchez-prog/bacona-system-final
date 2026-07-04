@@ -34,6 +34,7 @@ model Product {
   consumptionRecipeVersion   RecipeVersion?         @relation("ProductConsumptionRecipeVersion", fields: [consumptionRecipeVersionId], references: [id])
   inventoryItem              InventoryItem?         @relation("ProductInventoryItem", fields: [inventoryItemId], references: [id])
   modifierGroups             ProductModifierGroup[]
+  priceHistory               PriceHistory[]
 
   @@index([categoryId, isActive])
   @@index([inventoryItemId])
@@ -163,6 +164,8 @@ model Employee {
   stockMovementsCreated     StockMovement[]     @relation("EmployeeStockMovementsCreated")
   ccDirectChargesCreated    CcDirectCharge[]    @relation("EmployeeCcDirectChargesCreated")
   margenConfigsUpdated      ConfigMargenCategoria[]
+  priceHistoryCreated       PriceHistory[]      @relation("EmployeePriceHistoryCreated")
+  priceBulkUpdatesCreated   PriceBulkUpdate[]   @relation("EmployeePriceBulkUpdatesCreated")
 
   @@index([isActive, displayName])
 }
@@ -863,4 +866,41 @@ model CcDirectCharge {
 
   @@index([cuentaCorrienteAccountId])
   @@index([cuentaCorrienteInvoiceId])
+}
+
+model PriceBulkUpdate {
+  id                  String         @id @default(cuid())
+  percent             Decimal        @db.Decimal(6, 2)
+  categoryIds         String[]
+  affectedCount       Int
+  createdAt           DateTime       @default(now())
+  createdByEmployeeId String
+
+  createdByEmployee   Employee       @relation("EmployeePriceBulkUpdatesCreated", fields: [createdByEmployeeId], references: [id])
+  priceHistory        PriceHistory[]
+
+  @@index([createdAt])
+}
+
+model PriceHistory {
+  id                  String           @id @default(cuid())
+  productId           String
+  oldPriceCents       Int
+  newPriceCents       Int
+  changeType          PriceChangeType
+  bulkUpdateId        String?
+  createdAt           DateTime         @default(now())
+  createdByEmployeeId String
+
+  product             Product          @relation(fields: [productId], references: [id])
+  bulkUpdate          PriceBulkUpdate? @relation(fields: [bulkUpdateId], references: [id])
+  createdByEmployee   Employee         @relation("EmployeePriceHistoryCreated", fields: [createdByEmployeeId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([bulkUpdateId])
+}
+
+enum PriceChangeType {
+  MANUAL
+  BULK
 }

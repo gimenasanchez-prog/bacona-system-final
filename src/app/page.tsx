@@ -60,6 +60,7 @@ export default async function HomePage() {
             <NavButton href="/caja/gerencia" label="Caja Gerencia" primary />
             <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" />
             <NavButton href="/gerencia/empleados" label="Empleados" />
+            <NavButton href="/gerencia/precios" label="Precios" />
           </div>
           <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
           <div className="flex flex-wrap gap-2">
