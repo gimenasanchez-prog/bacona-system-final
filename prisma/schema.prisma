@@ -95,10 +95,11 @@ model Customer {
 }
 
 model CuentaCorrienteAccount {
-  id             String                   @id @default(cuid())
-  customerId     String
-  planCode       String?
-  billingCycle   BillingCycle             @default(MENSUAL)
+  id                  String                   @id @default(cuid())
+  customerId          String
+  planCode            String?
+  coverageAmountCents Int?
+  billingCycle        BillingCycle             @default(MENSUAL)
   isActive       Boolean                  @default(true)
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt

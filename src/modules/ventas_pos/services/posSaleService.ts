@@ -262,7 +262,7 @@ export class PosSaleService {
   static async markPaid(saleId: string) {
     const { sale, paidTotalCents } = await this.getSaleDetails(saleId);
     if (paidTotalCents < sale.totalCents) throw new Error("Payments do not cover total");
-    if (sale.status === "DRAFT") throw new Error("Sale must be confirmed before marking paid");
+    if (sale.status === "DRAFT") throw new Error("Confirmá el pedido antes de marcarlo como pagado");
     return prisma.$transaction(async (tx) => {
       const updated = await tx.posSale.update({
         where: { id: saleId },

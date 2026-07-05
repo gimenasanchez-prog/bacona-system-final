@@ -17,7 +17,7 @@ type ModifierGroup = {
 type ProductDetails = { id: string; name: string; priceCents: number; modifierGroups: ModifierGroup[] };
 
 type Customer = { id: string; displayName: string };
-type CuentaCorrienteAccount = { id: string; customer: Customer; planCode: string | null };
+type CuentaCorrienteAccount = { id: string; customer: Customer; planCode: string | null; coverageAmountCents: number | null };
 type ReservationSummary = { id: string; reservationAt: string; status: SaleStatus; customerName: string; totalCents: number; itemCount: number; coverCount: number | null };
 type Employee = { id: string; displayName: string };
 type PosTable = { id: string; label: string };
@@ -156,6 +156,7 @@ export default function PosPage() {
   const [openTableSales, setOpenTableSales] = useState<OpenTableSale[]>([]);
   const [saleSuccess, setSaleSuccess] = useState<number | null>(null);
   const [selectedPlanCode, setSelectedPlanCode] = useState<string | null>(null);
+  const [filterOverride, setFilterOverride] = useState(false);
   const [upcomingReservations, setUpcomingReservations] = useState<ReservationSummary[]>([]);
 
   const [pendingCustomerName, setPendingCustomerName] = useState("");
@@ -302,12 +303,27 @@ export default function PosPage() {
     setPaymentAmount(remaining);
   }, [sale?.totalCents, paidTotalCents]);
 
+  // Auto-fill CC coverage when method switches to CC or account selection changes
+  useEffect(() => {
+    if (paymentMethod !== "CUENTA_CORRIENTE" || !sale) return;
+    const accId = sale.cuentaCorrienteAccountId || paymentAccountId;
+    const acc = accounts.find((a) => a.id === accId);
+    if (!acc?.coverageAmountCents) return;
+    const coverCount = (sale.externalRefs?.coverCount as number | undefined) ?? 1;
+    const maxCC = acc.coverageAmountCents * coverCount;
+    const remaining = Math.max(0, sale.totalCents - paidTotalCents);
+    setPaymentAmount(Math.min(maxCC, remaining));
+  // Only fires when method or account selection changes, not on every sale update
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethod, paymentAccountId]);
+
   useEffect(() => {
     refreshOpenTableSales();
    
   }, [saleId]);
 
   useEffect(() => {
+    setFilterOverride(false);
     if (!sale?.cuentaCorrienteAccountId) {
       setSelectedPlanCode(null);
       return;
@@ -356,10 +372,12 @@ export default function PosPage() {
   }, [selectedPlanCode]);
 
   const planCapReached = useMemo(() => {
-    if (!allowedPlanConfig?.capCentsPerPerson || !sale) return false;
+    if (filterOverride) return false;
+    const acc = accounts.find((a) => a.id === sale?.cuentaCorrienteAccountId);
+    if (!acc?.coverageAmountCents || !sale) return false;
     const coverCount = (sale.externalRefs?.coverCount as number | undefined) ?? 1;
-    return sale.totalCents >= allowedPlanConfig.capCentsPerPerson * coverCount;
-  }, [allowedPlanConfig, sale]);
+    return sale.totalCents >= acc.coverageAmountCents * coverCount;
+  }, [filterOverride, accounts, sale]);
 
   const canFinalizeMostrador = useMemo(() => {
     if (!sale || sale.saleType !== "MOSTRADOR") return false;
@@ -397,7 +415,7 @@ export default function PosPage() {
           <div className="space-y-1">
             {categories
               .filter((c) => {
-                if (!allowedPlanConfig) return true;
+                if (!allowedPlanConfig || filterOverride) return true;
                 if (allowedPlanConfig.cartaLibre) return true;
                 const name = c.name.toLowerCase();
                 if (name.includes("corporat")) return true;
@@ -471,9 +489,12 @@ export default function PosPage() {
             </div>
           </div>
 
-          {saleTypeDraft === "MESA" && !saleId ? (
-            <div className="mt-3 rounded-md border bg-neutral-50 p-3">
-              <div className="mb-2 text-xs font-semibold text-neutral-700">Seleccioná una mesa</div>
+          {saleTypeDraft === "MESA" && !sale?.tableId ? (
+            <div className="mt-3 rounded-md border-2 border-amber-400 bg-amber-50 p-3">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">1</span>
+                <span className="text-sm font-semibold text-amber-900">Elegí una mesa para continuar</span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {tables.map((t) => {
                   const open = openTableSales.find((s) => s.tableId === t.id);
@@ -491,6 +512,9 @@ export default function PosPage() {
                           if (open) {
                             setSaleId(open.id);
                             await refreshSale(open.id);
+                          } else if (saleId) {
+                            // existing sale (e.g. switched from Mostrador) — assign table
+                            await patchSale({ tableId: t.id });
                           } else {
                             const created = await apiJson<{ sale: { id: string } }>("/api/pos/sales", {
                               method: "POST",
@@ -544,6 +568,7 @@ export default function PosPage() {
             </div>
           ) : null}
 
+          {!(saleTypeDraft === "MESA" && !sale?.tableId) && <>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
               <label className="block text-xs font-medium">Cuenta corriente</label>
@@ -716,37 +741,54 @@ export default function PosPage() {
               </select>
             </div>
           ) : null}
+          </>}
         </div>
 
 
-        {planCapReached ? (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Este cliente llegó al tope de su tarifa. Para agregar otro producto, retirá uno del carrito.
+        {saleTypeDraft === "MESA" && !sale?.tableId ? null : <>
+        {allowedPlanConfig && !filterOverride && !allowedPlanConfig.cartaLibre && (
+          <button
+            type="button"
+            onClick={() => setFilterOverride(true)}
+            className="w-full rounded-md border border-amber-400 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50"
+          >
+            + Agregar ítem fuera de tarifa
+          </button>
+        )}
+        {filterOverride && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+            Modo mixto — menú completo activo
           </div>
-        ) : null}
+        )}
 
         <div className="rounded-lg border bg-white p-3">
           <div className="mb-2 text-sm font-semibold">Productos</div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {products
               .filter((p) => {
-                if (!allowedPlanConfig) return true;
-                const selectedCat = categories.find((c) => c.id === selectedCategoryId);
-                if (!selectedCat) return true;
-                const catName = selectedCat.name.toLowerCase();
-                if (catName.includes("bebida")) {
-                  const pname = p.name.toLowerCase();
-                  return !pname.includes("cerveza") && !pname.includes("energizante");
+                // Restrictions that always apply while a CC account is active
+                if (sale?.cuentaCorrienteAccountId) {
+                  const selectedCat = categories.find((c) => c.id === selectedCategoryId);
+                  if (selectedCat?.name.toLowerCase().includes("bebida")) {
+                    const pname = p.name.toLowerCase();
+                    if (pname.includes("cerveza") || pname.includes("energizante")) return false;
+                  }
                 }
-                if (!catName.includes("corporat")) return true;
-                const pname = p.name.toLowerCase();
-                const { corpoFilter } = allowedPlanConfig;
-                if (corpoFilter === "all") return true;
-                if (corpoFilter === "corpo1") return pname.includes("corpo 1");
-                if (corpoFilter === "corpo2") return pname.includes("corpo 2");
-                if (corpoFilter === "corpo2_basic")
-                  return pname.includes("corpo 2") && (pname.includes("snack") || pname.includes("brunch"));
-                if (corpoFilter === "corpo3") return pname.includes("corpo 3");
+                if (!allowedPlanConfig) return true;
+                // Corpo filter always applies regardless of mode (no cross-tariff products)
+                const selectedCat2 = categories.find((c) => c.id === selectedCategoryId);
+                if (selectedCat2?.name.toLowerCase().includes("corporat")) {
+                  const pname = p.name.toLowerCase();
+                  const { corpoFilter } = allowedPlanConfig;
+                  if (corpoFilter === "all") return true;
+                  if (corpoFilter === "corpo1") return pname.includes("corpo 1");
+                  if (corpoFilter === "corpo2") return pname.includes("corpo 2");
+                  if (corpoFilter === "corpo2_basic")
+                    return pname.includes("corpo 2") && (pname.includes("snack") || pname.includes("brunch"));
+                  if (corpoFilter === "corpo3") return pname.includes("corpo 3");
+                  return true;
+                }
+                // Non-corporativo categories: no product-level filtering
                 return true;
               })
               .sort((a, b) => {
@@ -795,6 +837,7 @@ export default function PosPage() {
               ))}
           </div>
         </div>
+        </>}
 
         {error ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -841,13 +884,16 @@ export default function PosPage() {
             ) : null}
             <button
               type="button"
-              className="rounded-md border px-3 py-2 text-sm"
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-40"
               onClick={() => setPaymentsOpen(true)}
-              disabled={!saleId}
+              disabled={!saleId || (saleTypeDraft === "MESA" && !sale?.tableId)}
             >
               Cobrar
             </button>
           </div>
+          {saleTypeDraft === "MESA" && !sale?.tableId && (
+            <p className="mt-2 text-center text-xs text-amber-700">Seleccioná una mesa para continuar</p>
+          )}
         </div>
 
         <div className="mt-3 space-y-2">
@@ -1009,15 +1055,26 @@ export default function PosPage() {
                   )}
                   disabled={!canConfirm || !saleId}
                   onClick={async () => {
-                    if (!saleId) return;
+                    if (!saleId || !sale) return;
                     try {
                       setError(null);
+                      const willBePaid = sale.saleType === "MESA" && sale.totalCents > 0 && paidTotalCents >= sale.totalCents;
                       await apiJson(`/api/pos/sales/${saleId}/confirm`, { method: "POST" });
-                      if (sale?.saleType === "RESERVA") {
+                      if (sale.saleType === "RESERVA") {
                         setSaleId(null);
                         setSale(null);
                         setPendingCustomerName("");
                         setPaymentsOpen(false);
+                      } else if (willBePaid) {
+                        setSaleSuccess(sale.totalCents);
+                        setPaymentsOpen(false);
+                        await refreshOpenTableSales();
+                        setTimeout(() => {
+                          setSaleSuccess(null);
+                          setSaleId(null);
+                          setSale(null);
+                          setError(null);
+                        }, 2000);
                       } else {
                         await refreshSale(saleId);
                         await refreshOpenTableSales();
@@ -1167,9 +1224,13 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+                disabled={planCapReached}
+                className={cn(
+                  "rounded-md px-3 py-2 text-sm font-medium text-white",
+                  planCapReached ? "cursor-not-allowed bg-neutral-400" : "bg-neutral-900"
+                )}
                 onClick={async () => {
-                  if (!modals.product) return;
+                  if (!modals.product || planCapReached) return;
                   try {
                     setError(null);
                     const sid = await ensureSale();
@@ -1198,6 +1259,21 @@ export default function PosPage() {
       {paymentsOpen && saleId && sale ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
           <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
+            {error && (
+              <div className="mb-4 flex items-start gap-3 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3">
+                <span className="mt-0.5 text-lg leading-none text-red-500">⚠</span>
+                <div className="flex-1">
+                  <div className="font-semibold text-red-800">{error}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="text-red-400 hover:text-red-600 text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-base font-semibold">Cobro</div>
@@ -1254,7 +1330,34 @@ export default function PosPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="block text-xs font-medium">Monto</label>
+                    <div className="flex items-baseline justify-between">
+                      <label className="block text-xs font-medium">Monto</label>
+                      {paymentMethod === "CUENTA_CORRIENTE" && (() => {
+                        const accId = sale.cuentaCorrienteAccountId || paymentAccountId;
+                        const acc = accounts.find((a) => a.id === accId);
+                        if (!acc?.coverageAmountCents) return null;
+                        const coverCount = (sale.externalRefs?.coverCount as number | undefined) ?? 1;
+                        const maxCC = acc.coverageAmountCents * coverCount;
+                        const usedCC = sale.payments
+                          .filter((p) => p.cuentaCorrienteAccount?.id === accId)
+                          .reduce((s, p) => s + p.amountCents, 0);
+                        const availableCC = Math.max(0, maxCC - usedCC);
+                        if (availableCC === 0) {
+                          return (
+                            <span className="text-xs font-medium text-red-600">
+                              Empresa ya cobrado: {formatArsFromCents(maxCC)} — resto va a cuenta personal
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-xs text-slate-500">
+                            Empresa paga hasta {formatArsFromCents(maxCC)}
+                            {usedCC > 0 && <span className="text-amber-600"> · Queda: {formatArsFromCents(availableCC)}</span>}
+                            {coverCount > 1 && <span> ({coverCount} pers.)</span>}
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-neutral-500">$</span>
                       <input
@@ -1263,6 +1366,7 @@ export default function PosPage() {
                         step="1"
                         className="w-full rounded-md border py-2 pl-7 pr-3 text-sm"
                         value={paymentAmount / 100}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => setPaymentAmount(Math.round(parseFloat(e.target.value || "0") * 100))}
                       />
                     </div>
@@ -1337,6 +1441,26 @@ export default function PosPage() {
                         if (paymentMethod === "CUENTA_CORRIENTE" && !comandaNumber.trim()) {
                           setError("Ingresá el número de comanda antes de registrar el pago.");
                           return;
+                        }
+                        if (paymentMethod === "CUENTA_CORRIENTE") {
+                          const accId = sale.cuentaCorrienteAccountId || paymentAccountId;
+                          const acc = accounts.find((a) => a.id === accId);
+                          if (acc?.coverageAmountCents) {
+                            const coverCount = (sale.externalRefs?.coverCount as number | undefined) ?? 1;
+                            const maxCC = acc.coverageAmountCents * coverCount;
+                            const usedCC = sale.payments
+                              .filter((p) => p.cuentaCorrienteAccount?.id === accId)
+                              .reduce((s, p) => s + p.amountCents, 0);
+                            if (usedCC + paymentAmount > maxCC) {
+                              const available = Math.max(0, maxCC - usedCC);
+                              setError(
+                                available === 0
+                                  ? `La cobertura CC ya fue utilizada completamente (${formatArsFromCents(maxCC)}).`
+                                  : `El monto supera la cobertura disponible (${formatArsFromCents(available)} de ${formatArsFromCents(maxCC)}).`
+                              );
+                              return;
+                            }
+                          }
                         }
                         await apiJson(`/api/pos/sales/${saleId}/payments`, {
                           method: "POST",

@@ -43,7 +43,7 @@ function printConsumosWindow(customerName: string, period: string, sales: Period
             return `${i.qty}× ${i.productName}${mods}`;
           }).join(", ") || "Consumo"}</td>
           <td>${s.comandaNumber ? `#${s.comandaNumber}` : ""}</td>
-          <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}</td>
+          <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}${s.totalCents > s.ccAmountCents ? ` <span style="color:#94a3b8;font-size:10px">(+${formatArsFromCents(s.totalCents - s.ccAmountCents)} pers.)</span>` : ""}</td>
         </tr>`
     )
     .join("");
@@ -94,7 +94,7 @@ function printInvoiceDetailWindow(detail: InvoiceDetail) {
             const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
             return `${i.qty}× ${i.productName}${mods}`;
           }).join(", ") || "Consumo"}</td>
-          <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}</td>
+          <td style="text-align:right">${formatArsFromCents(s.ccAmountCents)}${s.totalCents > s.ccAmountCents ? ` <span style="color:#94a3b8;font-size:10px">(+${formatArsFromCents(s.totalCents - s.ccAmountCents)} pers.)</span>` : ""}</td>
         </tr>`
     )
     .join("");
@@ -180,7 +180,14 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
                       <div key={sale.id} className="px-4 py-2">
                         <div className="flex justify-between text-xs text-neutral-400 mb-1">
                           <span>{formatDate(sale.createdAt)}</span>
-                          <span className="font-medium text-neutral-700">{formatArsFromCents(sale.ccAmountCents)}</span>
+                          <span className="font-medium text-neutral-700">
+                            {formatArsFromCents(sale.ccAmountCents)}
+                            {sale.totalCents > sale.ccAmountCents && (
+                              <span className="ml-1 text-xs font-normal text-slate-400">
+                                (+{formatArsFromCents(sale.totalCents - sale.ccAmountCents)} pers.)
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div className="text-xs text-neutral-600 space-y-0.5">
                           {sale.items.map((item, idx) => (
@@ -343,7 +350,14 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                         : <ComandaInlineEdit url={`/api/pos/sales/${sale.id}`} onSaved={onRefresh} />
                       }
                     </td>
-                    <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(sale.ccAmountCents)}</td>
+                    <td className="py-2 text-right text-neutral-800 font-medium whitespace-nowrap">
+                      {formatArsFromCents(sale.ccAmountCents)}
+                      {sale.totalCents > sale.ccAmountCents && (
+                        <span className="ml-1 text-xs font-normal text-slate-400">
+                          (+{formatArsFromCents(sale.totalCents - sale.ccAmountCents)} pers.)
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {directCharges.map((charge) => (

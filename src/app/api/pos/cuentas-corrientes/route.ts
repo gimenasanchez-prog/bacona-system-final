@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       id: a.id,
       customer: a.customer,
       planCode: a.planCode ?? null,
+      coverageAmountCents: a.coverageAmountCents ?? null,
     })),
   });
 }
