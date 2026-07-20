@@ -356,12 +356,13 @@ export default function PosPage() {
     const configs: Record<string, {
       showSnacks: boolean;
       showBebidas: boolean;
-      corpoFilter: "all" | "corpo1" | "corpo2" | "corpo2_basic" | "corpo3";
+      corpoFilter: "all" | "corpo1" | "corpo1_snack" | "corpo2" | "corpo2_basic" | "corpo3";
       cartaLibre: boolean;
       capCentsPerPerson: number | null;
     }> = {
       CORPO1:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
       CORPO1_BEBIDAS:     { showSnacks: false, showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
+      CORPO1_SNACK_BEBIDA: { showSnacks: false, showBebidas: true, corpoFilter: "corpo1_snack", cartaLibre: false, capCentsPerPerson: null },
       CORPO1_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
       CORPO2:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
       CORPO2_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
@@ -782,6 +783,8 @@ export default function PosPage() {
                   const { corpoFilter } = allowedPlanConfig;
                   if (corpoFilter === "all") return true;
                   if (corpoFilter === "corpo1") return pname.includes("corpo 1");
+                  if (corpoFilter === "corpo1_snack")
+                    return pname.includes("corpo 1") && pname.includes("snack");
                   if (corpoFilter === "corpo2") return pname.includes("corpo 2");
                   if (corpoFilter === "corpo2_basic")
                     return pname.includes("corpo 2") && (pname.includes("snack") || pname.includes("brunch"));
