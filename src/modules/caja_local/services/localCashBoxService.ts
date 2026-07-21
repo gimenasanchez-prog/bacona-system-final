@@ -65,19 +65,25 @@ export class LocalCashBoxService {
     return inSum - outSum;
   }
 
-  static async listMovements(localCashBoxId: string) {
-    return prisma.localCashMovement.findMany({
-      where: { localCashBoxId },
-      include: {
-        relatedEnvelope: true,
-        relatedLocalExpense: {
-          select: { id: true, supplierNameSnapshot: true, description: true },
+  static async listMovements(localCashBoxId: string, params: { page: number; pageSize: number }) {
+    const { page, pageSize } = params;
+    const [movements, total] = await prisma.$transaction([
+      prisma.localCashMovement.findMany({
+        where: { localCashBoxId },
+        include: {
+          relatedEnvelope: true,
+          relatedLocalExpense: {
+            select: { id: true, supplierNameSnapshot: true, description: true },
+          },
+          createdByEmployee: { select: { id: true, displayName: true } },
         },
-        createdByEmployee: { select: { id: true, displayName: true } },
-      },
-      orderBy: { date: "desc" },
-      take: 200,
-    });
+        orderBy: { date: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.localCashMovement.count({ where: { localCashBoxId } }),
+    ]);
+    return { movements, total };
   }
 
   static async getEnvelopeCashSummary() {

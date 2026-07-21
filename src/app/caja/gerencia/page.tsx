@@ -9,6 +9,8 @@ import { OpenEnvelopeModal } from "../local/OpenEnvelopeModal";
 import { BulkOpenEnvelopesPanel } from "../local/BulkOpenEnvelopesPanel";
 import { PesosInput } from "@/components/PesosInput";
 
+const PAGE_SIZE = 20;
+
 const SOURCE_TYPE_LABEL: Record<string, string> = {
   ENVELOPE_OPENING: "Apertura de sobre",
   MANUAL_ADJUSTMENT: "Ajuste manual",
@@ -33,14 +35,18 @@ export default async function CajaGerenciaPage(props: {
 
   const sp = await props.searchParams;
   const errorMsg = typeof sp.error === "string" ? decodeURIComponent(sp.error) : null;
+  const pageParam = typeof sp.page === "string" ? parseInt(sp.page, 10) : 1;
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
   const box = await LocalCashBoxService.getCajaByName("Caja Gerencia");
-  const [balanceCents, envelopeSummary, movements, envelopes] = await Promise.all([
+  const [balanceCents, envelopeSummary, movementsPage, envelopes] = await Promise.all([
     LocalCashBoxService.getLocalCashBalance(box.id),
     LocalCashBoxService.getEnvelopeCashSummary(),
-    LocalCashBoxService.listMovements(box.id),
+    LocalCashBoxService.listMovements(box.id, { page, pageSize: PAGE_SIZE }),
     LocalCashBoxService.listAvailableEnvelopes(),
   ]);
+  const { movements, total } = movementsPage;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const today = new Date().toISOString().slice(0, 10);
   const returnTo = "/caja/gerencia";
@@ -181,7 +187,8 @@ export default async function CajaGerenciaPage(props: {
         </form>
       </div>
 
-      <div className="mt-4 overflow-auto rounded-lg border bg-white shadow-sm">
+      <div className="mt-4 text-sm font-semibold">Historial de movimientos</div>
+      <div className="mt-2 overflow-auto rounded-lg border bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-white">
             <tr className="border-b">
@@ -189,6 +196,7 @@ export default async function CajaGerenciaPage(props: {
               <th className="px-2 py-2 text-left font-medium">Tipo</th>
               <th className="px-2 py-2 text-left font-medium">Origen</th>
               <th className="px-2 py-2 text-left font-medium">Referencia</th>
+              <th className="px-2 py-2 text-left font-medium">Motivo</th>
               <th className="px-2 py-2 text-right font-medium">Monto</th>
               <th className="px-2 py-2 text-left font-medium">Registrado por</th>
             </tr>
@@ -217,19 +225,39 @@ export default async function CajaGerenciaPage(props: {
                     "—"
                   )}
                 </td>
+                <td className="px-2 py-2 text-xs">{m.description ?? "—"}</td>
                 <td className="px-2 py-2 text-right font-semibold">{formatArsFromCents(m.amountCents)}</td>
                 <td className="px-2 py-2">{m.createdByEmployee.displayName}</td>
               </tr>
             ))}
             {!movements.length ? (
               <tr>
-                <td className="px-2 py-6 text-center text-sm text-neutral-600" colSpan={6}>
+                <td className="px-2 py-6 text-center text-sm text-neutral-600" colSpan={7}>
                   Sin movimientos todavía.
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t px-3 py-2 text-sm">
+            <Link
+              className={`rounded-md border px-3 py-1.5 ${page <= 1 ? "pointer-events-none opacity-40" : "hover:bg-neutral-50"}`}
+              href={`/caja/gerencia?page=${page - 1}`}
+            >
+              Anterior
+            </Link>
+            <span className="text-neutral-600">
+              Página {page} de {totalPages}
+            </span>
+            <Link
+              className={`rounded-md border px-3 py-1.5 ${page >= totalPages ? "pointer-events-none opacity-40" : "hover:bg-neutral-50"}`}
+              href={`/caja/gerencia?page=${page + 1}`}
+            >
+              Siguiente
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );
