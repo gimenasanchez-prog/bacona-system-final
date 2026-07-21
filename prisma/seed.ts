@@ -744,6 +744,18 @@ async function main() {
     }
   }
 
+  console.log("Creando cuenta de facturación raíz Posco Enc...");
+  const poscoRootCustomer = await prisma.customer.create({
+    data: { displayName: "Posco Enc", isActive: true },
+  });
+  const poscoRootAccount = await prisma.cuentaCorrienteAccount.create({
+    data: { customerId: poscoRootCustomer.id, isActive: true, billingCycle: "MENSUAL" },
+  });
+  await prisma.cuentaCorrienteAccount.updateMany({
+    where: { customer: { displayName: { in: ["Posco Enc Arg", "Posco Enc Kor"] } } },
+    data: { billsToAccountId: poscoRootAccount.id },
+  });
+
   const totalProductos = CATALOGO.reduce((s, c) => s + c.productos.length, 0);
   console.log("\n✅ Seed completado:");
   console.log(`  Empleados:      ${EMPLEADOS.length}`);

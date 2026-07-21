@@ -109,7 +109,12 @@ model CuentaCorrienteAccount {
   sales          PosSale[]                @relation("SaleCuentaCorriente")
   directCharges  CcDirectCharge[]
 
+  billsToAccountId  String?
+  billsToAccount    CuentaCorrienteAccount?  @relation("AccountBilling", fields: [billsToAccountId], references: [id])
+  satelliteAccounts CuentaCorrienteAccount[] @relation("AccountBilling")
+
   @@index([customerId, isActive])
+  @@index([billsToAccountId])
 }
 
 model CuentaCorrienteInvoice {

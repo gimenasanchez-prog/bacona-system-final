@@ -225,46 +225,70 @@ export class CuentaCorrienteService {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    const accounts = await prisma.cuentaCorrienteAccount.findMany({
-      where: { isActive: true },
+    // Cuentas "raíz" (no facturan a través de otra cuenta). Las cuentas satélite
+    // (billsToAccountId != null, ej. Posco Enc Arg/Kor) se usan en el POS para
+    // elegir tarifa, pero su consumo se consolida acá bajo la cuenta padre.
+    const rootAccounts = await prisma.cuentaCorrienteAccount.findMany({
+      where: { isActive: true, billsToAccountId: null },
       include: {
         customer: { select: { displayName: true } },
-        // Traer TODAS las facturas (pagadas y no pagadas)
-        invoices: {
-          orderBy: { periodFrom: "desc" },
-          include: { sales: { select: { id: true } } },
-        },
-        // Traer TODAS las ventas de CC (sin filtro de fecha ni de factura)
-        sales: {
-          where: { status: { in: ["CONFIRMED", "PAID"] } },
-          include: {
-            items: {
-              select: {
-                qty: true,
-                product: { select: { name: true } },
-                modifiers: { include: { modifierOption: { select: { name: true } } } },
-              },
-            },
-            payments: {
-              where: { method: "CUENTA_CORRIENTE" },
-              select: { amountCents: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-        directCharges: {
-          orderBy: { date: "desc" },
-        },
+        satelliteAccounts: { select: { id: true } },
       },
       orderBy: { customer: { displayName: "asc" } },
     });
 
-    return accounts.map((acc) => {
+    const accountIdGroups = rootAccounts.map((acc) => ({
+      acc,
+      accountIds: [acc.id, ...acc.satelliteAccounts.map((s) => s.id)],
+    }));
+    const allAccountIds = accountIdGroups.flatMap((g) => g.accountIds);
+
+    const [allInvoicesFlat, allSalesFlat, allDirectChargesFlat] = await Promise.all([
+      // Traer TODAS las facturas (pagadas y no pagadas), de la cuenta raíz y sus satélites
+      prisma.cuentaCorrienteInvoice.findMany({
+        where: { accountId: { in: allAccountIds } },
+        orderBy: { periodFrom: "desc" },
+        include: { sales: { select: { id: true } } },
+      }),
+      // Traer TODAS las ventas de CC (sin filtro de fecha ni de factura), de la cuenta raíz y sus satélites
+      prisma.posSale.findMany({
+        where: {
+          cuentaCorrienteAccountId: { in: allAccountIds },
+          status: { in: ["CONFIRMED", "PAID"] },
+        },
+        include: {
+          items: {
+            select: {
+              qty: true,
+              product: { select: { name: true } },
+              modifiers: { include: { modifierOption: { select: { name: true } } } },
+            },
+          },
+          payments: {
+            where: { method: "CUENTA_CORRIENTE" },
+            select: { amountCents: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.ccDirectCharge.findMany({
+        where: { cuentaCorrienteAccountId: { in: allAccountIds } },
+        orderBy: { date: "desc" },
+      }),
+    ]);
+
+    return accountIdGroups.map(({ acc, accountIds }) => {
       const cycle = acc.billingCycle;
       const currentPeriod = getPeriodForDate(now, cycle);
 
+      const accInvoices = allInvoicesFlat.filter((inv) => accountIds.includes(inv.accountId));
+      const accSalesRaw = allSalesFlat.filter(
+        (s) => s.cuentaCorrienteAccountId && accountIds.includes(s.cuentaCorrienteAccountId)
+      );
+      const accDirectChargesRaw = allDirectChargesFlat.filter((c) => accountIds.includes(c.cuentaCorrienteAccountId));
+
       // Convertir ventas a UnbilledSale
-      const allSales: UnbilledSale[] = acc.sales.map((s) => ({
+      const allSales: UnbilledSale[] = accSalesRaw.map((s) => ({
         id: s.id,
         totalCents: s.totalCents,
         ccAmountCents: s.payments.reduce((sum, p) => sum + p.amountCents, 0),
@@ -277,7 +301,7 @@ export class CuentaCorrienteService {
         })),
       }));
 
-      const allDirectCharges: DirectCharge[] = acc.directCharges.map((c) => ({
+      const allDirectCharges: DirectCharge[] = accDirectChargesRaw.map((c) => ({
         id: c.id,
         date: c.date,
         description: c.description,
@@ -290,7 +314,7 @@ export class CuentaCorrienteService {
 
       // Construir mapa de facturas por período (key = periodFrom ISO date)
       const invoiceByPeriodKey = new Map<string, InvoiceSummary>();
-      for (const inv of acc.invoices) {
+      for (const inv of accInvoices) {
         const key = periodKey(inv.periodFrom);
         // Si hay múltiples facturas para el mismo período (edge case), guardar la más reciente
         if (!invoiceByPeriodKey.has(key)) {
@@ -314,7 +338,7 @@ export class CuentaCorrienteService {
       }
 
       // Períodos de facturas
-      for (const inv of acc.invoices) {
+      for (const inv of accInvoices) {
         periodKeys.add(periodKey(inv.periodFrom));
       }
 
@@ -512,9 +536,17 @@ export class CuentaCorrienteService {
   static async createInvoice(accountId: string, params: CreateInvoiceParams) {
     const { periodFrom, periodTo } = params;
 
+    // Incluye las cuentas satélite (si las hay) para que la factura sume también
+    // lo vendido contra ellas — la cuenta padre es la única unidad de facturación.
+    const account = await prisma.cuentaCorrienteAccount.findUniqueOrThrow({
+      where: { id: accountId },
+      include: { satelliteAccounts: { select: { id: true } } },
+    });
+    const accountIds = [accountId, ...account.satelliteAccounts.map((s) => s.id)];
+
     const existing = await prisma.cuentaCorrienteInvoice.findFirst({
       where: {
-        accountId,
+        accountId: { in: accountIds },
         isPaid: false,
         periodFrom: { lte: periodTo },
         periodTo: { gte: periodFrom },
@@ -526,7 +558,7 @@ export class CuentaCorrienteService {
 
     const sales = await prisma.posSale.findMany({
       where: {
-        cuentaCorrienteAccountId: accountId,
+        cuentaCorrienteAccountId: { in: accountIds },
         status: { in: ["CONFIRMED", "PAID"] },
         cuentaCorrienteInvoiceId: null,
         createdAt: { gte: periodFrom, lte: periodTo },
@@ -541,7 +573,7 @@ export class CuentaCorrienteService {
 
     const directCharges = await prisma.ccDirectCharge.findMany({
       where: {
-        cuentaCorrienteAccountId: accountId,
+        cuentaCorrienteAccountId: { in: accountIds },
         cuentaCorrienteInvoiceId: null,
         date: { gte: periodFrom, lte: periodTo },
       },

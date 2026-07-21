@@ -9,6 +9,9 @@ export async function GET(req: NextRequest) {
   const accounts = await prisma.cuentaCorrienteAccount.findMany({
     where: {
       isActive: true,
+      // Las cuentas "padre" de facturación (con satélites) no se venden
+      // directamente en el POS — solo sus cuentas satélite.
+      satelliteAccounts: { none: {} },
       ...(query
         ? {
             customer: {
@@ -21,7 +24,7 @@ export async function GET(req: NextRequest) {
         : {}),
     },
     include: { customer: { select: { id: true, displayName: true } } },
-    orderBy: { createdAt: "desc" },
+    orderBy: { customer: { displayName: "asc" } },
     take: 50,
   });
 
