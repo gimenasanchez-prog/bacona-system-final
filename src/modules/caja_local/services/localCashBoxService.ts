@@ -67,7 +67,7 @@ export class LocalCashBoxService {
 
   static async listMovements(localCashBoxId: string, params: { page: number; pageSize: number }) {
     const { page, pageSize } = params;
-    const [movements, total] = await prisma.$transaction([
+    const [pageMovements, total, allForBalance] = await prisma.$transaction([
       prisma.localCashMovement.findMany({
         where: { localCashBoxId },
         include: {
@@ -77,12 +77,30 @@ export class LocalCashBoxService {
           },
           createdByEmployee: { select: { id: true, displayName: true } },
         },
-        orderBy: { date: "desc" },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.localCashMovement.count({ where: { localCashBoxId } }),
+      prisma.localCashMovement.findMany({
+        where: { localCashBoxId },
+        select: { id: true, type: true, amountCents: true },
+        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      }),
     ]);
+
+    let running = 0;
+    const balanceById = new Map<string, number>();
+    for (const m of allForBalance) {
+      running += m.type === "IN" ? m.amountCents : -m.amountCents;
+      balanceById.set(m.id, running);
+    }
+
+    const movements = pageMovements.map((m) => ({
+      ...m,
+      balanceAfterCents: balanceById.get(m.id) ?? 0,
+    }));
+
     return { movements, total };
   }
 

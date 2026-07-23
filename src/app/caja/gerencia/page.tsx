@@ -198,6 +198,7 @@ export default async function CajaGerenciaPage(props: {
               <th className="px-2 py-2 text-left font-medium">Referencia</th>
               <th className="px-2 py-2 text-left font-medium">Motivo</th>
               <th className="px-2 py-2 text-right font-medium">Monto</th>
+              <th className="px-2 py-2 text-right font-medium">Saldo caja</th>
               <th className="px-2 py-2 text-left font-medium">Registrado por</th>
             </tr>
           </thead>
@@ -227,12 +228,13 @@ export default async function CajaGerenciaPage(props: {
                 </td>
                 <td className="px-2 py-2 text-xs">{m.description ?? "—"}</td>
                 <td className="px-2 py-2 text-right font-semibold">{formatArsFromCents(m.amountCents)}</td>
+                <td className="px-2 py-2 text-right">{formatArsFromCents(m.balanceAfterCents)}</td>
                 <td className="px-2 py-2">{m.createdByEmployee.displayName}</td>
               </tr>
             ))}
             {!movements.length ? (
               <tr>
-                <td className="px-2 py-6 text-center text-sm text-neutral-600" colSpan={7}>
+                <td className="px-2 py-6 text-center text-sm text-neutral-600" colSpan={8}>
                   Sin movimientos todavía.
                 </td>
               </tr>
