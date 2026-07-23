@@ -179,11 +179,12 @@ export async function createLocalCashManualMovementAction(formData: FormData) {
       ? { id: localCashBoxIdOverride }
       : await LocalCashBoxService.getActiveLocalCashBox();
 
+    const timeOfDay = new Date().toTimeString().slice(0, 8);
     await LocalCashBoxService.createManualMovement({
       localCashBoxId: box.id,
       type: parsed.data.type,
       amountCents: parsed.data.amountCents,
-      date: new Date(`${parsed.data.date}T00:00:00`),
+      date: new Date(`${parsed.data.date}T${timeOfDay}`),
       description: parsed.data.description ?? null,
       createdByEmployeeId: employeeId,
     });

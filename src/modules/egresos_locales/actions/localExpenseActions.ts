@@ -61,9 +61,10 @@ export async function createLocalExpenseAction(
           }
         : null;
 
+    const timeOfDay = new Date().toTimeString().slice(0, 8);
     const expense = await LocalExpenseService.createLocalExpense({
       cashSessionId: parsed.data.cashSessionId,
-      date: new Date(`${parsed.data.date}T00:00:00`),
+      date: new Date(`${parsed.data.date}T${timeOfDay}`),
       category: parsed.data.category,
       supplierId: parsed.data.supplierId,
       description: parsed.data.description ?? null,
