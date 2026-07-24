@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
 
@@ -8,8 +9,9 @@ const patchSchema = z
   .object({
     isActive: z.boolean().optional(),
     role: z.enum(["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO"]).optional(),
+    pin: z.string().regex(/^\d{4}$/, "El PIN debe tener exactamente 4 dígitos").optional(),
   })
-  .refine((d) => d.isActive !== undefined || d.role !== undefined, {
+  .refine((d) => d.isActive !== undefined || d.role !== undefined || d.pin !== undefined, {
     message: "Se requiere al menos un campo para actualizar",
   });
 
@@ -29,13 +31,21 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
+  const { pin, ...rest } = parsed.data;
+  const data: Record<string, unknown> = { ...rest };
+  if (pin !== undefined) {
+    data.pinHash = await bcrypt.hash(pin, 10);
+  }
+
   try {
     const employee = await prisma.employee.update({
       where: { id },
-      data: parsed.data,
-      select: { id: true, displayName: true, role: true, isActive: true },
+      data,
+      select: { id: true, displayName: true, role: true, isActive: true, pinHash: true },
     });
-    return NextResponse.json({ employee });
+    return NextResponse.json({
+      employee: { ...employee, hasPin: employee.pinHash !== null, pinHash: undefined },
+    });
   } catch {
     return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
   }

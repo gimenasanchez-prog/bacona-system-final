@@ -7,13 +7,13 @@ datasource db {
 }
 
 model Category {
-  id          String                  @id @default(cuid())
-  name        String
-  sortOrder   Int                     @default(0)
-  isActive    Boolean                 @default(true)
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
-  products    Product[]
+  id           String                 @id @default(cuid())
+  name         String
+  sortOrder    Int                    @default(0)
+  isActive     Boolean                @default(true)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  products     Product[]
   margenConfig ConfigMargenCategoria?
 
   @@index([isActive, sortOrder])
@@ -100,14 +100,14 @@ model CuentaCorrienteAccount {
   planCode            String?
   coverageAmountCents Int?
   billingCycle        BillingCycle             @default(MENSUAL)
-  isActive       Boolean                  @default(true)
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
-  customer       Customer                 @relation(fields: [customerId], references: [id])
-  invoices       CuentaCorrienteInvoice[]
-  payments       PosPayment[]
-  sales          PosSale[]                @relation("SaleCuentaCorriente")
-  directCharges  CcDirectCharge[]
+  isActive            Boolean                  @default(true)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  customer            Customer                 @relation(fields: [customerId], references: [id])
+  invoices            CuentaCorrienteInvoice[]
+  payments            PosPayment[]
+  sales               PosSale[]                @relation("SaleCuentaCorriente")
+  directCharges       CcDirectCharge[]
 
   billsToAccountId  String?
   billsToAccount    CuentaCorrienteAccount?  @relation("AccountBilling", fields: [billsToAccountId], references: [id])
@@ -118,60 +118,65 @@ model CuentaCorrienteAccount {
 }
 
 model CuentaCorrienteInvoice {
-  id                   String                 @id @default(cuid())
-  accountId            String
-  periodFrom           DateTime
-  periodTo             DateTime
-  billingDate          DateTime               @default(now())
-  estimatedPaymentDate DateTime
-  subtotalCents        Int
-  ivaExento            Boolean                @default(false)
-  ivaDiscriminado      Boolean                @default(false)
-  ivaAmountCents       Int                    @default(0)
-  bankWithholdingCents Int                    @default(0)
-  bankFeesCents        Int                    @default(0)
-  totalAmountCents     Int
+  id                      String                 @id @default(cuid())
+  accountId               String
+  periodFrom              DateTime
+  periodTo                DateTime
+  billingDate             DateTime               @default(now())
+  estimatedPaymentDate    DateTime
+  subtotalCents           Int
+  ivaExento               Boolean                @default(false)
+  ivaDiscriminado         Boolean                @default(false)
+  ivaAmountCents          Int                    @default(0)
+  bankWithholdingCents    Int                    @default(0)
+  bankFeesCents           Int                    @default(0)
+  totalAmountCents        Int
   arcaFacturaNumber       String?
   ivaRetentionCents       Int                    @default(0)
   gananciasRetentionCents Int                    @default(0)
   rentasRetentionCents    Int                    @default(0)
   sussRetentionCents      Int                    @default(0)
   tisshRetentionCents     Int                    @default(0)
-  isPaid               Boolean                @default(false)
-  paidAt               DateTime?
-  paidAmountCents      Int                    @default(0)
-  paymentDate          DateTime?
-  paymentReference     String?
-  digitalInvoiceUrl    String?
-  notes                String?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  account              CuentaCorrienteAccount @relation(fields: [accountId], references: [id])
-  sales                PosSale[]              @relation("InvoicedSales")
-  directCharges        CcDirectCharge[]
+  isPaid                  Boolean                @default(false)
+  paidAt                  DateTime?
+  paidAmountCents         Int                    @default(0)
+  paymentDate             DateTime?
+  paymentReference        String?
+  digitalInvoiceUrl       String?
+  notes                   String?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  account                 CuentaCorrienteAccount @relation(fields: [accountId], references: [id])
+  sales                   PosSale[]              @relation("InvoicedSales")
+  directCharges           CcDirectCharge[]
+  localCashMovements      LocalCashMovement[]
 
   @@index([accountId, isPaid])
   @@index([estimatedPaymentDate])
 }
 
 model Employee {
-  id                        String              @id @default(cuid())
-  displayName               String
-  isActive                  Boolean             @default(true)
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
-  role                      EmployeeRole        @default(ASOCIADO)
-  cashSessions              CashSession[]
-  envelopesControlled       Envelope[]          @relation("EmployeeEnvelopesControlled")
-  envelopesOpened           Envelope[]          @relation("EmployeeEnvelopesOpened")
-  localCashMovementsCreated LocalCashMovement[] @relation("EmployeeLocalCashMovementsCreated")
-  localExpensesCreated      LocalExpense[]      @relation("EmployeeLocalExpensesCreated")
-  payments                  PosPayment[]
-  stockMovementsCreated     StockMovement[]     @relation("EmployeeStockMovementsCreated")
-  ccDirectChargesCreated    CcDirectCharge[]    @relation("EmployeeCcDirectChargesCreated")
-  margenConfigsUpdated      ConfigMargenCategoria[]
-  priceHistoryCreated       PriceHistory[]      @relation("EmployeePriceHistoryCreated")
-  priceBulkUpdatesCreated   PriceBulkUpdate[]   @relation("EmployeePriceBulkUpdatesCreated")
+  id                                 String                       @id @default(cuid())
+  displayName                        String
+  isActive                           Boolean                      @default(true)
+  createdAt                          DateTime                     @default(now())
+  updatedAt                          DateTime                     @updatedAt
+  role                               EmployeeRole                 @default(ASOCIADO)
+  pinHash                            String?
+  cashSessions                       CashSession[]
+  envelopesControlled                Envelope[]                   @relation("EmployeeEnvelopesControlled")
+  envelopesOpened                    Envelope[]                   @relation("EmployeeEnvelopesOpened")
+  localCashMovementsCreated          LocalCashMovement[]          @relation("EmployeeLocalCashMovementsCreated")
+  localExpensesCreated               LocalExpense[]               @relation("EmployeeLocalExpensesCreated")
+  payments                           PosPayment[]
+  stockMovementsCreated              StockMovement[]              @relation("EmployeeStockMovementsCreated")
+  ccDirectChargesCreated             CcDirectCharge[]             @relation("EmployeeCcDirectChargesCreated")
+  margenConfigsUpdated               ConfigMargenCategoria[]
+  priceHistoryCreated                PriceHistory[]               @relation("EmployeePriceHistoryCreated")
+  priceBulkUpdatesCreated            PriceBulkUpdate[]            @relation("EmployeePriceBulkUpdatesCreated")
+  supplierPaymentsCreated            SupplierPayment[]            @relation("EmployeeSupplierPaymentsCreated")
+  creditCardStatementPaymentsCreated CreditCardStatementPayment[] @relation("EmployeeCreditCardStatementPaymentsCreated")
+  costoFijoPaymentsCreated           CostoFijoPayment[]           @relation("EmployeeCostoFijoPaymentsCreated")
 
   @@index([isActive, displayName])
 }
@@ -222,12 +227,15 @@ model CashSessionPaymentBreakdownDetail {
 }
 
 model Supplier {
-  id        String         @id @default(cuid())
+  id        String            @id @default(cuid())
   name      String
-  active    Boolean        @default(true)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
   expenses  LocalExpense[]
+  purchases Purchase[]
+  payables  SupplierPayable[]
+  payments  SupplierPayment[]
 
   @@index([active, name])
 }
@@ -281,38 +289,57 @@ model Envelope {
 }
 
 model LocalCashBox {
-  id        String              @id @default(cuid())
-  name      String              @unique
-  active    Boolean             @default(true)
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
-  movements LocalCashMovement[]
+  id                       String                       @id @default(cuid())
+  name                     String                       @unique
+  active                   Boolean                      @default(true)
+  kind                     CashBoxKind                  @default(EFECTIVO)
+  defaultForPaymentMethods PosPaymentMethod[]           @default([])
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  movements                LocalCashMovement[]
+  supplierPayments         SupplierPayment[]
+  creditCardsPayingFrom    CreditCard[]
+  creditCardStatementPays  CreditCardStatementPayment[]
+  costoFijoPayments        CostoFijoPayment[]
 
   @@index([active, name])
+  @@index([kind, active])
 }
 
 model LocalCashMovement {
-  id                    String                      @id @default(cuid())
-  localCashBoxId        String
-  type                  LocalCashMovementType
-  sourceType            LocalCashMovementSourceType
-  relatedEnvelopeId     String?
-  relatedLocalExpenseId String?
-  amountCents           Int
-  date                  DateTime
-  description           String?
-  createdByEmployeeId   String
-  createdAt             DateTime                    @default(now())
-  createdByEmployee     Employee                    @relation("EmployeeLocalCashMovementsCreated", fields: [createdByEmployeeId], references: [id])
-  localCashBox          LocalCashBox                @relation(fields: [localCashBoxId], references: [id])
-  relatedEnvelope       Envelope?                   @relation(fields: [relatedEnvelopeId], references: [id])
-  relatedLocalExpense   LocalExpense?               @relation(fields: [relatedLocalExpenseId], references: [id])
+  id                                  String                      @id @default(cuid())
+  localCashBoxId                      String
+  type                                LocalCashMovementType
+  sourceType                          LocalCashMovementSourceType
+  relatedEnvelopeId                   String?
+  relatedLocalExpenseId               String?
+  relatedSupplierPaymentId            String?                     @unique
+  relatedCostoFijoPaymentId           String?                     @unique
+  relatedCreditCardStatementPaymentId String?                     @unique
+  relatedCuentaCorrienteInvoiceId     String?
+  grossAmountCents                    Int?
+  bankWithholdingCents                Int?                        @default(0)
+  bankFeesCents                       Int?                        @default(0)
+  amountCents                         Int
+  date                                DateTime
+  description                         String?
+  createdByEmployeeId                 String
+  createdAt                           DateTime                    @default(now())
+  createdByEmployee                   Employee                    @relation("EmployeeLocalCashMovementsCreated", fields: [createdByEmployeeId], references: [id])
+  localCashBox                        LocalCashBox                @relation(fields: [localCashBoxId], references: [id])
+  relatedEnvelope                     Envelope?                   @relation(fields: [relatedEnvelopeId], references: [id])
+  relatedLocalExpense                 LocalExpense?               @relation(fields: [relatedLocalExpenseId], references: [id])
+  relatedSupplierPayment              SupplierPayment?            @relation(fields: [relatedSupplierPaymentId], references: [id])
+  relatedCostoFijoPayment             CostoFijoPayment?           @relation(fields: [relatedCostoFijoPaymentId], references: [id])
+  relatedCreditCardStatementPayment   CreditCardStatementPayment? @relation(fields: [relatedCreditCardStatementPaymentId], references: [id])
+  relatedCuentaCorrienteInvoice       CuentaCorrienteInvoice?     @relation(fields: [relatedCuentaCorrienteInvoiceId], references: [id])
 
   @@index([localCashBoxId, date])
   @@index([type, date])
   @@index([sourceType, date])
   @@index([relatedEnvelopeId])
   @@index([relatedLocalExpenseId])
+  @@index([relatedCuentaCorrienteInvoiceId])
 }
 
 model PosTable {
@@ -327,32 +354,32 @@ model PosTable {
 }
 
 model PosSale {
-  id                         String                  @id @default(cuid())
-  saleType                   PosSaleType
-  status                     PosSaleStatus           @default(DRAFT)
-  customerId                 String?
-  cuentaCorrienteAccountId   String?
-  cuentaCorrienteInvoiceId   String?
-  customerNameFreeText       String?
-  tableId                    String?
-  reservationAt              DateTime?
-  subtotalCents              Int                     @default(0)
-  totalCents                 Int                     @default(0)
-  externalRefs               Json?
-  comandaNumber              String?
-  cancellationReason         String?
-  cancelledAt                DateTime?
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
-  cashSessionId              String?
-  payments                   PosPayment[]
-  cashSession                CashSession?            @relation(fields: [cashSessionId], references: [id])
-  cuentaCorrienteAccount     CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
-  cuentaCorrienteInvoice     CuentaCorrienteInvoice? @relation("InvoicedSales", fields: [cuentaCorrienteInvoiceId], references: [id])
-  customer                   Customer?               @relation(fields: [customerId], references: [id])
-  table                      PosTable?               @relation(fields: [tableId], references: [id])
-  items                      PosSaleItem[]
-  stockMovement              StockMovement?          @relation("SaleStockMovement")
+  id                       String                  @id @default(cuid())
+  saleType                 PosSaleType
+  status                   PosSaleStatus           @default(DRAFT)
+  customerId               String?
+  cuentaCorrienteAccountId String?
+  cuentaCorrienteInvoiceId String?
+  customerNameFreeText     String?
+  tableId                  String?
+  reservationAt            DateTime?
+  subtotalCents            Int                     @default(0)
+  totalCents               Int                     @default(0)
+  externalRefs             Json?
+  comandaNumber            String?
+  cancellationReason       String?
+  cancelledAt              DateTime?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  cashSessionId            String?
+  payments                 PosPayment[]
+  cashSession              CashSession?            @relation(fields: [cashSessionId], references: [id])
+  cuentaCorrienteAccount   CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
+  cuentaCorrienteInvoice   CuentaCorrienteInvoice? @relation("InvoicedSales", fields: [cuentaCorrienteInvoiceId], references: [id])
+  customer                 Customer?               @relation(fields: [customerId], references: [id])
+  table                    PosTable?               @relation(fields: [tableId], references: [id])
+  items                    PosSaleItem[]
+  stockMovement            StockMovement?          @relation("SaleStockMovement")
 
   @@index([saleType, status, createdAt])
   @@index([cashSessionId, createdAt])
@@ -556,23 +583,27 @@ model ProductionBatchLine {
 }
 
 model Purchase {
-  id            String         @id @default(cuid())
+  id            String           @id @default(cuid())
   type          PurchaseType
-  status        PurchaseStatus @default(DRAFT)
+  status        PurchaseStatus   @default(DRAFT)
   locationId    String
+  supplierId    String?
   supplierName  String?
   invoiceNumber String?
-  purchasedAt   DateTime       @default(now())
+  purchasedAt   DateTime         @default(now())
   postedAt      DateTime?
   notes         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  location      StockLocation  @relation(fields: [locationId], references: [id])
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  location      StockLocation    @relation(fields: [locationId], references: [id])
+  supplier      Supplier?        @relation(fields: [supplierId], references: [id])
   lines         PurchaseLine[]
-  stockMovement StockMovement? @relation("PurchaseStockMovement")
+  stockMovement StockMovement?   @relation("PurchaseStockMovement")
+  payable       SupplierPayable?
 
   @@index([type, status, purchasedAt])
   @@index([locationId, purchasedAt])
+  @@index([supplierId, purchasedAt])
 }
 
 model PurchaseLine {
@@ -793,6 +824,12 @@ enum LocalCashMovementSourceType {
   LOCAL_EXPENSE
   MANUAL_ADJUSTMENT
   CHANGE_RETURN
+  SALES_DEPOSIT
+  SUPPLIER_PAYMENT
+  COSTO_FIJO_PAYMENT
+  RETIRO_GERENCIA
+  CC_INVOICE_PAYMENT
+  CREDIT_CARD_STATEMENT_PAYMENT
 }
 
 enum EmployeeRole {
@@ -837,8 +874,137 @@ model CostoFijo {
   notas       String?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
+  payments    CostoFijoPayment[]
 
   @@index([isActive, validFrom])
+}
+
+// ─── Egresos y Estado de Pago a Proveedores ─────────────────────────────────
+
+enum CashBoxKind {
+  EFECTIVO
+  CUENTA_BANCARIA
+}
+
+enum SupplierPayableStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+enum SupplierPaymentMethod {
+  EFECTIVO_CAJA
+  TRANSFERENCIA
+  TARJETA_CREDITO
+}
+
+model SupplierPayable {
+  id               String                @id @default(cuid())
+  supplierId       String
+  sourcePurchaseId String?               @unique
+  description      String?
+  totalAmountCents Int
+  paidAmountCents  Int                   @default(0)
+  status           SupplierPayableStatus @default(PENDING)
+  dueDate          DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  supplier         Supplier              @relation(fields: [supplierId], references: [id])
+  sourcePurchase   Purchase?             @relation(fields: [sourcePurchaseId], references: [id])
+  payments         SupplierPayment[]
+
+  @@index([supplierId, status])
+}
+
+model SupplierPayment {
+  id                  String                @id @default(cuid())
+  supplierId          String
+  payableId           String?
+  amountCents         Int
+  date                DateTime
+  method              SupplierPaymentMethod
+  cashBoxId           String?
+  creditCardId        String?
+  installments        Int?                  @default(1)
+  notes               String?
+  createdByEmployeeId String
+  createdAt           DateTime              @default(now())
+  supplier            Supplier              @relation(fields: [supplierId], references: [id])
+  payable             SupplierPayable?      @relation(fields: [payableId], references: [id])
+  cashBox             LocalCashBox?         @relation(fields: [cashBoxId], references: [id])
+  creditCard          CreditCard?           @relation(fields: [creditCardId], references: [id])
+  createdByEmployee   Employee              @relation("EmployeeSupplierPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  localCashMovement   LocalCashMovement?
+  creditCardCharges   CreditCardCharge[]
+
+  @@index([supplierId, date])
+  @@index([payableId])
+}
+
+model CreditCard {
+  id                String                       @id @default(cuid())
+  name              String
+  closingDay        Int
+  dueDay            Int
+  payFromCashBoxId  String?
+  active            Boolean                      @default(true)
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  payFromCashBox    LocalCashBox?                @relation(fields: [payFromCashBoxId], references: [id])
+  charges           CreditCardCharge[]
+  statementPayments CreditCardStatementPayment[]
+  payments          SupplierPayment[]
+
+  @@index([active, name])
+}
+
+model CreditCardCharge {
+  id                String           @id @default(cuid())
+  creditCardId      String
+  supplierPaymentId String?
+  description       String
+  statementPeriod   DateTime
+  installmentNumber Int
+  totalInstallments Int
+  amountCents       Int
+  createdAt         DateTime         @default(now())
+  creditCard        CreditCard       @relation(fields: [creditCardId], references: [id])
+  supplierPayment   SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
+
+  @@index([creditCardId, statementPeriod])
+}
+
+model CreditCardStatementPayment {
+  id                  String             @id @default(cuid())
+  creditCardId        String
+  period              DateTime
+  totalAmountCents    Int
+  cashBoxId           String
+  paidAt              DateTime           @default(now())
+  createdByEmployeeId String
+  notes               String?
+  creditCard          CreditCard         @relation(fields: [creditCardId], references: [id])
+  cashBox             LocalCashBox       @relation(fields: [cashBoxId], references: [id])
+  createdByEmployee   Employee           @relation("EmployeeCreditCardStatementPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  localCashMovement   LocalCashMovement?
+
+  @@index([creditCardId, period])
+}
+
+model CostoFijoPayment {
+  id                  String             @id @default(cuid())
+  costoFijoId         String
+  period              DateTime
+  amountCents         Int
+  cashBoxId           String
+  paidAt              DateTime           @default(now())
+  createdByEmployeeId String
+  costoFijo           CostoFijo          @relation(fields: [costoFijoId], references: [id])
+  cashBox             LocalCashBox       @relation(fields: [cashBoxId], references: [id])
+  createdByEmployee   Employee           @relation("EmployeeCostoFijoPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  localCashMovement   LocalCashMovement?
+
+  @@index([costoFijoId, period])
 }
 
 model ConfigMargenCategoria {
@@ -848,59 +1014,59 @@ model ConfigMargenCategoria {
   updatedAt           DateTime @updatedAt
   updatedByEmployeeId String
 
-  category            Category @relation(fields: [categoryId], references: [id])
-  updatedByEmployee   Employee @relation(fields: [updatedByEmployeeId], references: [id])
+  category          Category @relation(fields: [categoryId], references: [id])
+  updatedByEmployee Employee @relation(fields: [updatedByEmployeeId], references: [id])
 
   @@index([categoryId])
 }
 
 model CcDirectCharge {
-  id                       String                     @id @default(cuid())
+  id                       String                  @id @default(cuid())
   cuentaCorrienteAccountId String
-  cuentaCorrienteAccount   CuentaCorrienteAccount     @relation(fields: [cuentaCorrienteAccountId], references: [id])
+  cuentaCorrienteAccount   CuentaCorrienteAccount  @relation(fields: [cuentaCorrienteAccountId], references: [id])
   cuentaCorrienteInvoiceId String?
-  cuentaCorrienteInvoice   CuentaCorrienteInvoice?    @relation(fields: [cuentaCorrienteInvoiceId], references: [id])
+  cuentaCorrienteInvoice   CuentaCorrienteInvoice? @relation(fields: [cuentaCorrienteInvoiceId], references: [id])
   date                     DateTime
   description              String
   motive                   String
   category                 CcDirectChargeCategory
   amountCents              Int
   comandaNumber            String?
-  createdAt                DateTime                   @default(now())
+  createdAt                DateTime                @default(now())
   createdByEmployeeId      String
-  createdByEmployee        Employee                   @relation("EmployeeCcDirectChargesCreated", fields: [createdByEmployeeId], references: [id])
+  createdByEmployee        Employee                @relation("EmployeeCcDirectChargesCreated", fields: [createdByEmployeeId], references: [id])
 
   @@index([cuentaCorrienteAccountId])
   @@index([cuentaCorrienteInvoiceId])
 }
 
 model PriceBulkUpdate {
-  id                  String         @id @default(cuid())
-  percent             Decimal        @db.Decimal(6, 2)
+  id                  String   @id @default(cuid())
+  percent             Decimal  @db.Decimal(6, 2)
   categoryIds         String[]
   affectedCount       Int
-  createdAt           DateTime       @default(now())
+  createdAt           DateTime @default(now())
   createdByEmployeeId String
 
-  createdByEmployee   Employee       @relation("EmployeePriceBulkUpdatesCreated", fields: [createdByEmployeeId], references: [id])
-  priceHistory        PriceHistory[]
+  createdByEmployee Employee       @relation("EmployeePriceBulkUpdatesCreated", fields: [createdByEmployeeId], references: [id])
+  priceHistory      PriceHistory[]
 
   @@index([createdAt])
 }
 
 model PriceHistory {
-  id                  String           @id @default(cuid())
+  id                  String          @id @default(cuid())
   productId           String
   oldPriceCents       Int
   newPriceCents       Int
   changeType          PriceChangeType
   bulkUpdateId        String?
-  createdAt           DateTime         @default(now())
+  createdAt           DateTime        @default(now())
   createdByEmployeeId String
 
-  product             Product          @relation(fields: [productId], references: [id])
-  bulkUpdate          PriceBulkUpdate? @relation(fields: [bulkUpdateId], references: [id])
-  createdByEmployee   Employee         @relation("EmployeePriceHistoryCreated", fields: [createdByEmployeeId], references: [id])
+  product           Product          @relation(fields: [productId], references: [id])
+  bulkUpdate        PriceBulkUpdate? @relation(fields: [bulkUpdateId], references: [id])
+  createdByEmployee Employee         @relation("EmployeePriceHistoryCreated", fields: [createdByEmployeeId], references: [id])
 
   @@index([productId, createdAt])
   @@index([bulkUpdateId])

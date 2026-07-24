@@ -15,11 +15,12 @@ export async function GET() {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
 
-  const employees = await prisma.employee.findMany({
-    select: { id: true, displayName: true, role: true, isActive: true },
+  const raw = await prisma.employee.findMany({
+    select: { id: true, displayName: true, role: true, isActive: true, pinHash: true },
     orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
   });
 
+  const employees = raw.map(({ pinHash, ...e }) => ({ ...e, hasPin: pinHash !== null }));
   return NextResponse.json({ employees });
 }
 
@@ -35,10 +36,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
-  const employee = await prisma.employee.create({
+  const created = await prisma.employee.create({
     data: { displayName: parsed.data.displayName.trim(), role: parsed.data.role },
     select: { id: true, displayName: true, role: true, isActive: true },
   });
 
-  return NextResponse.json({ employee }, { status: 201 });
+  return NextResponse.json({ employee: { ...created, hasPin: false } }, { status: 201 });
 }

@@ -9,10 +9,12 @@ export default async function EmpleadosPage() {
   const jar = await cookies();
   if (jar.get("bcn_role")?.value !== "GERENCIA") redirect("/");
 
-  const employees = await prisma.employee.findMany({
-    select: { id: true, displayName: true, role: true, isActive: true },
+  const raw = await prisma.employee.findMany({
+    select: { id: true, displayName: true, role: true, isActive: true, pinHash: true },
     orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
   });
+
+  const employees = raw.map(({ pinHash, ...e }) => ({ ...e, hasPin: pinHash !== null }));
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 py-6">
