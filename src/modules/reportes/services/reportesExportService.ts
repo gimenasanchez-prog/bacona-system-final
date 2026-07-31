@@ -89,6 +89,11 @@ export class ReportesExportService {
     }
 
     freezeHeaderRow(sheet);
+
+    sheet.getCell("G1").note =
+      '"Cta. corriente" es lo registrado en el cierre de cada turno (igual que en Consolidado de Caja) — ' +
+      "puede no coincidir con el módulo de Cuentas Corrientes si hubo ventas con cuenta corriente canceladas " +
+      "después del cierre del turno, o cargos directos a la cuenta (que no son ventas del POS).";
   }
 
   private static buildEgresosSheet(workbook: ExcelJS.Workbook, data: ReportData) {

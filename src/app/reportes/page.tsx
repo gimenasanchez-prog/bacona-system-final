@@ -135,6 +135,11 @@ export default async function ReportesPage(props: {
                 <span>{formatArsFromCents(data.totals.ventasTotalCents)}</span>
               </div>
             </div>
+            <div className="mt-3 border-t pt-2 text-xs text-neutral-400">
+              &quot;Cta. corriente&quot; es lo registrado en el cierre de cada turno (igual que en Consolidado de Caja) — puede no
+              coincidir con el módulo de Cuentas Corrientes si hubo ventas con cuenta corriente canceladas después del
+              cierre del turno, o cargos directos a la cuenta (que no son ventas del POS).
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
