@@ -56,9 +56,11 @@ export default async function HomePage() {
           <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Gestión</div>
           <div className="flex flex-wrap gap-2">
             <NavButton href="/rentabilidad" label="Rentabilidad" primary />
+            <NavButton href="/egresos" label="Egresos" primary />
             <NavButton href="/caja/consolidado" label="Consolidado de Caja" primary />
             <NavButton href="/caja/gerencia" label="Caja Gerencia" primary />
             <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" />
+            <NavButton href="/reportes" label="Reportes" />
             <NavButton href="/gerencia/empleados" label="Empleados" />
             <NavButton href="/gerencia/precios" label="Precios" />
           </div>
@@ -105,6 +107,8 @@ export default async function HomePage() {
             <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" primary />
             <NavButton href="/caja/consolidado" label="Consolidado de Caja" />
             <NavButton href="/rentabilidad" label="Rentabilidad" />
+            <NavButton href="/egresos" label="Egresos" />
+            <NavButton href="/reportes" label="Reportes" />
           </div>
           <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
           <div className="flex flex-wrap gap-2">

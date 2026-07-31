@@ -104,6 +104,21 @@ export class LocalCashBoxService {
     return { movements, total };
   }
 
+  static async listCashOutMovementsInRange(params: { from: Date; to: Date }) {
+    return prisma.localCashMovement.findMany({
+      where: {
+        type: "OUT",
+        localCashBox: { kind: "EFECTIVO" },
+        date: { gte: params.from, lte: params.to },
+      },
+      include: {
+        localCashBox: { select: { name: true } },
+        createdByEmployee: { select: { displayName: true } },
+      },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+    });
+  }
+
   static async getEnvelopeCashSummary() {
     const grouped = await prisma.envelope.groupBy({
       by: ["status"],

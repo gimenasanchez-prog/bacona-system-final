@@ -135,5 +135,18 @@ export class LocalExpenseService {
       orderBy: { date: "desc" },
     });
   }
+
+  static async listShiftCashExpensesInRange(params: { from: Date; to: Date }) {
+    return prisma.localExpense.findMany({
+      where: {
+        paymentSource: "SHIFT_CASH",
+        date: { gte: params.from, lte: params.to },
+      },
+      include: {
+        createdByEmployee: { select: { displayName: true } },
+      },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+    });
+  }
 }
 

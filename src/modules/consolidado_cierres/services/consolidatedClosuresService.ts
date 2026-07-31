@@ -8,6 +8,7 @@ export class ConsolidatedClosuresService {
     employeeId?: string;
     cashSessionStatus?: "OPEN" | "CLOSED";
     envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+    take?: number;
   }) {
     return prisma.cashSession.findMany({
       where: {
@@ -25,7 +26,7 @@ export class ConsolidatedClosuresService {
         envelope: true,
       },
       orderBy: [{ businessDate: "desc" }, { openedAt: "desc" }],
-      take: 200,
+      take: params.take ?? 200,
     });
   }
 

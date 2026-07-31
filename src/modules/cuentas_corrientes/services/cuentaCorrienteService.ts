@@ -715,4 +715,16 @@ export class CuentaCorrienteService {
       await tx.cuentaCorrienteInvoice.delete({ where: { id: invoiceId } });
     });
   }
+
+  static async listInvoicesForExport(params: { from: Date; to: Date }) {
+    return prisma.cuentaCorrienteInvoice.findMany({
+      where: {
+        billingDate: { gte: params.from, lte: params.to },
+      },
+      include: {
+        account: { include: { customer: { select: { displayName: true } } } },
+      },
+      orderBy: { billingDate: "asc" },
+    });
+  }
 }
