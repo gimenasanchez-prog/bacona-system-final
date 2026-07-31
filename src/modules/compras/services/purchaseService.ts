@@ -3,15 +3,30 @@ import { Prisma, PurchaseStatus, PurchaseType, StockMovementType, StockUnit } fr
 import { prisma } from "@/lib/prisma";
 import { StockDefaultsService } from "@/modules/stock/services/stockDefaultsService";
 import { UnitConversionService } from "@/modules/stock/services/unitConversionService";
+import { SupplierPayableService } from "@/modules/egresos_proveedores/services/supplierPayableService";
+
+export type PurchasePaymentInput =
+  | { mode: "PENDING"; dueDate?: Date | null }
+  | {
+      mode: "PAID_NOW";
+      method: "EFECTIVO_CAJA" | "TRANSFERENCIA" | "TARJETA_CREDITO";
+      cashBoxId?: string | null;
+      creditCardId?: string | null;
+      installments?: number;
+      createdByEmployeeId: string;
+    };
 
 export class PurchaseService {
   static async createAndPost(params: {
     type: PurchaseType;
     locationCode?: "BACONA" | "SALTA" | "EN_TRANSITO";
+    supplierId?: string | null;
     supplierName?: string | null;
     invoiceNumber?: string | null;
+    invoiceTotalCents?: number | null;
     notes?: string | null;
     purchasedAt?: Date;
+    payment?: PurchasePaymentInput | null;
     lines: Array<{
       inventoryItemId: string;
       qty: string | number;
@@ -29,6 +44,9 @@ export class PurchaseService {
           : bacona;
 
     if (!params.lines.length) throw new Error("At least one line is required");
+    if (params.supplierId && params.payment && !params.invoiceTotalCents) {
+      throw new Error("Falta el monto total de la factura para registrar el pago/deuda al proveedor.");
+    }
 
     // Pre-load items and uoms to avoid N+1 in transaction
     const itemIds = [...new Set(params.lines.map((l) => l.inventoryItemId))];
@@ -77,14 +95,16 @@ export class PurchaseService {
       return { ...l, idx, qtyBase, entryQty, entryUnit, uomId };
     });
 
-    return prisma.$transaction(async (tx) => {
-      const purchase = await tx.purchase.create({
+    const purchase = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchase.create({
         data: {
           type: params.type,
           status: PurchaseStatus.POSTED,
           locationId: location.id,
+          supplierId: params.supplierId ?? null,
           supplierName: params.supplierName ?? null,
           invoiceNumber: params.invoiceNumber ?? null,
+          invoiceTotalCents: params.invoiceTotalCents ?? null,
           notes: params.notes ?? null,
           purchasedAt: params.purchasedAt ?? new Date(),
           postedAt: new Date(),
@@ -106,13 +126,13 @@ export class PurchaseService {
       await tx.stockMovement.create({
         data: {
           type: StockMovementType.PURCHASE,
-          purchaseId: purchase.id,
-          occurredAt: purchase.postedAt ?? purchase.purchasedAt,
-          notes: purchase.invoiceNumber ? `Invoice ${purchase.invoiceNumber}` : undefined,
+          purchaseId: created.id,
+          occurredAt: created.postedAt ?? created.purchasedAt,
+          notes: created.invoiceNumber ? `Invoice ${created.invoiceNumber}` : undefined,
           lines: {
-            create: purchase.lines.map((l) => ({
+            create: created.lines.map((l) => ({
               inventoryItemId: l.inventoryItemId,
-              locationId: purchase.locationId,
+              locationId: created.locationId,
               direction: "IN",
               qty: l.qty,
               sortOrder: l.sortOrder,
@@ -121,7 +141,41 @@ export class PurchaseService {
         },
       });
 
-      return purchase;
+      return created;
     });
+
+    if (params.supplierId && params.payment) {
+      const totalAmountCents = params.invoiceTotalCents ?? 0;
+
+      if (totalAmountCents > 0) {
+        if (params.payment.mode === "PENDING") {
+          await SupplierPayableService.createPayable({
+            supplierId: params.supplierId,
+            sourcePurchaseId: purchase.id,
+            totalAmountCents,
+            dueDate: params.payment.dueDate ?? null,
+          });
+        } else {
+          const payable = await SupplierPayableService.createPayable({
+            supplierId: params.supplierId,
+            sourcePurchaseId: purchase.id,
+            totalAmountCents,
+          });
+          await SupplierPayableService.registerPayment({
+            supplierId: params.supplierId,
+            payableId: payable.id,
+            amountCents: totalAmountCents,
+            date: purchase.purchasedAt,
+            method: params.payment.method,
+            cashBoxId: params.payment.cashBoxId ?? null,
+            creditCardId: params.payment.creditCardId ?? null,
+            installments: params.payment.installments,
+            createdByEmployeeId: params.payment.createdByEmployeeId,
+          });
+        }
+      }
+    }
+
+    return purchase;
   }
 }

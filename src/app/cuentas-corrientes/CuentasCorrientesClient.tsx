@@ -418,8 +418,16 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
   const [tisshRetentionArs, setTisshRetentionArs] = useState("0.00");
   const [paymentDate, setPaymentDate] = useState(toDateInputValue(new Date()));
   const [reference, setReference] = useState(invoice.paymentReference ?? "");
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [bankAccounts, setBankAccounts] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/egresos/cuentas?kind=CUENTA_BANCARIA")
+      .then((r) => r.json())
+      .then((d) => setBankAccounts(d.items ?? []));
+  }, []);
 
   const ivaRetentionCents = ars(ivaRetentionArs);
   const gananciasRetentionCents = ars(gananciasRetentionArs);
@@ -435,6 +443,10 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
   const paidAmountCents = amountManual ? ars(amountArs) : netoCents;
 
   async function handleSubmit() {
+    if (!bankAccountId) {
+      setError("Elegí a qué cuenta bancaria se acreditó el pago.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -446,6 +458,7 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
           paidAmountCents,
           paymentDate: new Date(paymentDate + "T12:00:00.000Z").toISOString(),
           paymentReference: reference || undefined,
+          bankAccountId,
           ivaRetentionCents,
           gananciasRetentionCents,
           rentasRetentionCents,
@@ -516,6 +529,15 @@ function RecordPaymentModal({ invoice, onClose, onSuccess }: { invoice: InvoiceS
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Referencia bancaria <span className="text-neutral-400">(opcional)</span></label>
             <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Nro. de transferencia..." className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Cuenta bancaria donde se acreditó</label>
+            <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+              <option value="">Elegir...</option>
+              {bankAccounts.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
@@ -774,9 +796,11 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
           <button onClick={() => { setOpen(false); onOpenPayment(invoice); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
             {invoice.paidAmountCents > 0 ? "Editar pago" : "Registrar pago"}
           </button>
-          <button onClick={handleToggle} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
-            {invoice.isPaid ? "Desmarcar pagada" : "Marcar pagada"}
-          </button>
+          {invoice.isPaid && (
+            <button onClick={handleToggle} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
+              Desmarcar pagada
+            </button>
+          )}
           <button onClick={() => { setOpen(false); onEditUrl(invoice.id, invoice.digitalInvoiceUrl); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
             {invoice.digitalInvoiceUrl ? "📎 Ver/editar URL" : "+ URL factura"}
           </button>

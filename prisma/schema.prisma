@@ -229,6 +229,7 @@ model CashSessionPaymentBreakdownDetail {
 model Supplier {
   id        String            @id @default(cuid())
   name      String
+  categoria String?
   active    Boolean           @default(true)
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
@@ -289,21 +290,35 @@ model Envelope {
 }
 
 model LocalCashBox {
-  id                       String                       @id @default(cuid())
-  name                     String                       @unique
-  active                   Boolean                      @default(true)
-  kind                     CashBoxKind                  @default(EFECTIVO)
-  defaultForPaymentMethods PosPaymentMethod[]           @default([])
-  createdAt                DateTime                     @default(now())
-  updatedAt                DateTime                     @updatedAt
-  movements                LocalCashMovement[]
-  supplierPayments         SupplierPayment[]
-  creditCardsPayingFrom    CreditCard[]
-  creditCardStatementPays  CreditCardStatementPayment[]
-  costoFijoPayments        CostoFijoPayment[]
+  id                      String                       @id @default(cuid())
+  name                    String                       @unique
+  active                  Boolean                      @default(true)
+  kind                    CashBoxKind                  @default(EFECTIVO)
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  movements               LocalCashMovement[]
+  supplierPayments        SupplierPayment[]
+  creditCardsPayingFrom   CreditCard[]
+  creditCardStatementPays CreditCardStatementPayment[]
+  costoFijoPayments       CostoFijoPayment[]
+  paymentMethodConfigs    CashBoxPaymentMethodConfig[]
 
   @@index([active, name])
   @@index([kind, active])
+}
+
+model CashBoxPaymentMethodConfig {
+  id                     String           @id @default(cuid())
+  cashBoxId              String
+  method                 PosPaymentMethod
+  settlementBusinessDays Int              @default(0)
+  withholdingPercent     Decimal?         @db.Decimal(5, 2)
+  feesPercent            Decimal?         @db.Decimal(5, 2)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  cashBox                LocalCashBox     @relation(fields: [cashBoxId], references: [id])
+
+  @@unique([cashBoxId, method])
 }
 
 model LocalCashMovement {
@@ -317,6 +332,7 @@ model LocalCashMovement {
   relatedCostoFijoPaymentId           String?                     @unique
   relatedCreditCardStatementPaymentId String?                     @unique
   relatedCuentaCorrienteInvoiceId     String?
+  relatedPosPaymentId                 String?                     @unique
   grossAmountCents                    Int?
   bankWithholdingCents                Int?                        @default(0)
   bankFeesCents                       Int?                        @default(0)
@@ -333,6 +349,7 @@ model LocalCashMovement {
   relatedCostoFijoPayment             CostoFijoPayment?           @relation(fields: [relatedCostoFijoPaymentId], references: [id])
   relatedCreditCardStatementPayment   CreditCardStatementPayment? @relation(fields: [relatedCreditCardStatementPaymentId], references: [id])
   relatedCuentaCorrienteInvoice       CuentaCorrienteInvoice?     @relation(fields: [relatedCuentaCorrienteInvoiceId], references: [id])
+  relatedPosPayment                   PosPayment?                 @relation(fields: [relatedPosPaymentId], references: [id])
 
   @@index([localCashBoxId, date])
   @@index([type, date])
@@ -429,6 +446,7 @@ model PosPayment {
   cuentaCorrienteAccount   CuentaCorrienteAccount? @relation(fields: [cuentaCorrienteAccountId], references: [id])
   employee                 Employee?               @relation(fields: [employeeId], references: [id])
   sale                     PosSale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  reconciliationMovement   LocalCashMovement?
 
   @@index([saleId])
   @@index([method])
@@ -583,23 +601,24 @@ model ProductionBatchLine {
 }
 
 model Purchase {
-  id            String           @id @default(cuid())
-  type          PurchaseType
-  status        PurchaseStatus   @default(DRAFT)
-  locationId    String
-  supplierId    String?
-  supplierName  String?
-  invoiceNumber String?
-  purchasedAt   DateTime         @default(now())
-  postedAt      DateTime?
-  notes         String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  location      StockLocation    @relation(fields: [locationId], references: [id])
-  supplier      Supplier?        @relation(fields: [supplierId], references: [id])
-  lines         PurchaseLine[]
-  stockMovement StockMovement?   @relation("PurchaseStockMovement")
-  payable       SupplierPayable?
+  id                String           @id @default(cuid())
+  type              PurchaseType
+  status            PurchaseStatus   @default(DRAFT)
+  locationId        String
+  supplierId        String?
+  supplierName      String?
+  invoiceTotalCents Int?
+  invoiceNumber     String?
+  purchasedAt       DateTime         @default(now())
+  postedAt          DateTime?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  location          StockLocation    @relation(fields: [locationId], references: [id])
+  supplier          Supplier?        @relation(fields: [supplierId], references: [id])
+  lines             PurchaseLine[]
+  stockMovement     StockMovement?   @relation("PurchaseStockMovement")
+  payable           SupplierPayable?
 
   @@index([type, status, purchasedAt])
   @@index([locationId, purchasedAt])

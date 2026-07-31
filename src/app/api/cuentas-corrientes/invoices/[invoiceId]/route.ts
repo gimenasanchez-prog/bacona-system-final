@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { CuentaCorrienteService } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
@@ -9,6 +10,7 @@ const UpdateInvoiceSchema = z.discriminatedUnion("action", [
     paidAmountCents: z.number().int().min(0),
     paymentDate: z.string().datetime(),
     paymentReference: z.string().optional(),
+    bankAccountId: z.string().cuid(),
     bankWithholdingCents: z.number().int().min(0).optional(),
     bankFeesCents: z.number().int().min(0).optional(),
     ivaRetentionCents: z.number().int().min(0).optional(),
@@ -67,11 +69,18 @@ export async function PATCH(
     }
 
     if (parsed.data.action === "recordPayment") {
+      const jar = await cookies();
+      const employeeId = jar.get("bcn_employeeId")?.value;
+      if (!employeeId) {
+        return NextResponse.json({ error: "Sin sesión" }, { status: 401 });
+      }
+
       const d = parsed.data;
       const updated = await CuentaCorrienteService.recordPayment(invoiceId, {
         paidAmountCents: d.paidAmountCents,
         paymentDate: new Date(d.paymentDate),
         paymentReference: d.paymentReference,
+        bankAccountId: d.bankAccountId,
         bankWithholdingCents: d.bankWithholdingCents,
         bankFeesCents: d.bankFeesCents,
         ivaRetentionCents: d.ivaRetentionCents,
@@ -79,6 +88,7 @@ export async function PATCH(
         rentasRetentionCents: d.rentasRetentionCents,
         sussRetentionCents: d.sussRetentionCents,
         tisshRetentionCents: d.tisshRetentionCents,
+        createdByEmployeeId: employeeId,
       });
       return NextResponse.json(updated);
     }

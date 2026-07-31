@@ -627,6 +627,7 @@ export class CuentaCorrienteService {
       paidAmountCents: number;
       paymentDate: Date;
       paymentReference?: string;
+      bankAccountId: string;
       bankWithholdingCents?: number;
       bankFeesCents?: number;
       ivaRetentionCents?: number;
@@ -634,22 +635,52 @@ export class CuentaCorrienteService {
       rentasRetentionCents?: number;
       sussRetentionCents?: number;
       tisshRetentionCents?: number;
+      createdByEmployeeId: string;
     }
   ) {
-    return prisma.cuentaCorrienteInvoice.update({
-      where: { id: invoiceId },
-      data: {
-        isPaid: true,
-        paidAt: new Date(),
-        paidAmountCents: params.paidAmountCents,
-        paymentDate: params.paymentDate,
-        paymentReference: params.paymentReference ?? null,
-        ...(params.ivaRetentionCents !== undefined && { ivaRetentionCents: params.ivaRetentionCents }),
-        ...(params.gananciasRetentionCents !== undefined && { gananciasRetentionCents: params.gananciasRetentionCents }),
-        ...(params.rentasRetentionCents !== undefined && { rentasRetentionCents: params.rentasRetentionCents }),
-        ...(params.sussRetentionCents !== undefined && { sussRetentionCents: params.sussRetentionCents }),
-        ...(params.tisshRetentionCents !== undefined && { tisshRetentionCents: params.tisshRetentionCents }),
-      },
+    const bankWithholdingCents = params.bankWithholdingCents ?? 0;
+    const bankFeesCents = params.bankFeesCents ?? 0;
+    const netAmountCents = params.paidAmountCents - bankWithholdingCents - bankFeesCents;
+    if (!Number.isInteger(netAmountCents) || netAmountCents <= 0) {
+      throw new Error("El monto neto acreditado debe ser un entero positivo.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const invoice = await tx.cuentaCorrienteInvoice.update({
+        where: { id: invoiceId },
+        data: {
+          isPaid: true,
+          paidAt: new Date(),
+          paidAmountCents: params.paidAmountCents,
+          paymentDate: params.paymentDate,
+          paymentReference: params.paymentReference ?? null,
+          bankWithholdingCents,
+          bankFeesCents,
+          ...(params.ivaRetentionCents !== undefined && { ivaRetentionCents: params.ivaRetentionCents }),
+          ...(params.gananciasRetentionCents !== undefined && { gananciasRetentionCents: params.gananciasRetentionCents }),
+          ...(params.rentasRetentionCents !== undefined && { rentasRetentionCents: params.rentasRetentionCents }),
+          ...(params.sussRetentionCents !== undefined && { sussRetentionCents: params.sussRetentionCents }),
+          ...(params.tisshRetentionCents !== undefined && { tisshRetentionCents: params.tisshRetentionCents }),
+        },
+      });
+
+      await tx.localCashMovement.create({
+        data: {
+          localCashBoxId: params.bankAccountId,
+          type: "IN",
+          sourceType: "CC_INVOICE_PAYMENT",
+          relatedCuentaCorrienteInvoiceId: invoiceId,
+          grossAmountCents: params.paidAmountCents,
+          bankWithholdingCents,
+          bankFeesCents,
+          amountCents: netAmountCents,
+          date: params.paymentDate,
+          description: `Pago factura CC ${invoiceId}`,
+          createdByEmployeeId: params.createdByEmployeeId,
+        },
+      });
+
+      return invoice;
     });
   }
 

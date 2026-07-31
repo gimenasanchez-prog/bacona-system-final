@@ -1,6 +1,67 @@
+import { CashBoxKind, PosPaymentMethod } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
+import { addBusinessDays } from "@/lib/businessDays";
+
+export type PaymentMethodConfigInput = {
+  method: PosPaymentMethod;
+  enabled: boolean;
+  settlementBusinessDays: number;
+  withholdingPercent: number | null;
+  feesPercent: number | null;
+};
 
 export class LocalCashBoxService {
+  static async listBoxesByKind(kind: CashBoxKind) {
+    return prisma.localCashBox.findMany({
+      where: { kind, active: true },
+      orderBy: { name: "asc" },
+    });
+  }
+
+  static async getPaymentMethodConfigs(cashBoxId: string) {
+    return prisma.cashBoxPaymentMethodConfig.findMany({ where: { cashBoxId } });
+  }
+
+  static async setPaymentMethodConfigs(cashBoxId: string, configs: PaymentMethodConfigInput[]) {
+    return prisma.$transaction(async (tx) => {
+      for (const c of configs) {
+        if (!c.enabled) {
+          await tx.cashBoxPaymentMethodConfig.deleteMany({ where: { cashBoxId, method: c.method } });
+          continue;
+        }
+        if (c.settlementBusinessDays < 0) throw new Error("Los días hábiles no pueden ser negativos.");
+        await tx.cashBoxPaymentMethodConfig.upsert({
+          where: { cashBoxId_method: { cashBoxId, method: c.method } },
+          create: {
+            cashBoxId,
+            method: c.method,
+            settlementBusinessDays: c.settlementBusinessDays,
+            withholdingPercent: c.withholdingPercent,
+            feesPercent: c.feesPercent,
+          },
+          update: {
+            settlementBusinessDays: c.settlementBusinessDays,
+            withholdingPercent: c.withholdingPercent,
+            feesPercent: c.feesPercent,
+          },
+        });
+      }
+      return tx.cashBoxPaymentMethodConfig.findMany({ where: { cashBoxId } });
+    });
+  }
+
+  static async createBankAccount(name: string) {
+    if (!name.trim()) throw new Error("El nombre es obligatorio.");
+    return prisma.localCashBox.create({
+      data: { name, kind: "CUENTA_BANCARIA", active: true },
+    });
+  }
+
+  static async updateBankAccount(cashBoxId: string, params: Partial<{ name: string; active: boolean }>) {
+    return prisma.localCashBox.update({ where: { id: cashBoxId }, data: params });
+  }
+
   static async getActiveLocalCashBox() {
     const box = await prisma.localCashBox.findFirst({
       where: { active: true },
@@ -338,6 +399,7 @@ export class LocalCashBoxService {
     date: Date;
     description?: string | null;
     createdByEmployeeId: string;
+    sourceType?: "MANUAL_ADJUSTMENT" | "RETIRO_GERENCIA";
   }) {
     if (!Number.isInteger(params.amountCents) || params.amountCents <= 0) {
       throw new Error("amountCents must be a positive integer");
@@ -352,12 +414,146 @@ export class LocalCashBoxService {
       data: {
         localCashBoxId: params.localCashBoxId,
         type: params.type,
-        sourceType: "MANUAL_ADJUSTMENT",
+        sourceType: params.sourceType ?? "MANUAL_ADJUSTMENT",
         amountCents: params.amountCents,
         date: params.date,
         description: params.description ?? null,
         createdByEmployeeId: params.createdByEmployeeId,
       },
+    });
+  }
+
+  private static async getDuePosPayments(cashBoxId: string, referenceDate: Date) {
+    const configs = await prisma.cashBoxPaymentMethodConfig.findMany({ where: { cashBoxId } });
+    if (!configs.length) return [];
+
+    const configByMethod = new Map(configs.map((c) => [c.method, c]));
+    const payments = await prisma.posPayment.findMany({
+      where: {
+        method: { in: configs.map((c) => c.method) },
+        sale: { status: { not: "CANCELLED" } },
+      },
+      include: {
+        sale: { select: { comandaNumber: true, tableId: true, customerNameFreeText: true } },
+        reconciliationMovement: { select: { id: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return payments
+      .map((p) => {
+        const config = configByMethod.get(p.method)!;
+        return { ...p, config, expectedCreditDate: addBusinessDays(p.createdAt, config.settlementBusinessDays) };
+      })
+      .filter((p) => p.expectedCreditDate <= referenceDate);
+  }
+
+  static async getReconciliationSummary(cashBoxId: string, referenceDate: Date = new Date()) {
+    const due = await this.getDuePosPayments(cashBoxId, referenceDate);
+
+    const byMethodMap = new Map<PosPaymentMethod, number>();
+    for (const p of due) {
+      byMethodMap.set(p.method, (byMethodMap.get(p.method) ?? 0) + p.amountCents);
+    }
+    const byMethod = Array.from(byMethodMap.entries()).map(([method, expectedCents]) => ({ method, expectedCents }));
+    const totalExpectedCents = due.reduce((sum, p) => sum + p.amountCents, 0);
+
+    const reconciledMovements = await prisma.localCashMovement.findMany({
+      where: { localCashBoxId: cashBoxId, sourceType: "SALES_DEPOSIT" },
+      select: { grossAmountCents: true, amountCents: true },
+    });
+    const totalReconciledCents = reconciledMovements.reduce(
+      (sum, m) => sum + (m.grossAmountCents ?? m.amountCents),
+      0
+    );
+
+    return {
+      byMethod,
+      totalExpectedCents,
+      totalReconciledCents,
+      pendingCents: totalExpectedCents - totalReconciledCents,
+    };
+  }
+
+  static async getPendingSalesForReconciliation(cashBoxId: string, referenceDate: Date = new Date()) {
+    const due = await this.getDuePosPayments(cashBoxId, referenceDate);
+    return due
+      .filter((p) => !p.reconciliationMovement)
+      .map((p) => ({
+        id: p.id,
+        method: p.method,
+        amountCents: p.amountCents,
+        createdAt: p.createdAt,
+        expectedCreditDate: p.expectedCreditDate,
+        overdueDays: Math.floor((referenceDate.getTime() - p.expectedCreditDate.getTime()) / 86400000),
+        withholdingPercent: p.config.withholdingPercent ? Number(p.config.withholdingPercent) : 0,
+        feesPercent: p.config.feesPercent ? Number(p.config.feesPercent) : 0,
+        sale: p.sale,
+      }));
+  }
+
+  static async reconcileSales(params: {
+    cashBoxId: string;
+    posPaymentIds: string[];
+    withholdingCents: number;
+    feesCents: number;
+    date: Date;
+    createdByEmployeeId: string;
+  }) {
+    if (!params.posPaymentIds.length) throw new Error("Elegí al menos una venta para conciliar.");
+    if (params.withholdingCents < 0 || params.feesCents < 0) {
+      throw new Error("Los descuentos no pueden ser negativos.");
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const payments = await tx.posPayment.findMany({
+        where: { id: { in: params.posPaymentIds } },
+        include: { reconciliationMovement: { select: { id: true } } },
+        orderBy: { createdAt: "asc" },
+      });
+      if (payments.length !== params.posPaymentIds.length) {
+        throw new Error("Alguna de las ventas seleccionadas no existe.");
+      }
+      if (payments.some((p) => p.reconciliationMovement)) {
+        throw new Error("Una de las ventas seleccionadas ya fue conciliada.");
+      }
+
+      const grossTotal = payments.reduce((sum, p) => sum + p.amountCents, 0);
+      if (params.withholdingCents + params.feesCents > grossTotal) {
+        throw new Error("Las retenciones/comisiones no pueden superar el monto bruto seleccionado.");
+      }
+
+      let withholdingAssigned = 0;
+      let feesAssigned = 0;
+      for (let i = 0; i < payments.length; i++) {
+        const p = payments[i]!;
+        const isLast = i === payments.length - 1;
+        const share = p.amountCents / grossTotal;
+        const withholdingShare = isLast
+          ? params.withholdingCents - withholdingAssigned
+          : Math.round(params.withholdingCents * share);
+        const feesShare = isLast ? params.feesCents - feesAssigned : Math.round(params.feesCents * share);
+        withholdingAssigned += withholdingShare;
+        feesAssigned += feesShare;
+        const netCents = p.amountCents - withholdingShare - feesShare;
+        if (netCents < 0) throw new Error("El descuento supera el monto de una de las ventas.");
+
+        await tx.localCashMovement.create({
+          data: {
+            localCashBoxId: params.cashBoxId,
+            type: "IN",
+            sourceType: "SALES_DEPOSIT",
+            relatedPosPaymentId: p.id,
+            grossAmountCents: p.amountCents,
+            bankWithholdingCents: withholdingShare,
+            bankFeesCents: feesShare,
+            amountCents: netCents,
+            date: params.date,
+            description: `Conciliación venta ${p.method}`,
+            createdByEmployeeId: params.createdByEmployeeId,
+          },
+        });
+      }
     });
   }
 }

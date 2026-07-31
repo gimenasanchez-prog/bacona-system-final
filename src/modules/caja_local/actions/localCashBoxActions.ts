@@ -156,6 +156,7 @@ const ManualMovementSchema = z.object({
   amountCents: z.coerce.number().int().positive(),
   date: z.string().min(1),
   description: z.string().optional(),
+  isRetiroGerencia: z.string().optional(),
 });
 
 export async function createLocalCashManualMovementAction(formData: FormData) {
@@ -168,6 +169,7 @@ export async function createLocalCashManualMovementAction(formData: FormData) {
       amountCents: formData.get("amountCents"),
       date: String(formData.get("date") ?? ""),
       description: String(formData.get("description") ?? "") || undefined,
+      isRetiroGerencia: String(formData.get("isRetiroGerencia") ?? "") || undefined,
     });
     if (!parsed.success) throw new Error("Datos inválidos: completá todos los campos.");
 
@@ -187,6 +189,7 @@ export async function createLocalCashManualMovementAction(formData: FormData) {
       date: new Date(`${parsed.data.date}T${timeOfDay}`),
       description: parsed.data.description ?? null,
       createdByEmployeeId: employeeId,
+      sourceType: parsed.data.isRetiroGerencia && parsed.data.type === "OUT" ? "RETIRO_GERENCIA" : "MANUAL_ADJUSTMENT",
     });
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : "Error desconocido al registrar el movimiento.";

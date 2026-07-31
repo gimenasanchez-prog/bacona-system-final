@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatArsFromCents } from "@/lib/money";
 
 type Uom = { id: string; label: string; unit: string; multiplierToBase: string; isDefaultForEntry: boolean };
 type InventoryItem = { id: string; name: string; unit: string; displayUnit: string; dimension: string; uoms: Uom[] };
@@ -12,6 +13,7 @@ type Purchase = {
   purchasedAt: string;
   supplierName: string | null;
   invoiceNumber: string | null;
+  invoiceTotalCents: number | null;
   location: { code: string; label: string };
   lines: Array<{
     id: string;
@@ -22,6 +24,9 @@ type Purchase = {
     inventoryItem: InventoryItem;
   }>;
 };
+type Supplier = { id: string; name: string };
+type CashBox = { id: string; name: string; kind: "EFECTIVO" | "CUENTA_BANCARIA" };
+type CreditCard = { id: string; name: string };
 
 type FormLine = {
   inventoryItemId: string;
@@ -45,6 +50,10 @@ async function apiJson<T>(path: string, init: RequestInit): Promise<T> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((json as any)?.error ?? res.statusText);
   return json as T;
+}
+
+function ars(v: string): number {
+  return Math.round(Number(v || "0") * 100);
 }
 
 const METRIC_BASE: Record<string, number> = { ML: 1, L: 1000, G: 1, KG: 1000, UN: 1 };
@@ -81,30 +90,54 @@ export default function ComprasPage() {
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
 
   const [form, setForm] = useState<{
     type: "APROVISIONAMIENTO" | "IN_SITU";
     locationCode: "BACONA" | "SALTA" | "EN_TRANSITO";
-    supplierName: string;
+    supplierId: string;
     invoiceNumber: string;
+    invoiceTotalArs: string;
     notes: string;
+    paymentMode: "NONE" | "PENDING" | "PAID_NOW";
+    paymentMethod: "EFECTIVO_CAJA" | "TRANSFERENCIA" | "TARJETA_CREDITO";
+    cashBoxId: string;
+    creditCardId: string;
+    installments: string;
     lines: FormLine[];
   }>({
     type: "IN_SITU",
     locationCode: "BACONA",
-    supplierName: "",
+    supplierId: "",
     invoiceNumber: "",
+    invoiceTotalArs: "",
     notes: "",
+    paymentMode: "NONE",
+    paymentMethod: "EFECTIVO_CAJA",
+    cashBoxId: "",
+    creditCardId: "",
+    installments: "1",
     lines: [{ inventoryItemId: "", qty: "1", unit: "UN", uomId: "", unitCostCents: "" }],
   });
 
   async function refresh() {
-    const [it, pu] = await Promise.all([
+    const [it, pu, sup, cb, cc] = await Promise.all([
       apiGet<{ items: InventoryItem[] }>("/api/stock/items"),
       apiGet<{ purchases: Purchase[] }>("/api/compras/purchases"),
+      apiGet<{ items: Supplier[] }>("/api/proveedores"),
+      apiGet<{ items: CashBox[] }>("/api/egresos/cuentas?kind=EFECTIVO").catch(() => ({ items: [] })),
+      apiGet<{ items: CreditCard[] }>("/api/egresos/tarjetas").catch(() => ({ items: [] })),
     ]);
     setItems(it.items);
     setPurchases(pu.purchases);
+    setSuppliers(sup.items);
+    const [cbBanco] = await Promise.all([
+      apiGet<{ items: CashBox[] }>("/api/egresos/cuentas?kind=CUENTA_BANCARIA").catch(() => ({ items: [] })),
+    ]);
+    setCashBoxes([...cb.items, ...cbBanco.items]);
+    setCreditCards(cc.items);
     setForm((prev) => ({
       ...prev,
       lines: prev.lines.map((l) => {
@@ -240,8 +273,13 @@ export default function ComprasPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs text-neutral-700">
               Proveedor (opcional)
-              <input className="mt-1 w-full rounded-md border px-3 py-2 text-sm" value={form.supplierName}
-                onChange={(e) => setForm((p) => ({ ...p, supplierName: e.target.value }))} />
+              <select className="mt-1 w-full rounded-md border px-3 py-2 text-sm" value={form.supplierId}
+                onChange={(e) => setForm((p) => ({ ...p, supplierId: e.target.value, paymentMode: e.target.value ? p.paymentMode : "NONE" }))}>
+                <option value="">— Sin proveedor —</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
             </label>
             <label className="text-xs text-neutral-700">
               N° factura (opcional)
@@ -255,6 +293,74 @@ export default function ComprasPage() {
             <textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm" rows={2}
               value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
           </label>
+
+          {form.supplierId ? (
+            <div className="mt-3 rounded-md border bg-neutral-50 p-3">
+              <div className="text-xs font-medium text-neutral-700">¿Cómo se paga?</div>
+              <div className="mt-2 flex gap-3 text-xs">
+                <label className="flex items-center gap-1">
+                  <input type="radio" checked={form.paymentMode === "NONE"} onChange={() => setForm((p) => ({ ...p, paymentMode: "NONE" }))} />
+                  No trackear pago
+                </label>
+                <label className="flex items-center gap-1">
+                  <input type="radio" checked={form.paymentMode === "PENDING"} onChange={() => setForm((p) => ({ ...p, paymentMode: "PENDING" }))} />
+                  Queda pendiente
+                </label>
+                <label className="flex items-center gap-1">
+                  <input type="radio" checked={form.paymentMode === "PAID_NOW"} onChange={() => setForm((p) => ({ ...p, paymentMode: "PAID_NOW" }))} />
+                  Contado ahora
+                </label>
+              </div>
+
+              {(form.paymentMode === "PENDING" || form.paymentMode === "PAID_NOW") && (
+                <label className="mt-2 block text-xs text-neutral-700">
+                  Monto total de la factura ($)
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                    value={form.invoiceTotalArs}
+                    onChange={(e) => setForm((p) => ({ ...p, invoiceTotalArs: e.target.value }))}
+                  />
+                </label>
+              )}
+
+              {form.paymentMode === "PAID_NOW" && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <select className="rounded-md border px-2 py-2 text-sm" value={form.paymentMethod}
+                    onChange={(e) => setForm((p) => ({ ...p, paymentMethod: e.target.value as typeof p.paymentMethod, cashBoxId: "", creditCardId: "" }))}>
+                    <option value="EFECTIVO_CAJA">Efectivo de caja</option>
+                    <option value="TRANSFERENCIA">Transferencia</option>
+                    <option value="TARJETA_CREDITO">Tarjeta de crédito</option>
+                  </select>
+                  {form.paymentMethod !== "TARJETA_CREDITO" ? (
+                    <select className="rounded-md border px-2 py-2 text-sm" value={form.cashBoxId}
+                      onChange={(e) => setForm((p) => ({ ...p, cashBoxId: e.target.value }))}>
+                      <option value="">Elegir caja/cuenta...</option>
+                      {cashBoxes
+                        .filter((b) => (form.paymentMethod === "EFECTIVO_CAJA" ? b.kind === "EFECTIVO" : b.kind === "CUENTA_BANCARIA"))
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                    </select>
+                  ) : (
+                    <>
+                      <select className="rounded-md border px-2 py-2 text-sm" value={form.creditCardId}
+                        onChange={(e) => setForm((p) => ({ ...p, creditCardId: e.target.value }))}>
+                        <option value="">Elegir tarjeta...</option>
+                        {creditCards.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <input type="number" min={1} max={24} className="rounded-md border px-2 py-2 text-sm" placeholder="Cuotas"
+                        value={form.installments} onChange={(e) => setForm((p) => ({ ...p, installments: e.target.value }))} />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <div className="mt-4">
             <div className="text-xs font-medium text-neutral-700">Líneas</div>
@@ -297,9 +403,10 @@ export default function ComprasPage() {
                       <input
                         type="number"
                         className="w-full rounded-md border px-3 py-2 text-sm"
-                        placeholder="Costo (cts)"
+                        placeholder="Costo ($, referencial)"
                         value={l.unitCostCents}
                         min={0}
+                        step="0.01"
                         onChange={(e) => updateLine(idx, { unitCostCents: e.target.value })}
                       />
                       <button
@@ -342,26 +449,58 @@ export default function ComprasPage() {
                 onClick={async () => {
                   try {
                     setError(null);
+                    const needsInvoiceTotal = form.paymentMode === "PENDING" || form.paymentMode === "PAID_NOW";
+                    const invoiceTotalCents = needsInvoiceTotal ? ars(form.invoiceTotalArs) : null;
+                    if (needsInvoiceTotal && !invoiceTotalCents) {
+                      throw new Error("Ingresá el monto total de la factura.");
+                    }
+                    const selectedSupplier = suppliers.find((s) => s.id === form.supplierId);
+                    const payment =
+                      !form.supplierId || form.paymentMode === "NONE"
+                        ? null
+                        : form.paymentMode === "PENDING"
+                          ? { mode: "PENDING" as const }
+                          : {
+                              mode: "PAID_NOW" as const,
+                              method: form.paymentMethod,
+                              cashBoxId: form.paymentMethod !== "TARJETA_CREDITO" ? form.cashBoxId || null : null,
+                              creditCardId: form.paymentMethod === "TARJETA_CREDITO" ? form.creditCardId || null : null,
+                              installments: form.paymentMethod === "TARJETA_CREDITO" ? Number(form.installments) || 1 : undefined,
+                            };
                     await apiJson("/api/compras/purchases", {
                       method: "POST",
                       body: JSON.stringify({
                         type: form.type,
                         locationCode: form.locationCode,
-                        supplierName: form.supplierName || null,
+                        supplierId: form.supplierId || null,
+                        supplierName: selectedSupplier?.name ?? null,
                         invoiceNumber: form.invoiceNumber || null,
+                        invoiceTotalCents,
                         notes: form.notes || null,
+                        payment,
                         lines: form.lines.map((x) => ({
                           inventoryItemId: x.inventoryItemId,
                           qty: Number(x.qty),
                           unit: x.uomId ? null : x.unit,
                           uomId: x.uomId || null,
-                          unitCostCents: x.unitCostCents ? Number(x.unitCostCents) : null,
+                          unitCostCents: x.unitCostCents ? ars(x.unitCostCents) : null,
                         })),
                       }),
                     });
                     const first = items[0];
                     const { unit, uomId } = first ? defaultLineUnit(first) : { unit: "UN", uomId: "" };
-                    setForm((p) => ({ ...p, supplierName: "", invoiceNumber: "", notes: "", lines: [{ inventoryItemId: first?.id ?? "", qty: "1", unit, uomId, unitCostCents: "" }] }));
+                    setForm((p) => ({
+                      ...p,
+                      supplierId: "",
+                      invoiceNumber: "",
+                      invoiceTotalArs: "",
+                      notes: "",
+                      paymentMode: "NONE",
+                      cashBoxId: "",
+                      creditCardId: "",
+                      installments: "1",
+                      lines: [{ inventoryItemId: first?.id ?? "", qty: "1", unit, uomId, unitCostCents: "" }],
+                    }));
                     await refresh();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : "Error");
@@ -393,6 +532,14 @@ export default function ComprasPage() {
                     <td className="px-3 py-2">
                       <div className="font-medium">{p.type}</div>
                       <div className="text-xs text-neutral-500">{p.invoiceNumber ?? "—"}</div>
+                      {p.invoiceTotalCents ? (
+                        <div className="text-xs font-medium text-neutral-700">
+                          Factura: {formatArsFromCents(p.invoiceTotalCents)}
+                        </div>
+                      ) : null}
+                      {p.supplierName ? (
+                        <div className="text-xs text-neutral-500">{p.supplierName}</div>
+                      ) : null}
                       {p.type === "APROVISIONAMIENTO" && p.location.code !== "BACONA" ? (
                         <button
                           type="button"

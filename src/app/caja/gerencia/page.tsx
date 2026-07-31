@@ -16,6 +16,9 @@ const SOURCE_TYPE_LABEL: Record<string, string> = {
   MANUAL_ADJUSTMENT: "Ajuste manual",
   LOCAL_EXPENSE: "Egreso local",
   CHANGE_RETURN: "Vuelto",
+  RETIRO_GERENCIA: "Retiro de gerencia",
+  SUPPLIER_PAYMENT: "Pago a proveedor",
+  COSTO_FIJO_PAYMENT: "Pago de costo fijo",
 };
 
 function TypeBadge(props: { type: string }) {
@@ -181,10 +184,18 @@ export default async function CajaGerenciaPage(props: {
             <div className="text-xs text-neutral-500">Motivo (opcional)</div>
             <input name="description" type="text" className="w-full rounded-md border px-2 py-2 text-sm" placeholder="Ej: pago de sueldos" />
           </div>
+          <label className="sm:col-span-4 flex items-center gap-2 text-xs text-neutral-600">
+            <input type="checkbox" name="isRetiroGerencia" value="1" />
+            Es un retiro de gerencia (queda categorizado como tal, no un ajuste genérico)
+          </label>
           <div className="sm:col-span-4 flex justify-end">
             <button className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white">Registrar</button>
           </div>
         </form>
+        <div className="mt-2 text-xs text-neutral-500">
+          Para pagar a un proveedor o un costo fijo específico usá el{" "}
+          <a href="/egresos" className="underline">módulo de Egresos</a> — queda registrado contra la deuda del proveedor o el costo fijo correspondiente.
+        </div>
       </div>
 
       <div className="mt-4 text-sm font-semibold">Historial de movimientos</div>
