@@ -3,7 +3,19 @@
     "allow": [
       "Bash(npx tsx -e ' *)",
       "Bash(npx tsx *)",
-      "Bash(del \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\prisma\\\\set-alfredo-admin.ts\")"
+      "Bash(del \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\prisma\\\\set-alfredo-admin.ts\")",
+      "Bash(cp \"/c/Users/Gimena/AppData/Local/Temp/claude/c--Users-Gimena-Documents-MEGA-SierraDelta-Tech-bacona-system-final/880fb4e0-42c4-49b8-a34e-dc1fa0e8e3ec/scratchpad/recetas_bcn.html\" \"/c/Users/Gimena/Documents/MEGA/SierraDelta/Tech/bacona-system-final/recetas_bcn.html\")",
+      "Bash(mkdir -p \"/c/Users/Gimena/Documents/MEGA/SierraDelta/Tech/bacona-system-final/src/app/api/pos/products/[id]/stock-link\")",
+      "Bash(mkdir -p \"/c/Users/Gimena/Documents/MEGA/SierraDelta/Tech/bacona-system-final/src/app/api/stock/items/[id]/detail\")",
+      "Bash(node -e \"const p = require\\('c:/Users/Gimena/Documents/MEGA/SierraDelta/Tech/bacona-system-final/package.json'\\); console.log\\('next:', p.dependencies.next\\)\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\src\\\\app\\\\api\\\\gerencia\\\\precios\\\\bulk\\\\preview\" \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\src\\\\app\\\\api\\\\gerencia\\\\precios\\\\bulk\\\\apply\" \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\src\\\\app\\\\api\\\\gerencia\\\\precios\\\\[id]\" \"c:\\\\Users\\\\Gimena\\\\Documents\\\\MEGA\\\\SierraDelta\\\\Tech\\\\bacona-system-final\\\\src\\\\app\\\\gerencia\\\\precios\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -o /tmp_precios_page.html -w 'HTTP %{http_code}\\\\n' -H 'Cookie: bcn_employeeId=cmqfxqa9n0000s4u46o1k4ajk; bcn_role=GERENCIA' http://localhost:3000/gerencia/precios)",
+      "Bash(grep -o \"Tarifas corporativas[^<]*\" /tmp_precios_page.html)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Gimena\\AppData\\Local\\Temp\\claude\\c--Users-Gimena-Documents-MEGA-SierraDelta-Tech-bacona-system-final\\880fb4e0-42c4-49b8-a34e-dc1fa0e8e3ec\\scratchpad",
+      "c:\\Users\\Gimena\\Documents\\MEGA\\SierraDelta\\Tech\\bacona-system-final\\src\\app\\api\\gerencia\\precios"
     ]
   }
 }

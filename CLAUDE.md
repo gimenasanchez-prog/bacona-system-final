@@ -17,6 +17,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Backlog
+
+Cuando Gimena pida "guardalo en backlog" (en cualquier sesión de Claude Code, no solo la actual), agregar una entrada fechada a `BACKLOG.md` en la raíz del repo con: título corto, qué es, y por qué quedó pendiente. No hace falta preguntar dónde guardarlo — siempre es ahí.
+
+---
+
 ## Deployment
 
 **Producción: Railway** — App en `baconagsd.up.railway.app`. Next.js + PostgreSQL managed, accesible desde cualquier dispositivo con internet.
