@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { formatArsFromCents } from "@/lib/money";
+import { PLAN_TARIFF_CONFIG, matchesCorpoFilter } from "@/modules/cuentas_corrientes/lib/planTariffs";
 
 type Category = { id: string; name: string };
 type ProductListItem = { id: string; name: string; priceCents: number };
@@ -353,23 +354,7 @@ export default function PosPage() {
 
   const allowedPlanConfig = useMemo(() => {
     if (!selectedPlanCode) return null;
-    const configs: Record<string, {
-      showSnacks: boolean;
-      showBebidas: boolean;
-      corpoFilter: "all" | "corpo1" | "corpo1_snack" | "corpo2" | "corpo2_basic" | "corpo3";
-      cartaLibre: boolean;
-      capCentsPerPerson: number | null;
-    }> = {
-      CORPO1:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
-      CORPO1_BEBIDAS:     { showSnacks: false, showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
-      CORPO1_SNACK_BEBIDA: { showSnacks: false, showBebidas: true, corpoFilter: "corpo1_snack", cartaLibre: false, capCentsPerPerson: null },
-      CORPO1_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo1", cartaLibre: false, capCentsPerPerson: null },
-      CORPO2:             { showSnacks: false, showBebidas: false, corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
-      CORPO2_SNACKS:      { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
-      CORPO2_CARTA_LIBRE: { showSnacks: true,  showBebidas: true,  corpoFilter: "corpo2", cartaLibre: true,  capCentsPerPerson: null },
-      CORPO_BRUNCH:       { showSnacks: false, showBebidas: false, corpoFilter: "corpo3", cartaLibre: false, capCentsPerPerson: null },
-    };
-    return configs[selectedPlanCode] ?? null;
+    return PLAN_TARIFF_CONFIG[selectedPlanCode] ?? null;
   }, [selectedPlanCode]);
 
   const planCapReached = useMemo(() => {
@@ -780,16 +765,7 @@ export default function PosPage() {
                 const selectedCat2 = categories.find((c) => c.id === selectedCategoryId);
                 if (selectedCat2?.name.toLowerCase().includes("corporat")) {
                   const pname = p.name.toLowerCase();
-                  const { corpoFilter } = allowedPlanConfig;
-                  if (corpoFilter === "all") return true;
-                  if (corpoFilter === "corpo1") return pname.includes("corpo 1");
-                  if (corpoFilter === "corpo1_snack")
-                    return pname.includes("corpo 1") && pname.includes("snack");
-                  if (corpoFilter === "corpo2") return pname.includes("corpo 2");
-                  if (corpoFilter === "corpo2_basic")
-                    return pname.includes("corpo 2") && (pname.includes("snack") || pname.includes("brunch"));
-                  if (corpoFilter === "corpo3") return pname.includes("corpo 3");
-                  return true;
+                  return matchesCorpoFilter(pname, allowedPlanConfig.corpoFilter);
                 }
                 // Non-corporativo categories: no product-level filtering
                 return true;

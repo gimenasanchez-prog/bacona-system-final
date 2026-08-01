@@ -10,6 +10,7 @@ import type {
   InvoiceDetail,
 } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 import { CargosDirectosModal } from "./CargosDirectosModal";
+import { NuevaCuentaModal } from "./NuevaCuentaModal";
 
 
 function formatDate(d: Date | string) {
@@ -1093,10 +1094,13 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
         <h1 className="text-xl font-semibold">Cuentas Corrientes</h1>
         <div className="flex items-center gap-3">
           {(role === "GERENCIA" || role === "ADMINISTRATIVO") && (
-            <CargosDirectosModal
-              accounts={accounts.map((a) => ({ id: a.id, customerName: a.customerName }))}
-              onCreated={refresh}
-            />
+            <>
+              <NuevaCuentaModal onCreated={refresh} />
+              <CargosDirectosModal
+                accounts={accounts.map((a) => ({ id: a.id, customerName: a.customerName }))}
+                onCreated={refresh}
+              />
+            </>
           )}
           <button onClick={refresh} disabled={refreshing} className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
             {refreshing ? "Actualizando..." : "Actualizar"}

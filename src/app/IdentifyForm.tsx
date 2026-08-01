@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useEffect } from "react";
+import { useActionState, useState, useEffect, startTransition } from "react";
 import { identifyAction, type IdentifyState } from "@/modules/caja/actions/identifyAction";
 
 type Employee = { id: string; displayName: string; role: string };
@@ -23,7 +23,7 @@ export function IdentifyForm({ employees }: { employees: Employee[] }) {
       const fd = new FormData();
       fd.set("employeeId", selected.id);
       fd.set("pin", pin);
-      action(fd);
+      startTransition(() => action(fd));
     }
   }, [pin, selected, action]);
 
