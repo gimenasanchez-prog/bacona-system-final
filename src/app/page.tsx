@@ -5,14 +5,25 @@ import { prisma } from "@/lib/prisma";
 import { IdentifyForm } from "./IdentifyForm";
 import { clearIdentityAction } from "@/modules/caja/actions/identifyAction";
 
-function NavButton({ href, label, primary }: { href: string; label: string; primary?: boolean }) {
+function NavCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-neutral-700">
+        {title}
+      </div>
+      <div className="space-y-2 p-3">{children}</div>
+    </div>
+  );
+}
+
+function NavRow({ href, label, primary }: { href: string; label: string; primary?: boolean }) {
   return (
     <Link
       href={href}
       className={
         primary
-          ? "inline-flex rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
-          : "inline-flex rounded-md border bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-50"
+          ? "block rounded-md border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+          : "block rounded-md border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
       }
     >
       {label}
@@ -52,87 +63,83 @@ export default async function HomePage() {
       </div>
 
       {role === "GERENCIA" && (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Gestión</div>
-          <div className="flex flex-wrap gap-2">
-            <NavButton href="/rentabilidad" label="Rentabilidad" primary />
-            <NavButton href="/egresos" label="Egresos" primary />
-            <NavButton href="/caja/consolidado" label="Consolidado de Caja" primary />
-            <NavButton href="/caja/gerencia" label="Caja Gerencia" primary />
-            <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" />
-            <NavButton href="/reportes" label="Reportes" />
-            <NavButton href="/gerencia/empleados" label="Empleados" />
-            <NavButton href="/gerencia/precios" label="Precios" />
-          </div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
-          <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <NavCard title="Gestión">
+            <NavRow href="/caja/gerencia" label="Caja Gerencia" />
+            <NavRow href="/caja/consolidado" label="Consolidado de Caja" />
+            <NavRow href="/cuentas-bancarias" label="Cuentas Bancarias" />
+            <NavRow href="/cuentas-corrientes" label="Cuentas Corrientes" />
+            <NavRow href="/egresos" label="Egresos" />
+            <NavRow href="/gerencia/empleados" label="Empleados" />
+            <NavRow href="/gerencia/precios" label="Precios" />
+            <NavRow href="/rentabilidad" label="Rentabilidad" />
+            <NavRow href="/reportes" label="Reportes" />
+          </NavCard>
+          <NavCard title="Operación">
             {hasSession ? (
-              <NavButton href="/pos" label="Ventas" primary />
+              <NavRow href="/pos" label="Ventas" primary />
             ) : (
-              <NavButton href="/caja/abrir" label="Abrir turno para vender" />
+              <NavRow href="/caja/abrir" label="Abrir turno para vender" primary />
             )}
-            {hasSession && <NavButton href="/caja/turno" label="Mi turno" />}
-            <NavButton href="/stock" label="Stock" />
-            <NavButton href="/compras" label="Compras" />
-            <NavButton href="/produccion" label="Producción" />
-            <NavButton href="/mermas" label="Mermas" />
-          </div>
+            <NavRow href="/compras" label="Compras" />
+            <NavRow href="/mermas" label="Mermas" />
+            {hasSession && <NavRow href="/caja/turno" label="Mi turno" />}
+            <NavRow href="/produccion" label="Producción" />
+            <NavRow href="/stock" label="Stock" />
+          </NavCard>
         </div>
       )}
 
       {role === "CAJA_LOCAL" && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <NavCard title="Ventas">
             {hasSession ? (
-              <NavButton href="/pos" label="Ir a Ventas" primary />
+              <NavRow href="/pos" label="Ir a Ventas" primary />
             ) : (
-              <NavButton href="/caja/abrir" label="Abrir turno" primary />
+              <NavRow href="/caja/abrir" label="Abrir turno" primary />
             )}
-            {hasSession && <NavButton href="/caja/turno" label="Mi turno" />}
-            <NavButton href="/caja/local" label="Caja BCÑ" />
-          </div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
-          <div className="flex flex-wrap gap-2">
-            <NavButton href="/stock" label="Stock" />
-            <NavButton href="/produccion" label="Producción" />
-            <NavButton href="/mermas" label="Mermas" />
-          </div>
+            <NavRow href="/caja/local" label="Caja BCÑ" />
+            {hasSession && <NavRow href="/caja/turno" label="Mi turno" />}
+          </NavCard>
+          <NavCard title="Operación">
+            <NavRow href="/mermas" label="Mermas" />
+            <NavRow href="/produccion" label="Producción" />
+            <NavRow href="/stock" label="Stock" />
+          </NavCard>
         </div>
       )}
 
       {role === "ADMINISTRATIVO" && (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Administración</div>
-          <div className="flex flex-wrap gap-2">
-            <NavButton href="/cuentas-corrientes" label="Cuentas Corrientes" primary />
-            <NavButton href="/caja/consolidado" label="Consolidado de Caja" />
-            <NavButton href="/rentabilidad" label="Rentabilidad" />
-            <NavButton href="/egresos" label="Egresos" />
-            <NavButton href="/reportes" label="Reportes" />
-          </div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
-          <div className="flex flex-wrap gap-2">
-            <NavButton href="/stock" label="Stock" />
-          </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <NavCard title="Administración">
+            <NavRow href="/caja/consolidado" label="Consolidado de Caja" />
+            <NavRow href="/cuentas-bancarias" label="Cuentas Bancarias" />
+            <NavRow href="/cuentas-corrientes" label="Cuentas Corrientes" />
+            <NavRow href="/egresos" label="Egresos" />
+            <NavRow href="/rentabilidad" label="Rentabilidad" />
+            <NavRow href="/reportes" label="Reportes" />
+          </NavCard>
+          <NavCard title="Operación">
+            <NavRow href="/stock" label="Stock" />
+          </NavCard>
         </div>
       )}
 
       {role === "ASOCIADO" && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <NavCard title="Ventas">
             {hasSession ? (
-              <NavButton href="/pos" label="Ir a Ventas" primary />
+              <NavRow href="/pos" label="Ir a Ventas" primary />
             ) : (
-              <NavButton href="/caja/abrir" label="Abrir turno" primary />
+              <NavRow href="/caja/abrir" label="Abrir turno" primary />
             )}
-            {hasSession && <NavButton href="/caja/turno" label="Mi turno" />}
-          </div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Operación</div>
-          <div className="flex flex-wrap gap-2">
-            <NavButton href="/stock" label="Stock" />
-            <NavButton href="/produccion" label="Producción" />
-            <NavButton href="/mermas" label="Mermas" />
-          </div>
+            {hasSession && <NavRow href="/caja/turno" label="Mi turno" />}
+          </NavCard>
+          <NavCard title="Operación">
+            <NavRow href="/mermas" label="Mermas" />
+            <NavRow href="/produccion" label="Producción" />
+            <NavRow href="/stock" label="Stock" />
+          </NavCard>
         </div>
       )}
     </main>

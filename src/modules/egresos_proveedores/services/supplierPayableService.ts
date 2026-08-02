@@ -208,10 +208,13 @@ export class SupplierPayableService {
         if (!card || !card.active) throw new Error("Tarjeta no encontrada o inactiva.");
 
         const installments = Math.max(1, input.installments ?? 1);
+        // El período nombrado es el mes SIGUIENTE al de cierre (no el mes de
+        // cierre en sí) — una compra que entra en el resumen que cierra el
+        // día `closingDay` se llama por el mes que sigue a ese cierre.
         const basePeriod =
           input.date.getUTCDate() >= card.closingDay
-            ? addMonths(input.date, 1)
-            : addMonths(input.date, 0);
+            ? addMonths(input.date, 2)
+            : addMonths(input.date, 1);
 
         const baseAmount = Math.floor(input.amountCents / installments);
         const remainder = input.amountCents - baseAmount * installments;

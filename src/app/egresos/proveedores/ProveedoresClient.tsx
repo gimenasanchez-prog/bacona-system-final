@@ -358,6 +358,7 @@ function SupplierDetailModal({ supplierId, onClose }: { supplierId: string; onCl
                             : p.description ?? "Deuda manual"}
                         </div>
                         <div className="text-xs text-neutral-500">
+                          {new Date(p.sourcePurchase?.purchasedAt ?? p.createdAt).toLocaleDateString("es-AR")} ·{" "}
                           {formatArsFromCents(p.totalAmountCents)} total · pagado {formatArsFromCents(p.paidAmountCents)}
                         </div>
                       </div>

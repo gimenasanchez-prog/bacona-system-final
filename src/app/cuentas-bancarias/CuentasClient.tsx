@@ -68,8 +68,12 @@ const PAYMENT_METHODS: { value: PaymentMethodConfig["method"]; label: string }[]
   { value: "QR", label: "QR" },
 ];
 
-function saleReference(sale: PendingSale["sale"]) {
-  return sale.comandaNumber || sale.customerNameFreeText || (sale.tableId ? `Mesa ${sale.tableId}` : "—");
+function saleReference(s: PendingSale) {
+  return (
+    s.sale.comandaNumber ||
+    s.sale.customerNameFreeText ||
+    (s.sale.tableId ? `Mesa ${s.sale.tableId}` : `Venta ${new Date(s.createdAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`)
+  );
 }
 
 export function CuentasClient({ isGerencia }: { isGerencia: boolean }) {
@@ -379,7 +383,7 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
                     </td>
                     <td className="px-2 py-2 text-xs">{new Date(s.createdAt).toLocaleDateString("es-AR")}</td>
                     <td className="px-2 py-2 text-xs">{s.method}</td>
-                    <td className="px-2 py-2 text-xs">{saleReference(s.sale)}</td>
+                    <td className="px-2 py-2 text-xs">{saleReference(s)}</td>
                     <td className="px-2 py-2 text-right">{formatArsFromCents(s.amountCents)}</td>
                   </tr>
                 ))}

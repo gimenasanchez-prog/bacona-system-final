@@ -12,6 +12,16 @@ export async function GET() {
     include: {
       location: { select: { id: true, code: true, label: true } },
       lines: { include: { inventoryItem: { select: { id: true, name: true, unit: true } } }, orderBy: { sortOrder: "asc" } },
+      payable: {
+        include: {
+          payments: {
+            include: {
+              cashBox: { select: { id: true, name: true } },
+              creditCard: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
     },
   });
   return NextResponse.json({ purchases });
@@ -33,7 +43,7 @@ const PaymentSchema = z.discriminatedUnion("mode", [
 const CreatePurchaseSchema = z.object({
   type: z.enum(["APROVISIONAMIENTO", "IN_SITU"]),
   locationCode: z.enum(["BACONA", "SALTA", "EN_TRANSITO"]).optional(),
-  supplierId: z.string().cuid().nullable().optional(),
+  supplierId: z.string().cuid(),
   supplierName: z.string().nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
   invoiceTotalCents: z.number().int().positive().nullable().optional(),
@@ -50,7 +60,7 @@ const CreatePurchaseSchema = z.object({
         unitCostCents: z.number().int().nonnegative().nullable().optional(),
       })
     )
-    .min(1),
+    .min(0),
 });
 
 export async function POST(req: Request) {

@@ -43,7 +43,6 @@ export class PurchaseService {
           ? enTransito
           : bacona;
 
-    if (!params.lines.length) throw new Error("At least one line is required");
     if (params.supplierId && params.payment && !params.invoiceTotalCents) {
       throw new Error("Falta el monto total de la factura para registrar el pago/deuda al proveedor.");
     }
@@ -123,23 +122,25 @@ export class PurchaseService {
         include: { lines: true },
       });
 
-      await tx.stockMovement.create({
-        data: {
-          type: StockMovementType.PURCHASE,
-          purchaseId: created.id,
-          occurredAt: created.postedAt ?? created.purchasedAt,
-          notes: created.invoiceNumber ? `Invoice ${created.invoiceNumber}` : undefined,
-          lines: {
-            create: created.lines.map((l) => ({
-              inventoryItemId: l.inventoryItemId,
-              locationId: created.locationId,
-              direction: "IN",
-              qty: l.qty,
-              sortOrder: l.sortOrder,
-            })),
+      if (created.lines.length > 0) {
+        await tx.stockMovement.create({
+          data: {
+            type: StockMovementType.PURCHASE,
+            purchaseId: created.id,
+            occurredAt: created.postedAt ?? created.purchasedAt,
+            notes: created.invoiceNumber ? `Invoice ${created.invoiceNumber}` : undefined,
+            lines: {
+              create: created.lines.map((l) => ({
+                inventoryItemId: l.inventoryItemId,
+                locationId: created.locationId,
+                direction: "IN",
+                qty: l.qty,
+                sortOrder: l.sortOrder,
+              })),
+            },
           },
-        },
-      });
+        });
+      }
 
       return created;
     });

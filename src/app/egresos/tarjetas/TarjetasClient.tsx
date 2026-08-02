@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { formatArsFromCents } from "@/lib/money";
 
 type Period = {
@@ -24,6 +24,25 @@ type Card = {
 
 type CashBox = { id: string; name: string };
 
+type PeriodDetail = {
+  charges: Array<{
+    id: string;
+    description: string;
+    installmentNumber: number;
+    totalInstallments: number;
+    amountCents: number;
+    createdAt: string;
+    supplierPayment: { supplier: { id: string; name: string } } | null;
+  }>;
+  payments: Array<{
+    id: string;
+    totalAmountCents: number;
+    paidAt: string;
+    cashBox: { id: string; name: string };
+    notes: string | null;
+  }>;
+};
+
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "bg-red-50 text-red-700",
   PARTIAL: "bg-amber-50 text-amber-700",
@@ -40,6 +59,12 @@ export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
   const [cards, setCards] = useState<Card[]>([]);
   const [payTarget, setPayTarget] = useState<{ cardId: string; cardName: string; period: Period } | null>(null);
   const [formModalCard, setFormModalCard] = useState<Card | "NEW" | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  function toggleExpanded(cardId: string, period: string) {
+    const key = `${cardId}|${period}`;
+    setExpandedKey((prev) => (prev === key ? null : key));
+  }
 
   const load = useCallback(async () => {
     const res = await fetch("/api/egresos/tarjetas");
@@ -82,6 +107,7 @@ export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b">
               <tr>
+                <th className="px-3 py-2 text-left font-medium"></th>
                 <th className="px-3 py-2 text-left font-medium">Período</th>
                 <th className="px-3 py-2 text-right font-medium">Total</th>
                 <th className="px-3 py-2 text-right font-medium">Pagado</th>
@@ -91,32 +117,54 @@ export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {card.periods.map((p) => (
-                <tr key={p.period} className="border-b last:border-b-0">
-                  <td className="px-3 py-2 capitalize">{formatPeriod(p.period)}</td>
-                  <td className="px-3 py-2 text-right">{formatArsFromCents(p.totalAmountCents)}</td>
-                  <td className="px-3 py-2 text-right">{formatArsFromCents(p.paidAmountCents)}</td>
-                  <td className="px-3 py-2 text-right font-semibold">{formatArsFromCents(p.remainingCents)}</td>
-                  <td className="px-3 py-2 text-center">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[p.status]}`}>
-                      {STATUS_LABEL[p.status]}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {isGerencia && p.remainingCents > 0 && (
-                      <button
-                        onClick={() => setPayTarget({ cardId: card.id, cardName: card.name, period: p })}
-                        className="text-xs underline text-blue-700"
-                      >
-                        Pagar
-                      </button>
+              {card.periods.map((p) => {
+                const key = `${card.id}|${p.period}`;
+                const expanded = expandedKey === key;
+                return (
+                  <Fragment key={p.period}>
+                    <tr className="border-b last:border-b-0">
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => toggleExpanded(card.id, p.period)}
+                          className="text-neutral-400 hover:text-neutral-700"
+                          title="Ver detalle"
+                        >
+                          {expanded ? "▾" : "▸"}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 capitalize">{formatPeriod(p.period)}</td>
+                      <td className="px-3 py-2 text-right">{formatArsFromCents(p.totalAmountCents)}</td>
+                      <td className="px-3 py-2 text-right">{formatArsFromCents(p.paidAmountCents)}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{formatArsFromCents(p.remainingCents)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[p.status]}`}>
+                          {STATUS_LABEL[p.status]}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {isGerencia && p.remainingCents > 0 && (
+                          <button
+                            onClick={() => setPayTarget({ cardId: card.id, cardName: card.name, period: p })}
+                            className="text-xs underline text-blue-700"
+                          >
+                            Pagar
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr className="border-b last:border-b-0 bg-neutral-50">
+                        <td colSpan={7} className="px-3 py-3">
+                          <PeriodDetail cardId={card.id} period={p.period} />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
               {!card.periods.length && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-neutral-500">Sin cargos todavía.</td>
+                  <td colSpan={7} className="px-3 py-6 text-center text-neutral-500">Sin cargos todavía.</td>
                 </tr>
               )}
             </tbody>
@@ -149,6 +197,57 @@ export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
             load();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function PeriodDetail({ cardId, period }: { cardId: string; period: string }) {
+  const [detail, setDetail] = useState<PeriodDetail | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/egresos/tarjetas/${cardId}/periodo?period=${encodeURIComponent(period)}`)
+      .then((r) => r.json())
+      .then(setDetail);
+  }, [cardId, period]);
+
+  if (!detail) return <div className="text-xs text-neutral-500">Cargando...</div>;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-1">Compras / cuotas</div>
+        <div className="space-y-1">
+          {detail.charges.map((c) => (
+            <div key={c.id} className="flex items-center justify-between text-xs">
+              <span>
+                {c.description}
+                {c.totalInstallments > 1 ? ` (cuota ${c.installmentNumber}/${c.totalInstallments})` : ""}
+                {c.supplierPayment?.supplier ? ` — ${c.supplierPayment.supplier.name}` : ""}
+                {" · "}
+                {new Date(c.createdAt).toLocaleDateString("es-AR")}
+              </span>
+              <span className="font-medium">{formatArsFromCents(c.amountCents)}</span>
+            </div>
+          ))}
+          {!detail.charges.length && <div className="text-xs text-neutral-500">Sin cargos.</div>}
+        </div>
+      </div>
+      {detail.payments.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-1">Pagos del resumen</div>
+          <div className="space-y-1">
+            {detail.payments.map((p) => (
+              <div key={p.id} className="flex items-center justify-between text-xs">
+                <span>
+                  {new Date(p.paidAt).toLocaleDateString("es-AR")} · {p.cashBox.name}
+                  {p.notes ? ` · ${p.notes}` : ""}
+                </span>
+                <span className="font-medium">{formatArsFromCents(p.totalAmountCents)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
