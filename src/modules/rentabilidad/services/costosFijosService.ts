@@ -58,6 +58,7 @@ export class CostosFijosService {
     amountCents: number;
     validFrom: Date;
     notas?: string;
+    isRecurring?: boolean;
   }) {
     return prisma.costoFijo.create({
       data: {
@@ -66,6 +67,7 @@ export class CostosFijosService {
         amountCents: input.amountCents,
         validFrom: input.validFrom,
         notas: input.notas ?? null,
+        isRecurring: input.isRecurring ?? true,
       },
     });
   }
@@ -77,6 +79,7 @@ export class CostosFijosService {
       categoria?: CostoFijoCategoria;
       amountCents?: number;
       notas?: string;
+      isRecurring?: boolean;
     }
   ) {
     return prisma.costoFijo.update({ where: { id }, data: input });
@@ -94,8 +97,11 @@ export class CostosFijosService {
     // este período igual estuvo vigente durante él (validFrom/validTo ya reflejan
     // la fecha de baja correctamente, filtrar por isActive además excluía mal
     // períodos pasados).
+    // Solo recurrentes: una deuda puntual (isRecurring: false) no es un costo
+    // mensual que se repita, no debería inflar la base de todos los meses futuros.
     const items = await prisma.costoFijo.findMany({
       where: {
+        isRecurring: true,
         validFrom: { lte: monthEnd },
         OR: [{ validTo: null }, { validTo: { gte: monthStart } }],
       },
@@ -137,6 +143,26 @@ export class CostosFijosService {
 
     return items.map((item) => {
       const paidPeriods = paidByCostoFijoId.get(item.id);
+
+      if (!item.isRecurring) {
+        // Deuda puntual: vive en un único período fijo (el mes de validFrom),
+        // sin importar qué mes esté navegando el selector — nunca se multiplica
+        // por los meses transcurridos.
+        const fixedPeriod = periodStart(item.validFrom);
+        const paidAmountCents = paidPeriods?.get(fixedPeriod.getTime()) ?? 0;
+        const owedCents = item.amountCents - paidAmountCents;
+        const isPaid = owedCents <= 0;
+        return {
+          costoFijo: item,
+          period: fixedPeriod,
+          paidAmountCents,
+          isPaid,
+          pendingSincePeriod: isPaid ? null : fixedPeriod,
+          periodsOwed: isPaid ? 0 : 1,
+          totalOwedCents: isPaid ? 0 : owedCents,
+        };
+      }
+
       const arrears = computeArrears(item, start, paidPeriods);
       const paidAmountCents = paidPeriods?.get(start.getTime()) ?? 0;
       return {

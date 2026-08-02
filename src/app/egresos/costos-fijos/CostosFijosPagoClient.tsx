@@ -4,7 +4,14 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { formatArsFromCents } from "@/lib/money";
 
 type Item = {
-  costoFijo: { id: string; nombre: string; categoria: string; amountCents: number; isActive: boolean };
+  costoFijo: {
+    id: string;
+    nombre: string;
+    categoria: string;
+    amountCents: number;
+    isActive: boolean;
+    isRecurring: boolean;
+  };
   period: string;
   paidAmountCents: number;
   isPaid: boolean;
@@ -160,7 +167,10 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
           <tbody>
             {filteredItems.map((it) => (
               <tr key={it.costoFijo.id} className="border-b last:border-b-0">
-                <td className="px-3 py-2">{it.costoFijo.nombre}</td>
+                <td className="px-3 py-2">
+                  {it.costoFijo.nombre}
+                  {!it.costoFijo.isRecurring && <span className="ml-1 text-xs text-neutral-400">(único)</span>}
+                </td>
                 <td className="px-3 py-2 text-xs text-neutral-500">{it.costoFijo.categoria}</td>
                 <td className="px-3 py-2 text-right">{formatArsFromCents(it.costoFijo.amountCents)}</td>
                 <td className="px-3 py-2 text-right">{formatArsFromCents(it.paidAmountCents)}</td>
@@ -258,6 +268,7 @@ function CostoFijoFormModal({
   const [amountArs, setAmountArs] = useState(item ? (item.amountCents / 100).toFixed(2) : "");
   const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10));
   const [notas, setNotas] = useState("");
+  const [isRecurring, setIsRecurring] = useState(item ? item.isRecurring : true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -273,7 +284,7 @@ function CostoFijoFormModal({
         ? await fetch("/api/rentabilidad/costos-fijos", {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: item.id, action: "update", nombre, categoria, amountCents, notas: notas || undefined }),
+            body: JSON.stringify({ id: item.id, action: "update", nombre, categoria, amountCents, notas: notas || undefined, isRecurring }),
           })
         : await fetch("/api/rentabilidad/costos-fijos", {
             method: "POST",
@@ -284,6 +295,7 @@ function CostoFijoFormModal({
               amountCents,
               validFrom: new Date(validFrom + "T12:00:00.000Z").toISOString(),
               notas: notas || undefined,
+              isRecurring,
             }),
           });
       const data = await res.json();
@@ -328,6 +340,18 @@ function CostoFijoFormModal({
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Notas (opcional)</label>
             <input type="text" value={notas} onChange={(e) => setNotas(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div className="flex items-start gap-2">
+            <input
+              id="isRecurring"
+              type="checkbox"
+              checked={isRecurring}
+              onChange={(e) => setIsRecurring(e.target.checked)}
+              className="mt-0.5"
+            />
+            <label htmlFor="isRecurring" className="text-xs text-neutral-600">
+              Es recurrente (se repite todos los meses por el mismo monto). Destildar si es una deuda de un monto fijo cargada una sola vez — en ese caso no se va a duplicar mes a mes.
+            </label>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

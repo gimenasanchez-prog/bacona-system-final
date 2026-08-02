@@ -20,6 +20,7 @@ const CreateSchema = z.object({
   amountCents: z.number().int().positive(),
   validFrom: z.string().datetime(),
   notas: z.string().max(300).optional(),
+  isRecurring: z.boolean().optional(),
 });
 
 const UpdateSchema = z.object({
@@ -29,6 +30,7 @@ const UpdateSchema = z.object({
   categoria: z.enum(CATEGORIAS).optional(),
   amountCents: z.number().int().positive().optional(),
   notas: z.string().max(300).optional(),
+  isRecurring: z.boolean().optional(),
 });
 
 async function requireGerencia() {

@@ -909,6 +909,7 @@ model CostoFijo {
   categoria   CostoFijoCategoria
   amountCents Int
   isActive    Boolean            @default(true)
+  isRecurring Boolean            @default(true)
   validFrom   DateTime
   validTo     DateTime?
   notas       String?
