@@ -8,7 +8,15 @@ type Item = {
   period: string;
   paidAmountCents: number;
   isPaid: boolean;
+  pendingSincePeriod: string | null;
+  periodsOwed: number;
+  totalOwedCents: number;
 };
+
+function formatPeriodShort(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+}
 
 type CashBox = { id: string; name: string };
 
@@ -51,14 +59,30 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
   }, [load]);
 
   const filteredItems = useMemo(() => {
-    return items.filter((it) => {
-      if (estadoPagoFilter === "PAGADO" && !it.isPaid) return false;
-      if (estadoPagoFilter === "PENDIENTE" && it.isPaid) return false;
-      if (activoFilter === "ACTIVOS" && !it.costoFijo.isActive) return false;
-      if (activoFilter === "INACTIVOS" && it.costoFijo.isActive) return false;
-      return true;
-    });
+    return items
+      .filter((it) => {
+        if (estadoPagoFilter === "PAGADO" && !it.isPaid) return false;
+        if (estadoPagoFilter === "PENDIENTE" && it.isPaid) return false;
+        if (activoFilter === "ACTIVOS" && !it.costoFijo.isActive) return false;
+        if (activoFilter === "INACTIVOS" && it.costoFijo.isActive) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        // Pendientes hace más tiempo primero (prioridad de pago); pagados al final.
+        const aTime = a.pendingSincePeriod ? new Date(a.pendingSincePeriod).getTime() : Infinity;
+        const bTime = b.pendingSincePeriod ? new Date(b.pendingSincePeriod).getTime() : Infinity;
+        if (aTime !== bTime) return aTime - bTime;
+        if (a.costoFijo.categoria !== b.costoFijo.categoria) {
+          return a.costoFijo.categoria.localeCompare(b.costoFijo.categoria);
+        }
+        return a.costoFijo.nombre.localeCompare(b.costoFijo.nombre);
+      });
   }, [items, estadoPagoFilter, activoFilter]);
+
+  const totalDeudaAcumuladaCents = useMemo(
+    () => items.reduce((sum, it) => sum + it.totalOwedCents, 0),
+    [items]
+  );
 
   async function handleDeactivate(id: string) {
     if (!confirm("¿Dar de baja este costo fijo?")) return;
@@ -111,6 +135,13 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
         )}
       </div>
 
+      {totalDeudaAcumuladaCents > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+          <span className="font-medium text-red-800">Deuda acumulada total: </span>
+          <span className="font-semibold text-red-800">{formatArsFromCents(totalDeudaAcumuladaCents)}</span>
+        </div>
+      )}
+
       <div className="rounded-lg border bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="border-b bg-neutral-50">
@@ -120,6 +151,8 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
               <th className="px-3 py-2 text-right font-medium">Monto</th>
               <th className="px-3 py-2 text-right font-medium">Pagado</th>
               <th className="px-3 py-2 text-center font-medium">Estado pago</th>
+              <th className="px-3 py-2 text-center font-medium">Pendiente desde</th>
+              <th className="px-3 py-2 text-right font-medium">Acumulado</th>
               <th className="px-3 py-2 text-center font-medium">Activo</th>
               <th className="px-3 py-2 text-right font-medium"></th>
             </tr>
@@ -135,6 +168,21 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${it.isPaid ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
                     {it.isPaid ? "Pagado" : "Pendiente"}
                   </span>
+                </td>
+                <td className="px-3 py-2 text-center text-xs">
+                  {it.pendingSincePeriod ? formatPeriodShort(it.pendingSincePeriod) : "—"}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {it.totalOwedCents > 0 ? (
+                    <div>
+                      <div className="font-medium text-red-700">{formatArsFromCents(it.totalOwedCents)}</div>
+                      {it.periodsOwed > 1 && (
+                        <div className="text-xs text-neutral-500">({it.periodsOwed} meses)</div>
+                      )}
+                    </div>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="px-3 py-2 text-center">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${it.costoFijo.isActive ? "bg-neutral-100 text-neutral-700" : "bg-neutral-100 text-neutral-400"}`}>
@@ -162,7 +210,7 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
             ))}
             {!filteredItems.length && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={9} className="px-3 py-6 text-center text-neutral-500">
                   No hay costos fijos que coincidan con el filtro.
                 </td>
               </tr>

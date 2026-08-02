@@ -6,6 +6,44 @@ function periodStart(period: Date) {
   return new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth(), 1));
 }
 
+function subtractOneMonth(period: Date) {
+  return new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() - 1, 1));
+}
+
+const MAX_ARREARS_MONTHS = 36;
+
+// Calcula la racha CONSECUTIVA de meses impagos que termina en `referenceStart`
+// (el período elegido en el selector). Corta ni bien encuentra un mes saldado o
+// al llegar antes de `validFrom` — no "resucita" deuda vieja ya saldada antes de
+// una recaída posterior. Usa el `amountCents` ACTUAL del costo fijo para meses
+// pasados (no hay historial de montos), es una aproximación aceptada para
+// priorizar pagos, no para contabilidad exacta.
+function computeArrears(
+  item: { id: string; amountCents: number; validFrom: Date },
+  referenceStart: Date,
+  paidPeriods: Map<number, number> | undefined
+): { pendingSincePeriod: Date | null; periodsOwed: number; totalOwedCents: number } {
+  const validFromStart = periodStart(item.validFrom);
+  let current = referenceStart;
+  let pendingSincePeriod: Date | null = null;
+  let periodsOwed = 0;
+  let totalOwedCents = 0;
+
+  for (let i = 0; i < MAX_ARREARS_MONTHS; i++) {
+    if (current.getTime() < validFromStart.getTime()) break;
+    const paid = paidPeriods?.get(current.getTime()) ?? 0;
+    const owedCents = item.amountCents - paid;
+    if (owedCents <= 0) break;
+
+    pendingSincePeriod = current;
+    periodsOwed += 1;
+    totalOwedCents += owedCents;
+    current = subtractOneMonth(current);
+  }
+
+  return { pendingSincePeriod, periodsOwed, totalOwedCents };
+}
+
 export class CostosFijosService {
   static async list() {
     return prisma.costoFijo.findMany({
@@ -83,21 +121,32 @@ export class CostosFijosService {
       orderBy: [{ categoria: "asc" }, { nombre: "asc" }],
     });
 
+    // Traemos TODOS los pagos históricos de estos costos fijos (sin filtrar por
+    // período) para poder calcular la racha de meses impagos hacia atrás, no solo
+    // el período seleccionado.
     const allPayments = await prisma.costoFijoPayment.findMany({
-      where: { period: start, costoFijoId: { in: items.map((i) => i.id) } },
+      where: { costoFijoId: { in: items.map((i) => i.id) } },
     });
-    const paidByCostoFijoId = new Map<string, number>();
+    const paidByCostoFijoId = new Map<string, Map<number, number>>();
     for (const p of allPayments) {
-      paidByCostoFijoId.set(p.costoFijoId, (paidByCostoFijoId.get(p.costoFijoId) ?? 0) + p.amountCents);
+      const perPeriod = paidByCostoFijoId.get(p.costoFijoId) ?? new Map<number, number>();
+      const key = p.period.getTime();
+      perPeriod.set(key, (perPeriod.get(key) ?? 0) + p.amountCents);
+      paidByCostoFijoId.set(p.costoFijoId, perPeriod);
     }
 
     return items.map((item) => {
-      const paidAmountCents = paidByCostoFijoId.get(item.id) ?? 0;
+      const paidPeriods = paidByCostoFijoId.get(item.id);
+      const arrears = computeArrears(item, start, paidPeriods);
+      const paidAmountCents = paidPeriods?.get(start.getTime()) ?? 0;
       return {
         costoFijo: item,
         period: start,
         paidAmountCents,
-        isPaid: paidAmountCents >= item.amountCents,
+        isPaid: arrears.pendingSincePeriod === null,
+        pendingSincePeriod: arrears.pendingSincePeriod,
+        periodsOwed: arrears.periodsOwed,
+        totalOwedCents: arrears.totalOwedCents,
       };
     });
   }
