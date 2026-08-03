@@ -136,6 +136,7 @@ export default function ComprasPage() {
     invoiceNumber: string;
     invoiceTotalArs: string;
     notes: string;
+    purchasedAt: string;
     paymentMode: "PENDING" | "PAID_NOW";
     paymentMethod: "EFECTIVO_CAJA" | "TRANSFERENCIA" | "TARJETA_CREDITO";
     cashBoxId: string;
@@ -150,6 +151,7 @@ export default function ComprasPage() {
     invoiceNumber: "",
     invoiceTotalArs: "",
     notes: "",
+    purchasedAt: new Date().toISOString().slice(0, 10),
     paymentMode: "PENDING",
     paymentMethod: "EFECTIVO_CAJA",
     cashBoxId: "",
@@ -295,6 +297,11 @@ export default function ComprasPage() {
               N° factura (opcional)
               <input className="mt-1 w-full rounded-md border px-3 py-2 text-sm" value={form.invoiceNumber}
                 onChange={(e) => setForm((p) => ({ ...p, invoiceNumber: e.target.value }))} />
+            </label>
+            <label className="text-xs text-neutral-700">
+              Fecha de compra
+              <input type="date" className="mt-1 w-full rounded-md border px-3 py-2 text-sm" value={form.purchasedAt}
+                onChange={(e) => setForm((p) => ({ ...p, purchasedAt: e.target.value }))} />
             </label>
           </div>
 
@@ -518,6 +525,7 @@ export default function ComprasPage() {
                       invoiceNumber: form.invoiceNumber || null,
                       invoiceTotalCents,
                       notes: form.notes || null,
+                      purchasedAt: new Date(form.purchasedAt + "T12:00:00.000Z").toISOString(),
                       payment,
                       lines: form.affectsStock
                         ? form.lines.map((x) => ({
@@ -538,6 +546,7 @@ export default function ComprasPage() {
                     invoiceNumber: "",
                     invoiceTotalArs: "",
                     notes: "",
+                    purchasedAt: new Date().toISOString().slice(0, 10),
                     paymentMode: "PENDING",
                     cashBoxId: "",
                     creditCardId: "",

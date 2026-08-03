@@ -50,9 +50,14 @@ const STATUS_STYLE: Record<string, string> = {
 };
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendiente", PARTIAL: "Parcial", PAID: "Pagado" };
 
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
 function formatPeriod(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  return `${MESES[d.getUTCMonth()]} de ${d.getUTCFullYear()}`;
 }
 
 export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
