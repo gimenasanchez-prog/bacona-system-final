@@ -44,13 +44,21 @@ export default async function ConsolidadoCierresPage(props: {
       : undefined;
   const employeeId = typeof sp.employeeId === "string" && sp.employeeId ? sp.employeeId : undefined;
 
-  const [employees, rows] = await Promise.all([
+  const [employees, rows, internalBreakdown] = await Promise.all([
     prisma.employee.findMany({
       where: { isActive: true },
       select: { id: true, displayName: true },
       orderBy: { displayName: "asc" },
     }),
     ConsolidatedClosuresService.listCashClosures({
+      from,
+      to,
+      shift,
+      employeeId,
+      cashSessionStatus,
+      envelopeStatus,
+    }),
+    ConsolidatedClosuresService.getInternalAccountBreakdown({
       from,
       to,
       shift,
@@ -192,14 +200,39 @@ export default async function ConsolidadoCierresPage(props: {
               <span className="font-medium">{formatArsFromCents(totals.cc)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-neutral-500">Ctas. internas</span>
-              <span className="font-medium">{formatArsFromCents(totals.internal)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
               <span className="text-neutral-500">Efectivo sobres</span>
               <span className="font-medium">{formatArsFromCents(totals.envelope)}</span>
             </div>
           </div>
+          {internalBreakdown.length > 0 ? (
+            <details className="mt-2 border-t pt-2 text-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
+                <span className="text-neutral-500">
+                  Ctas. internas <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
+                </span>
+                <span className="font-medium">{formatArsFromCents(totals.internal)}</span>
+              </summary>
+              <div className="mt-2 overflow-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {internalBreakdown.map((b) => (
+                      <tr key={b.employeeId ?? b.employeeName} className="border-b last:border-b-0">
+                        <td className="px-3 py-1.5">{b.employeeName}</td>
+                        <td className="px-3 py-1.5 text-right font-medium">
+                          {formatArsFromCents(b.amountCents)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ) : (
+            <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2 text-sm">
+              <span className="text-neutral-500">Ctas. internas</span>
+              <span className="font-medium">{formatArsFromCents(totals.internal)}</span>
+            </div>
+          )}
         </div>
       ) : null}
 

@@ -30,6 +30,38 @@ export class ConsolidatedClosuresService {
     });
   }
 
+  static async getInternalAccountBreakdown(params: {
+    from?: Date;
+    to?: Date;
+    shift?: "MANIANA" | "TARDE" | "NOCHE";
+    employeeId?: string;
+    cashSessionStatus?: "OPEN" | "CLOSED";
+    envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+  }) {
+    const grouped = await prisma.cashSessionPaymentBreakdownDetail.groupBy({
+      by: ["referenceId", "referenceName"],
+      where: {
+        type: "CUENTA_INTERNA",
+        cashSession: {
+          businessDate: { gte: params.from, lte: params.to },
+          shift: params.shift,
+          employeeId: params.employeeId,
+          status: params.cashSessionStatus,
+          envelope: params.envelopeStatus ? { status: params.envelopeStatus } : undefined,
+        },
+      },
+      _sum: { amountCents: true },
+    });
+
+    return grouped
+      .map((g) => ({
+        employeeId: g.referenceId,
+        employeeName: g.referenceName,
+        amountCents: g._sum.amountCents ?? 0,
+      }))
+      .sort((a, b) => b.amountCents - a.amountCents);
+  }
+
   static async deleteCashSession(cashSessionId: string): Promise<void> {
     const session = await prisma.cashSession.findUnique({
       where: { id: cashSessionId },
