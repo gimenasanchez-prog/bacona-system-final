@@ -198,6 +198,10 @@ model Employee {
   supplierPaymentsCreated            SupplierPayment[]            @relation("EmployeeSupplierPaymentsCreated")
   creditCardStatementPaymentsCreated CreditCardStatementPayment[] @relation("EmployeeCreditCardStatementPaymentsCreated")
   costoFijoPaymentsCreated           CostoFijoPayment[]           @relation("EmployeeCostoFijoPaymentsCreated")
+  hourlyRateCents                    Int?
+  hoursEntries                       EmployeeHoursEntry[]
+  hoursPayments                      EmployeeHoursPayment[]       @relation("EmployeeHoursPaymentsEmployee")
+  hoursPaymentsCreated               EmployeeHoursPayment[]       @relation("EmployeeHoursPaymentsCreatedBy")
 
   @@index([isActive, displayName])
 }
@@ -1116,4 +1120,35 @@ model PriceHistory {
 enum PriceChangeType {
   MANUAL
   BULK
+}
+
+// ─── Horas trabajadas y sueldos por hora ────────────────────────────────────
+
+model EmployeeHoursEntry {
+  id          String   @id @default(cuid())
+  employeeId  String
+  workDate    DateTime
+  checkIn     DateTime
+  checkOut    DateTime
+  hoursWorked Decimal  @db.Decimal(5, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, workDate])
+}
+
+model EmployeeHoursPayment {
+  id                      String   @id @default(cuid())
+  employeeId              String
+  period                  DateTime
+  hoursSnapshot           Decimal  @db.Decimal(6, 2)
+  hourlyRateCentsSnapshot Int
+  amountCents             Int
+  paidAt                  DateTime @default(now())
+  createdByEmployeeId     String
+  employee                Employee @relation("EmployeeHoursPaymentsEmployee", fields: [employeeId], references: [id])
+  createdByEmployee       Employee @relation("EmployeeHoursPaymentsCreatedBy", fields: [createdByEmployeeId], references: [id])
+
+  @@unique([employeeId, period])
 }

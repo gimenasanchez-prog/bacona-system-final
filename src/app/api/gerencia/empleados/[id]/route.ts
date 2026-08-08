@@ -10,10 +10,13 @@ const patchSchema = z
     isActive: z.boolean().optional(),
     role: z.enum(["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO"]).optional(),
     pin: z.string().regex(/^\d{4}$/, "El PIN debe tener exactamente 4 dígitos").optional(),
+    hourlyRateCents: z.number().int().nonnegative().optional(),
   })
-  .refine((d) => d.isActive !== undefined || d.role !== undefined || d.pin !== undefined, {
-    message: "Se requiere al menos un campo para actualizar",
-  });
+  .refine(
+    (d) =>
+      d.isActive !== undefined || d.role !== undefined || d.pin !== undefined || d.hourlyRateCents !== undefined,
+    { message: "Se requiere al menos un campo para actualizar" }
+  );
 
 export async function PATCH(
   req: Request,
@@ -41,7 +44,7 @@ export async function PATCH(
     const employee = await prisma.employee.update({
       where: { id },
       data,
-      select: { id: true, displayName: true, role: true, isActive: true, pinHash: true },
+      select: { id: true, displayName: true, role: true, isActive: true, pinHash: true, hourlyRateCents: true },
     });
     return NextResponse.json({
       employee: { ...employee, hasPin: employee.pinHash !== null, pinHash: undefined },

@@ -100,6 +100,7 @@ export default async function HomePage() {
             )}
             <NavRow href="/caja/local" label="Caja BCÑ" />
             {hasSession && <NavRow href="/caja/turno" label="Mi turno" />}
+            <NavRow href="/horas" label="Mi Horario" />
           </NavCard>
           <NavCard title="Operación">
             <NavRow href="/mermas" label="Mermas" />
@@ -134,6 +135,7 @@ export default async function HomePage() {
               <NavRow href="/caja/abrir" label="Abrir turno" primary />
             )}
             {hasSession && <NavRow href="/caja/turno" label="Mi turno" />}
+            <NavRow href="/horas" label="Mi Horario" />
           </NavCard>
           <NavCard title="Operación">
             <NavRow href="/mermas" label="Mermas" />
