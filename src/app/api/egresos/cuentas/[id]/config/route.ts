@@ -14,6 +14,7 @@ const ConfigSchema = z.object({
       feesPercent: z.number().min(0).max(100).nullable(),
     })
   ),
+  reconciliationStartDate: z.string().datetime().nullable().optional(),
 });
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -31,6 +32,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
     const configs = await LocalCashBoxService.setPaymentMethodConfigs(id, parsed.data.configs);
+    if (parsed.data.reconciliationStartDate !== undefined) {
+      await LocalCashBoxService.setReconciliationStartDate(
+        id,
+        parsed.data.reconciliationStartDate ? new Date(parsed.data.reconciliationStartDate) : null
+      );
+    }
     return NextResponse.json({ configs });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al guardar la configuración.";

@@ -51,6 +51,10 @@ export class LocalCashBoxService {
     });
   }
 
+  static async setReconciliationStartDate(cashBoxId: string, date: Date | null) {
+    return prisma.localCashBox.update({ where: { id: cashBoxId }, data: { reconciliationStartDate: date } });
+  }
+
   static async createBankAccount(name: string) {
     if (!name.trim()) throw new Error("El nombre es obligatorio.");
     return prisma.localCashBox.create({
@@ -423,8 +427,37 @@ export class LocalCashBoxService {
     });
   }
 
+  static async setOpeningBalance(params: {
+    cashBoxId: string;
+    targetBalanceCents: number;
+    date: Date;
+    createdByEmployeeId: string;
+  }) {
+    if (!Number.isInteger(params.targetBalanceCents)) {
+      throw new Error("El saldo debe ser un número entero de centavos.");
+    }
+    const currentBalance = await this.getLocalCashBalance(params.cashBoxId);
+    const deltaCents = params.targetBalanceCents - currentBalance;
+    if (deltaCents === 0) return;
+
+    await prisma.localCashMovement.create({
+      data: {
+        localCashBoxId: params.cashBoxId,
+        type: deltaCents > 0 ? "IN" : "OUT",
+        sourceType: "OPENING_BALANCE",
+        amountCents: Math.abs(deltaCents),
+        date: params.date,
+        description: "Saldo inicial",
+        createdByEmployeeId: params.createdByEmployeeId,
+      },
+    });
+  }
+
   private static async getDuePosPayments(cashBoxId: string, referenceDate: Date) {
-    const configs = await prisma.cashBoxPaymentMethodConfig.findMany({ where: { cashBoxId } });
+    const [box, configs] = await Promise.all([
+      prisma.localCashBox.findUnique({ where: { id: cashBoxId }, select: { reconciliationStartDate: true } }),
+      prisma.cashBoxPaymentMethodConfig.findMany({ where: { cashBoxId } }),
+    ]);
     if (!configs.length) return [];
 
     const configByMethod = new Map(configs.map((c) => [c.method, c]));
@@ -432,6 +465,7 @@ export class LocalCashBoxService {
       where: {
         method: { in: configs.map((c) => c.method) },
         sale: { status: { not: "CANCELLED" } },
+        createdAt: box?.reconciliationStartDate ? { gte: box.reconciliationStartDate } : undefined,
       },
       include: {
         sale: { select: { comandaNumber: true, tableId: true, customerNameFreeText: true } },
@@ -457,15 +491,9 @@ export class LocalCashBoxService {
     }
     const byMethod = Array.from(byMethodMap.entries()).map(([method, expectedCents]) => ({ method, expectedCents }));
     const totalExpectedCents = due.reduce((sum, p) => sum + p.amountCents, 0);
-
-    const reconciledMovements = await prisma.localCashMovement.findMany({
-      where: { localCashBoxId: cashBoxId, sourceType: "SALES_DEPOSIT" },
-      select: { grossAmountCents: true, amountCents: true },
-    });
-    const totalReconciledCents = reconciledMovements.reduce(
-      (sum, m) => sum + (m.grossAmountCents ?? m.amountCents),
-      0
-    );
+    const totalReconciledCents = due
+      .filter((p) => p.reconciliationMovement)
+      .reduce((sum, p) => sum + p.amountCents, 0);
 
     return {
       byMethod,

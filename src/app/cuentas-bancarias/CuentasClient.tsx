@@ -21,6 +21,7 @@ type Account = {
   id: string;
   name: string;
   balanceCents: number;
+  reconciliationStartDate: string | null;
   paymentMethodConfigs: PaymentMethodConfig[];
   reconciliation: ReconciliationSummary | null;
 };
@@ -59,6 +60,7 @@ const SOURCE_LABEL: Record<string, string> = {
   RETIRO_GERENCIA: "Retiro de gerencia",
   CC_INVOICE_PAYMENT: "Pago factura cuenta corriente",
   CREDIT_CARD_STATEMENT_PAYMENT: "Pago resumen tarjeta",
+  OPENING_BALANCE: "Saldo inicial",
 };
 
 const PAYMENT_METHODS: { value: PaymentMethodConfig["method"]; label: string }[] = [
@@ -81,6 +83,7 @@ export function CuentasClient({ isGerencia }: { isGerencia: boolean }) {
   const [selected, setSelected] = useState<Account | null>(null);
   const [reconcileAccount, setReconcileAccount] = useState<Account | null>(null);
   const [configAccount, setConfigAccount] = useState<Account | null>(null);
+  const [openingBalanceAccount, setOpeningBalanceAccount] = useState<Account | null>(null);
   const [showNewAccount, setShowNewAccount] = useState(false);
 
   const loadAccounts = useCallback(async () => {
@@ -140,6 +143,9 @@ export function CuentasClient({ isGerencia }: { isGerencia: boolean }) {
                     <button onClick={() => setConfigAccount(a)} className="rounded border px-2 py-1 hover:bg-neutral-50">
                       Configurar
                     </button>
+                    <button onClick={() => setOpeningBalanceAccount(a)} className="rounded border px-2 py-1 hover:bg-neutral-50">
+                      Saldo inicial
+                    </button>
                   </>
                 )}
               </div>
@@ -174,6 +180,16 @@ export function CuentasClient({ isGerencia }: { isGerencia: boolean }) {
           onClose={() => setShowNewAccount(false)}
           onSuccess={() => {
             setShowNewAccount(false);
+            loadAccounts();
+          }}
+        />
+      )}
+      {openingBalanceAccount && (
+        <OpeningBalanceModal
+          account={openingBalanceAccount}
+          onClose={() => setOpeningBalanceAccount(null)}
+          onSuccess={() => {
+            setOpeningBalanceAccount(null);
             loadAccounts();
           }}
         />
@@ -222,6 +238,72 @@ function NewAccountModal({ onClose, onSuccess }: { onClose: () => void; onSucces
           <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
           <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {loading ? "Guardando..." : "Crear"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OpeningBalanceModal({ account, onClose, onSuccess }: { account: Account; onClose: () => void; onSuccess: () => void }) {
+  const [balanceArs, setBalanceArs] = useState((account.balanceCents / 100).toFixed(2));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setError(null);
+    const targetBalanceCents = Math.round(Number(balanceArs.replace(",", ".")) * 100);
+    if (!Number.isFinite(targetBalanceCents)) return setError("Ingresá un monto válido.");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/egresos/cuentas/${account.id}/saldo-inicial`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          targetBalanceCents,
+          date: new Date(date + "T12:00:00.000Z").toISOString(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al cargar el saldo inicial.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+        <div className="border-b px-6 py-4 font-semibold text-neutral-800">Saldo inicial — {account.name}</div>
+        <div className="px-6 py-4 space-y-3">
+          <div className="text-xs text-neutral-500">
+            Cargá el saldo real actual del banco. El sistema crea un ajuste para que el saldo (ledger) quede en ese
+            número. No afecta el pendiente de conciliar — para eso usá &quot;Configurar&quot;.
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Saldo real actual ($)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={balanceArs}
+              onChange={(e) => setBalanceArs(e.target.value)}
+              className="w-full rounded border px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Guardar"}
           </button>
         </div>
       </div>
@@ -444,6 +526,9 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reconciliationStartDate, setReconciliationStartDate] = useState(
+    account.reconciliationStartDate ? account.reconciliationStartDate.slice(0, 10) : new Date().toISOString().slice(0, 10)
+  );
 
   function updateRow(method: string, patch: Partial<(typeof rows)[number]>) {
     setRows((prev) => prev.map((r) => (r.method === method ? { ...r, ...patch } : r)));
@@ -464,6 +549,9 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
             withholdingPercent: r.withholdingPercent === "" ? null : Number(r.withholdingPercent),
             feesPercent: r.feesPercent === "" ? null : Number(r.feesPercent),
           })),
+          reconciliationStartDate: reconciliationStartDate
+            ? new Date(reconciliationStartDate + "T00:00:00.000Z").toISOString()
+            : null,
         }),
       });
       const data = await res.json();
@@ -483,6 +571,18 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
         <div className="px-6 py-4 space-y-3">
           <div className="text-xs text-neutral-500">
             Para cada método que se acredita en esta cuenta: días hábiles hasta que acredita, y % de retención/comisión que suele descontar el banco (se usan como sugerencia al conciliar, siempre editable). Editable en cualquier momento.
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Conciliar ventas a partir de</label>
+            <input
+              type="date"
+              value={reconciliationStartDate}
+              onChange={(e) => setReconciliationStartDate(e.target.value)}
+              className="w-full max-w-xs rounded border px-3 py-2 text-sm"
+            />
+            <p className="mt-1 text-xs text-neutral-500">
+              Las ventas anteriores a esta fecha no se van a pedir conciliar.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { formatArsFromCents } from "@/lib/money";
 import { PLAN_TARIFF_CONFIG, matchesCorpoFilter } from "@/modules/cuentas_corrientes/lib/planTariffs";
+import { QuantityStepper } from "./QuantityStepper";
 
 type Category = { id: string; name: string };
 type ProductListItem = { id: string; name: string; priceCents: number };
@@ -19,7 +20,7 @@ type ProductDetails = { id: string; name: string; priceCents: number; modifierGr
 
 type Customer = { id: string; displayName: string };
 type CuentaCorrienteAccount = { id: string; customer: Customer; planCode: string | null; coverageAmountCents: number | null };
-type ReservationSummary = { id: string; reservationAt: string; status: SaleStatus; customerName: string; totalCents: number; itemCount: number; coverCount: number | null };
+type ReservationSummary = { id: string; source: "POS" | "COMERCIAL"; reservationAt: string; status: SaleStatus; customerName: string; totalCents: number; itemCount: number; coverCount: number | null };
 type Employee = { id: string; displayName: string };
 type PosTable = { id: string; label: string };
 type InventoryItemPicker = { id: string; name: string; unit: "UN" | "KG" | "G" | "L" | "ML" };
@@ -70,27 +71,6 @@ type Sale = {
   externalRefs: Record<string, any> | null;
   items: SaleItem[];
   payments: SalePayment[];
-};
-
-type SessionSale = {
-  id: string;
-  saleType: SaleType;
-  status: SaleStatus;
-  totalCents: number;
-  createdAt: string;
-  cancelledAt: string | null;
-  cancellationReason: string | null;
-  customerNameFreeText: string | null;
-  customer: { displayName: string } | null;
-  cuentaCorrienteAccount: { customer: { displayName: string } } | null;
-  table: { label: string } | null;
-  items: Array<{ qty: number; product: { name: string } }>;
-  payments: Array<{
-    method: PaymentMethod;
-    amountCents: number;
-    cuentaCorrienteAccount?: { customer: { displayName: string } } | null;
-    employee?: { displayName: string } | null;
-  }>;
 };
 
 async function apiGet<T>(path: string): Promise<T> {
@@ -166,13 +146,6 @@ export default function PosPage() {
   const [cancelDraftLoading, setCancelDraftLoading] = useState(false);
   const [cancelDraftError, setCancelDraftError] = useState<string | null>(null);
 
-  const [sessionSalesOpen, setSessionSalesOpen] = useState(false);
-  const [sessionSales, setSessionSales] = useState<SessionSale[]>([]);
-  const [sessionSalesLoading, setSessionSalesLoading] = useState(false);
-  const [voidTarget, setVoidTarget] = useState<SessionSale | null>(null);
-  const [voidReason, setVoidReason] = useState("");
-  const [voidLoading, setVoidLoading] = useState(false);
-  const [voidError, setVoidError] = useState<string | null>(null);
 
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [lossForm, setLossForm] = useState<{
@@ -195,18 +168,6 @@ export default function PosPage() {
       const data = await apiGet<{ sales: OpenTableSale[] }>("/api/pos/sales/open");
       setOpenTableSales(data.sales);
     } catch { /* ignore */ }
-  }
-
-  async function loadSessionSales() {
-    setSessionSalesLoading(true);
-    try {
-      const data = await apiGet<{ sales: SessionSale[] }>("/api/pos/sales/session-sales");
-      setSessionSales(data.sales);
-    } catch {
-      // ignore
-    } finally {
-      setSessionSalesLoading(false);
-    }
   }
 
   async function ensureSale(): Promise<string> {
@@ -232,6 +193,19 @@ export default function PosPage() {
     if (!saleId) return;
     await apiJson(`/api/pos/sales/${saleId}`, { method: "PATCH", body: JSON.stringify(patch) });
     await refreshSale(saleId);
+  }
+
+  async function updateCoverCount(next: number) {
+    try {
+      const sid = await ensureSale();
+      await apiJson(`/api/pos/sales/${sid}`, {
+        method: "PATCH",
+        body: JSON.stringify({ externalRefs: { ...(sale?.externalRefs ?? {}), coverCount: Math.max(0, next) } }),
+      });
+      await refreshSale(sid);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
   }
 
   async function loadProducts(categoryId: string) {
@@ -437,21 +411,43 @@ export default function PosPage() {
                 <div key={r.id} className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs">
                   <div className="min-w-0 flex-1 truncate">
                     <span className="font-medium">{r.customerName}</span>
+                    {r.source === "COMERCIAL" && (
+                      <span className="ml-1.5 rounded bg-violet-100 px-1 py-0.5 text-[10px] font-medium text-violet-700">
+                        Comercial
+                      </span>
+                    )}
                     <span className="ml-1.5 text-neutral-500">
                       {new Date(r.reservationAt!).toLocaleString("es-AR", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {r.coverCount ? <span className="ml-1 text-neutral-400">· {r.coverCount}p</span> : null}
                   </div>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
-                    onClick={async () => {
-                      setSaleId(r.id);
-                      await refreshSale(r.id);
-                    }}
-                  >
-                    Cargar
-                  </button>
+                  {r.source === "COMERCIAL" ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
+                      onClick={async () => {
+                        try {
+                          await apiJson(`/api/ventas-comerciales/${r.id}/deliver`, { method: "POST" });
+                          setUpcomingReservations((prev) => prev.filter((x) => x.id !== r.id));
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    >
+                      Marcar entregada
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
+                      onClick={async () => {
+                        setSaleId(r.id);
+                        await refreshSale(r.id);
+                      }}
+                    >
+                      Cargar
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -615,53 +611,6 @@ export default function PosPage() {
               </div>
             ) : null}
           </div>
-
-          <div className="mt-3 space-y-2">
-            <label className="block text-xs font-medium">
-              Comensales{" "}
-              <span className={cn("font-normal", saleId && !hasCoverCount ? "text-red-500" : "text-neutral-400")}>
-                (requerido)
-              </span>
-            </label>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="flex h-8 w-8 items-center justify-center rounded-md border text-lg hover:bg-neutral-50 disabled:opacity-40"
-                disabled={(sale?.externalRefs?.coverCount ?? 0) <= 0}
-                onClick={async () => {
-                  const sid = saleId ?? await ensureSale().catch(() => null);
-                  if (!sid) return;
-                  const current = (sale?.externalRefs?.coverCount as number | undefined) ?? 0;
-                  const next = Math.max(0, current - 1);
-                  await apiJson(`/api/pos/sales/${sid}`, { method: "PATCH", body: JSON.stringify({ externalRefs: { ...(sale?.externalRefs ?? {}), coverCount: next } }) });
-                  await refreshSale(sid);
-                }}
-              >
-                −
-              </button>
-              <span className="min-w-[2rem] text-center text-sm font-semibold">
-                {(sale?.externalRefs?.coverCount as number | undefined) ?? 0}
-              </span>
-              <button
-                type="button"
-                className="flex h-8 w-8 items-center justify-center rounded-md border text-lg hover:bg-neutral-50"
-                onClick={async () => {
-                  try {
-                    const sid = saleId ?? await ensureSale();
-                    const current = (sale?.externalRefs?.coverCount as number | undefined) ?? 0;
-                    await apiJson(`/api/pos/sales/${sid}`, { method: "PATCH", body: JSON.stringify({ externalRefs: { ...(sale?.externalRefs ?? {}), coverCount: current + 1 } }) });
-                    await refreshSale(sid);
-                  } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
-                }}
-              >
-                +
-              </button>
-              <span className="text-xs text-neutral-500">
-                {((sale?.externalRefs?.coverCount as number | undefined) ?? 0) === 1 ? "persona" : "personas"}
-              </span>
-            </div>
-          </div>
-
 
           {sale?.saleType === "RESERVA" ? (
             <div className="mt-3 space-y-2">
@@ -834,13 +783,6 @@ export default function PosPage() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-md border px-2 py-1.5 text-xs hover:bg-neutral-50"
-              onClick={() => { loadSessionSales(); setSessionSalesOpen(true); }}
-            >
-              Ventas del turno
-            </button>
             {saleId && sale && (sale.status === "DRAFT" || sale.status === "CONFIRMED") ? (
               <button
                 type="button"
@@ -875,6 +817,19 @@ export default function PosPage() {
           )}
         </div>
 
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border p-2">
+          <label className="text-xs font-medium">
+            Comensales{" "}
+            <span className={cn("font-normal", saleId && !hasCoverCount ? "text-red-500" : "text-neutral-400")}>
+              (requerido)
+            </span>
+          </label>
+          <QuantityStepper
+            value={(sale?.externalRefs?.coverCount as number | undefined) ?? 0}
+            onChange={updateCoverCount}
+          />
+        </div>
+
         <div className="mt-3 space-y-2">
           {!sale ? (
             <div className="text-sm text-neutral-600">Creá una venta para empezar.</div>
@@ -902,47 +857,22 @@ export default function PosPage() {
                   <div className="text-sm font-semibold">{formatArsFromCents(item.lineTotalCents)}</div>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
-                  <div className="inline-flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="h-8 w-8 rounded-md border text-sm"
-                      onClick={async () => {
-                        if (!saleId) return;
-                        try {
-                          setError(null);
-                          await apiJson(`/api/pos/sales/${saleId}/items/${item.id}`, {
-                            method: "PATCH",
-                            body: JSON.stringify({ qty: Math.max(0, item.qty - 1) }),
-                          });
-                          await refreshSale(saleId);
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Error");
-                        }
-                      }}
-                    >
-                      −
-                    </button>
-                    <div className="w-6 text-center text-sm">{item.qty}</div>
-                    <button
-                      type="button"
-                      className="h-8 w-8 rounded-md border text-sm"
-                      onClick={async () => {
-                        if (!saleId) return;
-                        try {
-                          setError(null);
-                          await apiJson(`/api/pos/sales/${saleId}/items/${item.id}`, {
-                            method: "PATCH",
-                            body: JSON.stringify({ qty: item.qty + 1 }),
-                          });
-                          await refreshSale(saleId);
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Error");
-                        }
-                      }}
-                    >
-                      +
-                    </button>
-                  </div>
+                  <QuantityStepper
+                    value={item.qty}
+                    onChange={async (next) => {
+                      if (!saleId) return;
+                      try {
+                        setError(null);
+                        await apiJson(`/api/pos/sales/${saleId}/items/${item.id}`, {
+                          method: "PATCH",
+                          body: JSON.stringify({ qty: next }),
+                        });
+                        await refreshSale(saleId);
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Error");
+                      }
+                    }}
+                  />
                   <button
                     type="button"
                     className="rounded-md px-2 py-1 text-xs text-red-700 hover:bg-red-50"
@@ -1547,214 +1477,6 @@ export default function PosPage() {
                 }}
               >
                 {cancelDraftLoading ? "Cancelando..." : "Sí, cancelar venta"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {sessionSalesOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
-          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-lg bg-white shadow-xl">
-            <div className="flex items-center justify-between gap-3 p-4 border-b">
-              <div className="text-base font-semibold">Ventas del turno</div>
-              <button
-                type="button"
-                className="rounded-md border px-2 py-1 text-sm"
-                onClick={() => setSessionSalesOpen(false)}
-              >
-                Cerrar
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {sessionSalesLoading ? (
-                <div className="py-8 text-center text-sm text-neutral-500">Cargando...</div>
-              ) : sessionSales.length === 0 ? (
-                <div className="py-8 text-center text-sm text-neutral-500">
-                  No hay ventas finalizadas en este turno.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {sessionSales.map((s) => {
-                    const isCancelled = s.status === "CANCELLED";
-                    const customerLabel =
-                      s.cuentaCorrienteAccount?.customer.displayName ??
-                      s.customer?.displayName ??
-                      s.customerNameFreeText ??
-                      "Mostrador";
-                    const itemsLabel = s.items
-                      .map((it) => `${it.qty}× ${it.product.name}`)
-                      .join(", ");
-                    const payLabel = s.payments
-                      .map((p) => {
-                        const methodNames: Record<string, string> = {
-                          EFECTIVO: "Efectivo",
-                          CREDITO: "Crédito",
-                          DEBITO: "Débito",
-                          TRANSFERENCIA: "Transf.",
-                          QR: "QR",
-                          CUENTA_CORRIENTE: "CC",
-                          CUENTAS_INTERNAS: "Interno",
-                        };
-                        const name = methodNames[p.method] ?? p.method;
-                        const who =
-                          p.cuentaCorrienteAccount?.customer.displayName ??
-                          p.employee?.displayName ??
-                          null;
-                        return who ? `${name} (${who})` : name;
-                      })
-                      .join(" + ");
-
-                    return (
-                      <div
-                        key={s.id}
-                        className={cn(
-                          "rounded-lg border p-3",
-                          isCancelled ? "opacity-50" : ""
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-semibold">{customerLabel}</span>
-                              <span className="text-xs text-neutral-500">
-                                {new Date(s.createdAt).toLocaleTimeString("es-AR", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                              {isCancelled ? (
-                                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 line-through">
-                                  Anulada
-                                </span>
-                              ) : s.status === "DRAFT" ? (
-                                <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">
-                                  Sin confirmar
-                                </span>
-                              ) : s.status === "CONFIRMED" ? (
-                                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
-                                  Confirmada
-                                </span>
-                              ) : (
-                                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                                  Pagada
-                                </span>
-                              )}
-                              {s.table ? (
-                                <span className="text-xs text-neutral-500">{s.table.label}</span>
-                              ) : null}
-                            </div>
-                            <div className="mt-1 text-xs text-neutral-600 truncate">{itemsLabel}</div>
-                            <div className="mt-0.5 text-xs text-neutral-500">{payLabel}</div>
-                            {isCancelled && s.cancellationReason ? (
-                              <div className="mt-1 text-xs text-red-600">
-                                Motivo: {s.cancellationReason}
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="flex flex-col items-end gap-2 shrink-0">
-                            <span className="text-sm font-semibold">
-                              {formatArsFromCents(s.totalCents)}
-                            </span>
-                            {!isCancelled ? (
-                              <button
-                                type="button"
-                                className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
-                                onClick={() => {
-                                  setVoidTarget(s);
-                                  setVoidReason("");
-                                  setVoidError(null);
-                                }}
-                              >
-                                Anular
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {voidTarget ? (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-            <div className="text-base font-semibold">Anular venta</div>
-            <div className="mt-1 text-sm text-neutral-600">
-              {(
-                voidTarget.cuentaCorrienteAccount?.customer.displayName ??
-                voidTarget.customer?.displayName ??
-                voidTarget.customerNameFreeText ??
-                "Mostrador"
-              )} · {formatArsFromCents(voidTarget.totalCents)}
-            </div>
-
-            <div className="mt-3 rounded-md border bg-neutral-50 p-2 text-xs text-neutral-700 max-h-24 overflow-y-auto">
-              {voidTarget.items.map((it, i) => (
-                <div key={i}>{it.qty}× {it.product.name}</div>
-              ))}
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <label className="block text-xs font-medium">Motivo (obligatorio)</label>
-              <select
-                className="w-full rounded-md border px-3 py-2 text-sm"
-                value={voidReason}
-                onChange={(e) => setVoidReason(e.target.value)}
-              >
-                <option value="">— Seleccioná un motivo —</option>
-                <option value="Error en método de pago">Error en método de pago</option>
-                <option value="Cuenta corriente incorrecta">Cuenta corriente incorrecta</option>
-                <option value="Productos o cantidades incorrectas">Productos o cantidades incorrectas</option>
-                <option value="Otro">Otro</option>
-              </select>
-            </div>
-
-            {voidError ? (
-              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                {voidError}
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50"
-                disabled={voidLoading}
-                onClick={() => { setVoidTarget(null); setVoidError(null); }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="rounded-md bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:bg-neutral-200 disabled:text-neutral-500"
-                disabled={!voidReason || voidLoading}
-                onClick={async () => {
-                  if (!voidTarget || !voidReason) return;
-                  setVoidLoading(true);
-                  setVoidError(null);
-                  try {
-                    await apiJson(`/api/pos/sales/${voidTarget.id}/cancel`, {
-                      method: "POST",
-                      body: JSON.stringify({ reason: voidReason }),
-                    });
-                    setVoidTarget(null);
-                    setVoidReason("");
-                    await loadSessionSales();
-                  } catch (e) {
-                    setVoidError(e instanceof Error ? e.message : "Error al anular la venta");
-                  } finally {
-                    setVoidLoading(false);
-                  }
-                }}
-              >
-                {voidLoading ? "Anulando..." : "Confirmar anulación"}
               </button>
             </div>
           </div>

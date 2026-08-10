@@ -319,6 +319,7 @@ model LocalCashBox {
   name                    String                       @unique
   active                  Boolean                      @default(true)
   kind                    CashBoxKind                  @default(EFECTIVO)
+  reconciliationStartDate DateTime?
   createdAt               DateTime                     @default(now())
   updatedAt               DateTime                     @updatedAt
   movements               LocalCashMovement[]
@@ -874,6 +875,7 @@ enum LocalCashMovementSourceType {
   RETIRO_GERENCIA
   CC_INVOICE_PAYMENT
   CREDIT_CARD_STATEMENT_PAYMENT
+  OPENING_BALANCE
 }
 
 enum EmployeeRole {

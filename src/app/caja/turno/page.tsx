@@ -9,6 +9,7 @@ import { CloseCashSessionButton } from "./CloseCashSessionButton";
 import { prisma } from "@/lib/prisma";
 import { LocalExpenseModal } from "./LocalExpenseModal";
 import { EnvelopeDepositCard } from "./EnvelopeDepositCard";
+import { SessionSalesCard } from "./SessionSalesCard";
 
 function LabelValue(props: { label: string; value: React.ReactNode }) {
   return (
@@ -82,23 +83,11 @@ export default async function CajaTurnoPage() {
       </div>
 
       <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
-        <div className="grid gap-3 sm:grid-cols-4">
-          <LabelValue label="Asociada/o" value={summary.cashSession.employee.displayName} />
+        <div className="grid gap-3 sm:grid-cols-3">
           <LabelValue
             label="Fecha"
             value={new Date(summary.cashSession.businessDate).toLocaleDateString("es-AR")}
           />
-          <LabelValue
-            label="Turno"
-            value={{ MANIANA: "Mañana", TARDE: "Tarde", NOCHE: "Noche" }[summary.cashSession.shift] ?? summary.cashSession.shift}
-          />
-          <LabelValue
-            label="Estado"
-            value={{ OPEN: "Abierto", CLOSED: "Cerrado" }[summary.cashSession.status] ?? summary.cashSession.status}
-          />
-        </div>
-
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <LabelValue
             label="Apertura"
             value={new Date(summary.cashSession.openedAt).toLocaleString("es-AR")}
@@ -115,6 +104,10 @@ export default async function CajaTurnoPage() {
         <SummaryCard title="Egresos (total)" amountCents={summary.totals.totalExpensesCents} subtle />
         <SummaryCard title="Total neto del cierre" amountCents={summary.totals.totalNetCents} />
         <SummaryCard title="Efectivo esperado en sobre" amountCents={summary.totals.expectedEnvelopeAmountCents} />
+      </div>
+
+      <div className="mt-4">
+        <SessionSalesCard />
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
