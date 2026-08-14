@@ -416,6 +416,7 @@ function RegisterPaymentModal({
   const [creditCardId, setCreditCardId] = useState("");
   const [installments, setInstallments] = useState(1);
   const [notes, setNotes] = useState("");
+  const [skipCashImpact, setSkipCashImpact] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -456,6 +457,7 @@ function RegisterPaymentModal({
           creditCardId: method === "TARJETA_CREDITO" ? creditCardId : undefined,
           installments: method === "TARJETA_CREDITO" ? installments : undefined,
           notes: notes || undefined,
+          skipCashImpact: method !== "TARJETA_CREDITO" ? skipCashImpact : undefined,
         }),
       });
       const data = await res.json();
@@ -509,6 +511,18 @@ function RegisterPaymentModal({
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
+              <label className="mt-2 flex items-start gap-2 text-xs text-neutral-600">
+                <input
+                  type="checkbox"
+                  checked={skipCashImpact}
+                  onChange={(e) => setSkipCashImpact(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Ya está reflejado en el saldo de la cuenta (no generar movimiento). Usar cuando el pago se hizo
+                  antes de cargar el saldo inicial de la cuenta.
+                </span>
+              </label>
             </div>
           ) : (
             <>

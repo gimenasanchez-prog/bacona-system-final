@@ -14,6 +14,7 @@ const BodySchema = z.object({
   creditCardId: z.string().cuid().optional(),
   installments: z.number().int().min(1).max(24).optional(),
   notes: z.string().optional(),
+  skipCashImpact: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
       installments: d.installments,
       notes: d.notes ?? null,
       createdByEmployeeId: employeeId,
+      skipCashImpact: d.skipCashImpact,
     });
     return NextResponse.json(payment);
   } catch (err) {

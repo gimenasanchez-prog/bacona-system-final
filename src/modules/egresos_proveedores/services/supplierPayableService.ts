@@ -14,6 +14,7 @@ export type RegisterSupplierPaymentInput = {
   installments?: number;
   notes?: string | null;
   createdByEmployeeId: string;
+  skipCashImpact?: boolean;
 };
 
 async function getLocalCashBalanceCents(tx: Prisma.TransactionClient, localCashBoxId: string) {
@@ -183,7 +184,7 @@ export class SupplierPayableService {
         },
       });
 
-      if (input.method === "EFECTIVO_CAJA" || input.method === "TRANSFERENCIA") {
+      if ((input.method === "EFECTIVO_CAJA" || input.method === "TRANSFERENCIA") && !input.skipCashImpact) {
         const cashBoxId = input.cashBoxId!;
         const balance = await getLocalCashBalanceCents(tx, cashBoxId);
         if (balance < input.amountCents) {
