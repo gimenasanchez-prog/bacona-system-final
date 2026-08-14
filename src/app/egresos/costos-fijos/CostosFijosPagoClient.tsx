@@ -371,6 +371,7 @@ function PayCostoFijoModal({ item, onClose, onSuccess }: { item: Item; onClose: 
   const [amountArs, setAmountArs] = useState((remainingCents / 100).toFixed(2));
   const [cashBoxId, setCashBoxId] = useState("");
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  const [skipCashImpact, setSkipCashImpact] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -399,6 +400,7 @@ function PayCostoFijoModal({ item, onClose, onSuccess }: { item: Item; onClose: 
           period: item.period,
           amountCents,
           cashBoxId,
+          skipCashImpact,
         }),
       });
       const data = await res.json();
@@ -428,6 +430,18 @@ function PayCostoFijoModal({ item, onClose, onSuccess }: { item: Item; onClose: 
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
+            <label className="mt-2 flex items-start gap-2 text-xs text-neutral-600">
+              <input
+                type="checkbox"
+                checked={skipCashImpact}
+                onChange={(e) => setSkipCashImpact(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Ya está reflejado en el saldo de la cuenta (no generar movimiento). Usar cuando el pago se hizo
+                antes de cargar el saldo inicial de la cuenta.
+              </span>
+            </label>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

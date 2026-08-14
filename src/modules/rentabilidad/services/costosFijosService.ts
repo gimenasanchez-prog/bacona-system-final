@@ -183,6 +183,7 @@ export class CostosFijosService {
     amountCents: number;
     cashBoxId: string;
     employeeId: string;
+    skipCashImpact?: boolean;
   }) {
     assertIntCents(params.amountCents, "amountCents");
     if (params.amountCents <= 0) throw new Error("El monto a pagar debe ser mayor a cero.");
@@ -201,15 +202,17 @@ export class CostosFijosService {
         throw new Error("Este período ya está pagado.");
       }
 
-      const grouped = await tx.localCashMovement.groupBy({
-        by: ["type"],
-        where: { localCashBoxId: params.cashBoxId },
-        _sum: { amountCents: true },
-      });
-      const inSum = grouped.find((g) => g.type === "IN")?._sum.amountCents ?? 0;
-      const outSum = grouped.find((g) => g.type === "OUT")?._sum.amountCents ?? 0;
-      if (inSum - outSum < params.amountCents) {
-        throw new Error("Saldo insuficiente en la caja/cuenta elegida.");
+      if (!params.skipCashImpact) {
+        const grouped = await tx.localCashMovement.groupBy({
+          by: ["type"],
+          where: { localCashBoxId: params.cashBoxId },
+          _sum: { amountCents: true },
+        });
+        const inSum = grouped.find((g) => g.type === "IN")?._sum.amountCents ?? 0;
+        const outSum = grouped.find((g) => g.type === "OUT")?._sum.amountCents ?? 0;
+        if (inSum - outSum < params.amountCents) {
+          throw new Error("Saldo insuficiente en la caja/cuenta elegida.");
+        }
       }
 
       const payment = await tx.costoFijoPayment.create({
@@ -222,18 +225,20 @@ export class CostosFijosService {
         },
       });
 
-      await tx.localCashMovement.create({
-        data: {
-          localCashBoxId: params.cashBoxId,
-          type: "OUT",
-          sourceType: "COSTO_FIJO_PAYMENT",
-          relatedCostoFijoPaymentId: payment.id,
-          amountCents: params.amountCents,
-          date: payment.paidAt,
-          description: `${costoFijo.nombre} — período ${start.toISOString().slice(0, 7)}`,
-          createdByEmployeeId: params.employeeId,
-        },
-      });
+      if (!params.skipCashImpact) {
+        await tx.localCashMovement.create({
+          data: {
+            localCashBoxId: params.cashBoxId,
+            type: "OUT",
+            sourceType: "COSTO_FIJO_PAYMENT",
+            relatedCostoFijoPaymentId: payment.id,
+            amountCents: params.amountCents,
+            date: payment.paidAt,
+            description: `${costoFijo.nombre} — período ${start.toISOString().slice(0, 7)}`,
+            createdByEmployeeId: params.employeeId,
+          },
+        });
+      }
 
       return payment;
     });
