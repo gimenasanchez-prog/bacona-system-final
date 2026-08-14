@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { openAndControlEnvelopeAction } from "@/modules/caja_local/actions/localCashBoxActions";
 
 type Envelope = {
@@ -88,7 +89,7 @@ export function OpenEnvelopeModal({
                   {envelopes.map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.envelopeCode} · {e.cashSession.employee.displayName} ·{" "}
-                      {new Date(e.cashSession.businessDate).toLocaleDateString("es-AR")} ·{" "}
+                      {formatBusinessDate(e.cashSession.businessDate)} ·{" "}
                       {e.cashSession.shift}
                     </option>
                   ))}
@@ -133,9 +134,7 @@ export function OpenEnvelopeModal({
                   </p>
                   <p className="text-neutral-600">
                     Turno <strong>{selected.cashSession.shift}</strong> del{" "}
-                    <strong>
-                      {new Date(selected.cashSession.businessDate).toLocaleDateString("es-AR")}
-                    </strong>
+                    <strong>{formatBusinessDate(selected.cashSession.businessDate)}</strong>
                     , a cargo de{" "}
                     <strong>{selected.cashSession.employee.displayName}</strong>.
                   </p>

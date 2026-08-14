@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { openAndControlEnvelopeBatchAction } from "@/modules/caja_local/actions/localCashBoxActions";
 
 type Envelope = {
@@ -131,7 +132,7 @@ export function BulkOpenEnvelopesPanel({
                 <td className="px-3 py-2 font-mono text-xs">{row.envelopeCode}</td>
                 <td className="px-3 py-2">{row.cashSession.employee.displayName}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  {new Date(row.cashSession.businessDate).toLocaleDateString("es-AR")}
+                  {formatBusinessDate(row.cashSession.businessDate)}
                 </td>
                 <td className="px-3 py-2">{SHIFT_LABEL[row.cashSession.shift] ?? row.cashSession.shift}</td>
                 <td className="px-3 py-2 text-right">{formatArsFromCents(row.expectedAmountCents)}</td>

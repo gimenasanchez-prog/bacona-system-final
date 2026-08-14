@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { updateEnvelopeStatusAction } from "@/modules/sobres/actions/envelopeActions";
 
@@ -46,7 +47,7 @@ export default async function SobreDetailPage(props: { params: Promise<{ id: str
           </div>
           <div className="flex items-center justify-between">
             <div>Fecha</div>
-            <div className="font-semibold">{new Date(envelope.cashSession.businessDate).toLocaleDateString("es-AR")}</div>
+            <div className="font-semibold">{formatBusinessDate(envelope.cashSession.businessDate)}</div>
           </div>
           <div className="flex items-center justify-between">
             <div>Turno</div>

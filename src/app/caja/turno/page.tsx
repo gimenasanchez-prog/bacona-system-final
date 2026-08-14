@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 import { closeCashSessionAction } from "@/modules/caja/actions/cashSessionActions";
 import { CloseCashSessionButton } from "./CloseCashSessionButton";
@@ -86,7 +87,7 @@ export default async function CajaTurnoPage() {
         <div className="grid gap-3 sm:grid-cols-3">
           <LabelValue
             label="Fecha"
-            value={new Date(summary.cashSession.businessDate).toLocaleDateString("es-AR")}
+            value={formatBusinessDate(summary.cashSession.businessDate)}
           />
           <LabelValue
             label="Apertura"

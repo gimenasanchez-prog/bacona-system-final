@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { ConsolidatedClosuresService } from "@/modules/consolidado_cierres/services/consolidatedClosuresService";
 import { cancelSaleGerenciaAction } from "@/modules/consolidado_cierres/actions/consolidatedClosuresActions";
 
@@ -29,7 +30,7 @@ export default async function CierreDetailPage(props: { params: Promise<{ id: st
         <div>
           <div className="text-lg font-semibold">Detalle cierre</div>
           <div className="mt-1 text-sm text-neutral-600">
-            {cashSession.employee.displayName} · {new Date(cashSession.businessDate).toLocaleDateString("es-AR")} ·{" "}
+            {cashSession.employee.displayName} · {formatBusinessDate(cashSession.businessDate)} ·{" "}
             {cashSession.shift}
           </div>
         </div>

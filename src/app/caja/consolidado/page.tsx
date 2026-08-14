@@ -4,9 +4,16 @@ import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate, getCurrentMonthRange } from "@/lib/dates";
 import { ConsolidatedClosuresService } from "@/modules/consolidado_cierres/services/consolidatedClosuresService";
 import { updateEnvelopeStatusAction } from "@/modules/sobres/actions/envelopeActions";
 import { DeleteSessionButton } from "./DeleteSessionButton";
+
+const SHIFT_LABEL: Record<string, string> = {
+  MANIANA: "Mañana",
+  TARDE: "Tarde",
+  NOCHE: "Noche",
+};
 
 function EnvelopeBadge(props: { status: string | null }) {
   const status = props.status ?? "—";
@@ -30,8 +37,11 @@ export default async function ConsolidadoCierresPage(props: {
   if (role !== "GERENCIA" && role !== "ADMINISTRATIVO") redirect("/");
 
   const sp = await props.searchParams;
-  const from = typeof sp.from === "string" && sp.from ? new Date(`${sp.from}T00:00:00`) : undefined;
-  const to = typeof sp.to === "string" && sp.to ? new Date(`${sp.to}T23:59:59`) : undefined;
+  const defaultRange = getCurrentMonthRange();
+  const fromStr = typeof sp.from === "string" && sp.from ? sp.from : defaultRange.from;
+  const toStr = typeof sp.to === "string" && sp.to ? sp.to : defaultRange.to;
+  const from = new Date(`${fromStr}T00:00:00`);
+  const to = new Date(`${toStr}T23:59:59`);
   const shift =
     sp.shift === "MANIANA" || sp.shift === "TARDE" || sp.shift === "NOCHE" ? (sp.shift as any) : undefined;
   const cashSessionStatus = sp.status === "OPEN" || sp.status === "CLOSED" ? (sp.status as any) : "CLOSED";
@@ -44,7 +54,7 @@ export default async function ConsolidadoCierresPage(props: {
       : undefined;
   const employeeId = typeof sp.employeeId === "string" && sp.employeeId ? sp.employeeId : undefined;
 
-  const [employees, rows, internalBreakdown] = await Promise.all([
+  const [employees, rows, internalBreakdown, shortfallBreakdown] = await Promise.all([
     prisma.employee.findMany({
       where: { isActive: true },
       select: { id: true, displayName: true },
@@ -59,6 +69,14 @@ export default async function ConsolidadoCierresPage(props: {
       envelopeStatus,
     }),
     ConsolidatedClosuresService.getInternalAccountBreakdown({
+      from,
+      to,
+      shift,
+      employeeId,
+      cashSessionStatus,
+      envelopeStatus,
+    }),
+    ConsolidatedClosuresService.getEnvelopeShortfallBreakdown({
       from,
       to,
       shift,
@@ -85,6 +103,7 @@ export default async function ConsolidadoCierresPage(props: {
             (s, r) => s + (r.envelope?.actualAmountCents ?? r.envelope?.expectedAmountCents ?? 0),
             0
           ),
+          shortfall: shortfallBreakdown.reduce((s, b) => s + b.shortfallCents, 0),
         }
       : null;
 
@@ -106,11 +125,11 @@ export default async function ConsolidadoCierresPage(props: {
         <form className="grid gap-3 sm:grid-cols-6">
           <div className="space-y-1 sm:col-span-1">
             <div className="text-xs text-neutral-500">Desde</div>
-            <input name="from" type="date" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={typeof sp.from === "string" ? sp.from : ""} />
+            <input name="from" type="date" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={fromStr} />
           </div>
           <div className="space-y-1 sm:col-span-1">
             <div className="text-xs text-neutral-500">Hasta</div>
-            <input name="to" type="date" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={typeof sp.to === "string" ? sp.to : ""} />
+            <input name="to" type="date" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={toStr} />
           </div>
           <div className="space-y-1 sm:col-span-1">
             <div className="text-xs text-neutral-500">Turno</div>
@@ -233,6 +252,33 @@ export default async function ConsolidadoCierresPage(props: {
               <span className="font-medium">{formatArsFromCents(totals.internal)}</span>
             </div>
           )}
+          {shortfallBreakdown.length > 0 && (
+            <details className="mt-2 border-t pt-2 text-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
+                <span className="text-neutral-500">
+                  Pérdidas / faltantes <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
+                </span>
+                <span className="font-medium text-red-700">{formatArsFromCents(totals.shortfall)}</span>
+              </summary>
+              <div className="mt-2 overflow-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {shortfallBreakdown.map((b) => (
+                      <tr key={b.envelopeId} className="border-b last:border-b-0">
+                        <td className="px-3 py-1.5 whitespace-nowrap">{formatBusinessDate(b.businessDate)}</td>
+                        <td className="px-3 py-1.5">{SHIFT_LABEL[b.shift] ?? b.shift}</td>
+                        <td className="px-3 py-1.5">{b.employeeName}</td>
+                        <td className="px-3 py-1.5 font-mono text-xs">{b.envelopeCode}</td>
+                        <td className="px-3 py-1.5 text-right font-medium text-red-700">
+                          {formatArsFromCents(b.shortfallCents)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
         </div>
       ) : null}
 
@@ -255,7 +301,7 @@ export default async function ConsolidadoCierresPage(props: {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="border-b last:border-b-0">
-                <td className="px-2 py-2">{new Date(r.businessDate).toLocaleDateString("es-AR")}</td>
+                <td className="px-2 py-2">{formatBusinessDate(r.businessDate)}</td>
                 <td className="px-2 py-2">{r.shift}</td>
                 <td className="px-2 py-2">{r.employee.displayName}</td>
                 <td className="px-2 py-2 text-right font-semibold">{formatArsFromCents(r.totalIncomeCents)}</td>
@@ -313,7 +359,7 @@ export default async function ConsolidadoCierresPage(props: {
 
                     <DeleteSessionButton
                       cashSessionId={r.id}
-                      label={`${new Date(r.businessDate).toLocaleDateString("es-AR")} ${r.shift} — ${r.employee.displayName}`}
+                      label={`${formatBusinessDate(r.businessDate)} ${r.shift} — ${r.employee.displayName}`}
                     />
                   </div>
                 </td>

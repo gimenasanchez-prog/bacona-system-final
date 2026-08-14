@@ -62,6 +62,41 @@ export class ConsolidatedClosuresService {
       .sort((a, b) => b.amountCents - a.amountCents);
   }
 
+  static async getEnvelopeShortfallBreakdown(params: {
+    from?: Date;
+    to?: Date;
+    shift?: "MANIANA" | "TARDE" | "NOCHE";
+    employeeId?: string;
+    cashSessionStatus?: "OPEN" | "CLOSED";
+    envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+  }) {
+    const envelopes = await prisma.envelope.findMany({
+      where: {
+        actualAmountCents: { not: null },
+        status: params.envelopeStatus,
+        cashSession: {
+          businessDate: { gte: params.from, lte: params.to },
+          shift: params.shift,
+          employeeId: params.employeeId,
+          status: params.cashSessionStatus,
+        },
+      },
+      include: { cashSession: { include: { employee: { select: { id: true, displayName: true } } } } },
+      orderBy: { cashSession: { businessDate: "desc" } },
+    });
+
+    return envelopes
+      .filter((e) => e.actualAmountCents! < e.expectedAmountCents)
+      .map((e) => ({
+        envelopeId: e.id,
+        envelopeCode: e.envelopeCode,
+        employeeName: e.cashSession.employee.displayName,
+        businessDate: e.cashSession.businessDate,
+        shift: e.cashSession.shift,
+        shortfallCents: e.expectedAmountCents - e.actualAmountCents!,
+      }));
+  }
+
   static async deleteCashSession(cashSessionId: string): Promise<void> {
     const session = await prisma.cashSession.findUnique({
       where: { id: cashSessionId },

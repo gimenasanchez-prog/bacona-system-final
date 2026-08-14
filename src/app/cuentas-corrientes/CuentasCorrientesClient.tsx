@@ -1062,8 +1062,17 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
 
 // ─── Main Client Component ────────────────────────────────────────────────────
 
-export default function CuentasCorrientesClient({ initialAccounts, role }: { initialAccounts: AccountWithBillingState[]; role: string }) {
+export default function CuentasCorrientesClient({
+  initialAccounts,
+  initialLastPaymentAt,
+  role,
+}: {
+  initialAccounts: AccountWithBillingState[];
+  initialLastPaymentAt: string | null;
+  role: string;
+}) {
   const [accounts, setAccounts] = useState(initialAccounts);
+  const [lastPaymentAt, setLastPaymentAt] = useState(initialLastPaymentAt);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -1071,7 +1080,11 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
     setRefreshing(true);
     try {
       const res = await fetch("/api/cuentas-corrientes");
-      if (res.ok) setAccounts(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data.accounts);
+        setLastPaymentAt(data.lastPaymentAt);
+      }
     } finally {
       setRefreshing(false);
     }
@@ -1107,6 +1120,11 @@ export default function CuentasCorrientesClient({ initialAccounts, role }: { ini
           </button>
         </div>
       </div>
+      {lastPaymentAt && (
+        <div className="text-right text-xs text-neutral-400 -mt-3">
+          Último pago registrado: {formatDate(lastPaymentAt)}
+        </div>
+      )}
 
       {/* Summary chips */}
       <div className="grid grid-cols-5 gap-3">

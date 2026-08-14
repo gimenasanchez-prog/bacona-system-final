@@ -747,6 +747,14 @@ export class CuentaCorrienteService {
     });
   }
 
+  static async getLastPaymentDate(): Promise<Date | null> {
+    const result = await prisma.cuentaCorrienteInvoice.aggregate({
+      where: { isPaid: true },
+      _max: { paidAt: true },
+    });
+    return result._max.paidAt;
+  }
+
   static async listInvoicesForExport(params: { from: Date; to: Date }) {
     return prisma.cuentaCorrienteInvoice.findMany({
       where: {

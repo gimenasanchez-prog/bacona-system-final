@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxService";
 import {
   createLocalCashManualMovementAction,
@@ -121,7 +122,7 @@ export default async function CajaLocalPage(props: {
                     <div className="font-mono text-sm font-semibold">{env.envelopeCode}</div>
                     <div className="text-xs text-neutral-500">
                       {env.cashSession.employee.displayName} ·{" "}
-                      {new Date(env.cashSession.businessDate).toLocaleDateString("es-AR")} ·{" "}
+                      {formatBusinessDate(env.cashSession.businessDate)} ·{" "}
                       {env.cashSession.shift}
                     </div>
                     <div className="mt-1 text-xs text-neutral-500">
