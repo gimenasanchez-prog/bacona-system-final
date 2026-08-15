@@ -124,6 +124,7 @@ export class CreditCardService {
     cashBoxId: string;
     employeeId: string;
     notes?: string | null;
+    skipCashImpact?: boolean;
   }) {
     assertIntCents(params.amountCents, "amountCents");
     if (params.amountCents <= 0) throw new Error("El monto a pagar debe ser mayor a cero.");
@@ -152,15 +153,17 @@ export class CreditCardService {
         throw new Error("El monto supera el saldo pendiente del período.");
       }
 
-      const grouped = await tx.localCashMovement.groupBy({
-        by: ["type"],
-        where: { localCashBoxId: params.cashBoxId },
-        _sum: { amountCents: true },
-      });
-      const inSum = grouped.find((g) => g.type === "IN")?._sum.amountCents ?? 0;
-      const outSum = grouped.find((g) => g.type === "OUT")?._sum.amountCents ?? 0;
-      if (inSum - outSum < params.amountCents) {
-        throw new Error("Saldo insuficiente en la cuenta elegida.");
+      if (!params.skipCashImpact) {
+        const grouped = await tx.localCashMovement.groupBy({
+          by: ["type"],
+          where: { localCashBoxId: params.cashBoxId },
+          _sum: { amountCents: true },
+        });
+        const inSum = grouped.find((g) => g.type === "IN")?._sum.amountCents ?? 0;
+        const outSum = grouped.find((g) => g.type === "OUT")?._sum.amountCents ?? 0;
+        if (inSum - outSum < params.amountCents) {
+          throw new Error("Saldo insuficiente en la cuenta elegida.");
+        }
       }
 
       const statementPayment = await tx.creditCardStatementPayment.create({
@@ -174,18 +177,20 @@ export class CreditCardService {
         },
       });
 
-      await tx.localCashMovement.create({
-        data: {
-          localCashBoxId: params.cashBoxId,
-          type: "OUT",
-          sourceType: "CREDIT_CARD_STATEMENT_PAYMENT",
-          relatedCreditCardStatementPaymentId: statementPayment.id,
-          amountCents: params.amountCents,
-          date: statementPayment.paidAt,
-          description: `Pago resumen ${card.name} — período ${params.period.toISOString().slice(0, 7)}`,
-          createdByEmployeeId: params.employeeId,
-        },
-      });
+      if (!params.skipCashImpact) {
+        await tx.localCashMovement.create({
+          data: {
+            localCashBoxId: params.cashBoxId,
+            type: "OUT",
+            sourceType: "CREDIT_CARD_STATEMENT_PAYMENT",
+            relatedCreditCardStatementPaymentId: statementPayment.id,
+            amountCents: params.amountCents,
+            date: statementPayment.paidAt,
+            description: `Pago resumen ${card.name} — período ${params.period.toISOString().slice(0, 7)}`,
+            createdByEmployeeId: params.employeeId,
+          },
+        });
+      }
 
       return statementPayment;
     });

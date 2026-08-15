@@ -270,6 +270,7 @@ function PayStatementModal({
   const [amountArs, setAmountArs] = useState((target.period.remainingCents / 100).toFixed(2));
   const [cashBoxId, setCashBoxId] = useState("");
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  const [skipCashImpact, setSkipCashImpact] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -291,7 +292,7 @@ function PayStatementModal({
       const res = await fetch(`/api/egresos/tarjetas/${target.cardId}/pagar`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ period: target.period.period, amountCents, cashBoxId }),
+        body: JSON.stringify({ period: target.period.period, amountCents, cashBoxId, skipCashImpact }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al pagar resumen.");
@@ -325,6 +326,18 @@ function PayStatementModal({
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
+            <label className="mt-2 flex items-start gap-2 text-xs text-neutral-600">
+              <input
+                type="checkbox"
+                checked={skipCashImpact}
+                onChange={(e) => setSkipCashImpact(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Ya está reflejado en el saldo de la cuenta (no generar movimiento). Usar cuando el pago se hizo
+                antes de cargar el saldo inicial de la cuenta.
+              </span>
+            </label>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

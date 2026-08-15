@@ -9,6 +9,7 @@ const BodySchema = z.object({
   amountCents: z.number().int().positive(),
   cashBoxId: z.string().cuid(),
   notes: z.string().optional(),
+  skipCashImpact: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       cashBoxId: d.cashBoxId,
       employeeId,
       notes: d.notes ?? null,
+      skipCashImpact: d.skipCashImpact,
     });
     return NextResponse.json(payment);
   } catch (err) {
