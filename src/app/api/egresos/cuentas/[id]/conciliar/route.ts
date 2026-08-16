@@ -6,8 +6,6 @@ import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxS
 
 const BodySchema = z.object({
   posPaymentIds: z.array(z.string().cuid()).min(1),
-  withholdingCents: z.number().int().min(0).default(0),
-  feesCents: z.number().int().min(0).default(0),
   date: z.string().datetime(),
 });
 
@@ -33,8 +31,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await LocalCashBoxService.reconcileSales({
       cashBoxId: id,
       posPaymentIds: d.posPaymentIds,
-      withholdingCents: d.withholdingCents,
-      feesCents: d.feesCents,
       date: new Date(d.date),
       createdByEmployeeId: employeeId,
     });

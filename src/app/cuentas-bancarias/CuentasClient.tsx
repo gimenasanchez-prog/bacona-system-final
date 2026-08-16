@@ -15,6 +15,8 @@ type PaymentMethodConfig = {
   settlementBusinessDays: number;
   withholdingPercent: string | number | null;
   feesPercent: string | number | null;
+  iibbPercent: string | number | null;
+  taxDebCredPercent: string | number | null;
 };
 
 type Account = {
@@ -40,6 +42,15 @@ type Movement = {
   createdByEmployee: { displayName: string };
 };
 
+type SaleDeductions = {
+  withholdingCents: number;
+  feesCents: number;
+  netAfterProcessorCents: number;
+  iibbCents: number;
+  taxDebCredCents: number;
+  netCents: number;
+};
+
 type PendingSale = {
   id: string;
   method: string;
@@ -47,8 +58,7 @@ type PendingSale = {
   createdAt: string;
   expectedCreditDate: string;
   overdueDays: number;
-  withholdingPercent: number;
-  feesPercent: number;
+  deductions: SaleDeductions;
   sale: { comandaNumber: string | null; tableId: string | null; customerNameFreeText: string | null };
 };
 
@@ -366,12 +376,9 @@ function MovementsModal({ account, onClose }: { account: Account; onClose: () =>
 function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account; onClose: () => void; onSuccess: () => void }) {
   const [sales, setSales] = useState<PendingSale[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [withholdingArs, setWithholdingArs] = useState("0.00");
-  const [feesArs, setFeesArs] = useState("0.00");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     fetch(`/api/egresos/cuentas/${account.id}/ventas-pendientes`)
@@ -380,22 +387,8 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
         const items: PendingSale[] = d.items ?? [];
         setSales(items);
         setSelectedIds(new Set(items.map((s) => s.id)));
-        setLoaded(true);
       });
   }, [account.id]);
-
-  useEffect(() => {
-    if (!loaded) return;
-    const selected = sales.filter((s) => selectedIds.has(s.id));
-    const suggestedWithholding = selected.reduce(
-      (sum, s) => sum + Math.round((s.amountCents * s.withholdingPercent) / 100),
-      0
-    );
-    const suggestedFees = selected.reduce((sum, s) => sum + Math.round((s.amountCents * s.feesPercent) / 100), 0);
-    setWithholdingArs((suggestedWithholding / 100).toFixed(2));
-    setFeesArs((suggestedFees / 100).toFixed(2));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, selectedIds.size]);
 
   function toggle(id: string) {
     setSelectedIds((prev) => {
@@ -408,14 +401,15 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
 
   const selectedSales = sales.filter((s) => selectedIds.has(s.id));
   const totalGrossCents = selectedSales.reduce((sum, s) => sum + s.amountCents, 0);
-  const withholdingCents = Math.round(Number(withholdingArs.replace(",", ".")) * 100) || 0;
-  const feesCents = Math.round(Number(feesArs.replace(",", ".")) * 100) || 0;
-  const netCents = totalGrossCents - withholdingCents - feesCents;
+  const withholdingCents = selectedSales.reduce((sum, s) => sum + s.deductions.withholdingCents, 0);
+  const feesCents = selectedSales.reduce((sum, s) => sum + s.deductions.feesCents, 0);
+  const iibbCents = selectedSales.reduce((sum, s) => sum + s.deductions.iibbCents, 0);
+  const taxDebCredCents = selectedSales.reduce((sum, s) => sum + s.deductions.taxDebCredCents, 0);
+  const netCents = selectedSales.reduce((sum, s) => sum + s.deductions.netCents, 0);
 
   async function handleSubmit() {
     setError(null);
     if (!selectedSales.length) return setError("Seleccioná al menos una venta.");
-    if (netCents < 0) return setError("Las retenciones/comisiones superan el monto seleccionado.");
     setLoading(true);
     try {
       const res = await fetch(`/api/egresos/cuentas/${account.id}/conciliar`, {
@@ -423,8 +417,6 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           posPaymentIds: selectedSales.map((s) => s.id),
-          withholdingCents,
-          feesCents,
           date: new Date(date + "T12:00:00.000Z").toISOString(),
         }),
       });
@@ -451,7 +443,7 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
               <thead className="bg-neutral-50 border-b">
                 <tr>
                   <th className="px-2 py-2 text-left"></th>
-                  <th className="px-2 py-2 text-left font-medium">Fecha</th>
+                  <th className="px-2 py-2 text-left font-medium">Fecha y hora</th>
                   <th className="px-2 py-2 text-left font-medium">Método</th>
                   <th className="px-2 py-2 text-left font-medium">Referencia</th>
                   <th className="px-2 py-2 text-right font-medium">Monto</th>
@@ -463,7 +455,10 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
                     <td className="px-2 py-2">
                       <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggle(s.id)} />
                     </td>
-                    <td className="px-2 py-2 text-xs">{new Date(s.createdAt).toLocaleDateString("es-AR")}</td>
+                    <td className="px-2 py-2 text-xs whitespace-nowrap">
+                      {new Date(s.createdAt).toLocaleDateString("es-AR")}{" "}
+                      {new Date(s.createdAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+                    </td>
                     <td className="px-2 py-2 text-xs">{s.method}</td>
                     <td className="px-2 py-2 text-xs">{saleReference(s)}</td>
                     <td className="px-2 py-2 text-right">{formatArsFromCents(s.amountCents)}</td>
@@ -479,19 +474,13 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
               </tbody>
             </table>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 mb-1">Retención bancaria ($)</label>
-              <input type="number" min="0" step="0.01" value={withholdingArs} onChange={(e) => setWithholdingArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 mb-1">Comisión bancaria ($)</label>
-              <input type="number" min="0" step="0.01" value={feesArs} onChange={(e) => setFeesArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
-            </div>
-          </div>
           <div className="rounded-lg bg-neutral-50 px-4 py-3 text-sm space-y-1">
             <div className="flex justify-between"><span className="text-neutral-600">Bruto seleccionado</span><span>{formatArsFromCents(totalGrossCents)}</span></div>
-            <div className="flex justify-between font-semibold"><span>Neto a acreditar</span><span>{formatArsFromCents(netCents)}</span></div>
+            <div className="flex justify-between"><span className="text-neutral-600">− Retención bancaria (estimada)</span><span>{formatArsFromCents(withholdingCents)}</span></div>
+            <div className="flex justify-between"><span className="text-neutral-600">− Comisión bancaria (estimada)</span><span>{formatArsFromCents(feesCents)}</span></div>
+            <div className="flex justify-between"><span className="text-neutral-600">− Ingresos Brutos</span><span>{formatArsFromCents(iibbCents)}</span></div>
+            <div className="flex justify-between"><span className="text-neutral-600">− Impuesto al débito/crédito</span><span>{formatArsFromCents(taxDebCredCents)}</span></div>
+            <div className="flex justify-between font-semibold border-t pt-1 mt-1"><span>Neto a acreditar</span><span>{formatArsFromCents(netCents)}</span></div>
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha de conciliación</label>
@@ -521,6 +510,8 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
         settlementBusinessDays: existing?.settlementBusinessDays ?? 0,
         withholdingPercent: existing?.withholdingPercent != null ? String(existing.withholdingPercent) : "",
         feesPercent: existing?.feesPercent != null ? String(existing.feesPercent) : "",
+        iibbPercent: existing?.iibbPercent != null ? String(existing.iibbPercent) : "",
+        taxDebCredPercent: existing?.taxDebCredPercent != null ? String(existing.taxDebCredPercent) : "",
       };
     })
   );
@@ -548,6 +539,8 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
             settlementBusinessDays: Number(r.settlementBusinessDays) || 0,
             withholdingPercent: r.withholdingPercent === "" ? null : Number(r.withholdingPercent),
             feesPercent: r.feesPercent === "" ? null : Number(r.feesPercent),
+            iibbPercent: r.iibbPercent === "" ? null : Number(r.iibbPercent),
+            taxDebCredPercent: r.taxDebCredPercent === "" ? null : Number(r.taxDebCredPercent),
           })),
           reconciliationStartDate: reconciliationStartDate
             ? new Date(reconciliationStartDate + "T00:00:00.000Z").toISOString()
@@ -593,6 +586,8 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
                   <th className="px-2 py-2 text-center font-medium">Días hábiles</th>
                   <th className="px-2 py-2 text-center font-medium">% Retención</th>
                   <th className="px-2 py-2 text-center font-medium">% Comisión</th>
+                  <th className="px-2 py-2 text-center font-medium">% Ing. Brutos</th>
+                  <th className="px-2 py-2 text-center font-medium">% Imp. Déb/Créd</th>
                 </tr>
               </thead>
               <tbody>
@@ -634,6 +629,30 @@ function ConfigModal({ account, onClose, onSuccess }: { account: Account; onClos
                         disabled={!r.enabled}
                         value={r.feesPercent}
                         onChange={(e) => updateRow(r.method, { feesPercent: e.target.value })}
+                        className="w-20 rounded border px-2 py-1 text-sm disabled:bg-neutral-100"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        disabled={!r.enabled}
+                        value={r.iibbPercent}
+                        onChange={(e) => updateRow(r.method, { iibbPercent: e.target.value })}
+                        className="w-20 rounded border px-2 py-1 text-sm disabled:bg-neutral-100"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        disabled={!r.enabled}
+                        value={r.taxDebCredPercent}
+                        onChange={(e) => updateRow(r.method, { taxDebCredPercent: e.target.value })}
                         className="w-20 rounded border px-2 py-1 text-sm disabled:bg-neutral-100"
                       />
                     </td>

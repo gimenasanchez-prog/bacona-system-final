@@ -340,6 +340,8 @@ model CashBoxPaymentMethodConfig {
   settlementBusinessDays Int              @default(0)
   withholdingPercent     Decimal?         @db.Decimal(5, 2)
   feesPercent            Decimal?         @db.Decimal(5, 2)
+  iibbPercent            Decimal?         @db.Decimal(5, 2)
+  taxDebCredPercent      Decimal?         @db.Decimal(5, 2)
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
   cashBox                LocalCashBox     @relation(fields: [cashBoxId], references: [id])
@@ -362,6 +364,8 @@ model LocalCashMovement {
   grossAmountCents                    Int?
   bankWithholdingCents                Int?                        @default(0)
   bankFeesCents                       Int?                        @default(0)
+  iibbCents                           Int?                        @default(0)
+  taxDebCredCents                     Int?                        @default(0)
   amountCents                         Int
   date                                DateTime
   description                         String?

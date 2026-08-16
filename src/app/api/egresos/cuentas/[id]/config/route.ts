@@ -12,6 +12,8 @@ const ConfigSchema = z.object({
       settlementBusinessDays: z.number().int().min(0).max(30),
       withholdingPercent: z.number().min(0).max(100).nullable(),
       feesPercent: z.number().min(0).max(100).nullable(),
+      iibbPercent: z.number().min(0).max(100).nullable(),
+      taxDebCredPercent: z.number().min(0).max(100).nullable(),
     })
   ),
   reconciliationStartDate: z.string().datetime().nullable().optional(),

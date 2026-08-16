@@ -9,7 +9,32 @@ export type PaymentMethodConfigInput = {
   settlementBusinessDays: number;
   withholdingPercent: number | null;
   feesPercent: number | null;
+  iibbPercent: number | null;
+  taxDebCredPercent: number | null;
 };
+
+type DeductionConfig = {
+  withholdingPercent: unknown;
+  feesPercent: unknown;
+  iibbPercent: unknown;
+  taxDebCredPercent: unknown;
+};
+
+function computeSaleDeductions(amountCents: number, config: DeductionConfig) {
+  const withholdingPercent = config.withholdingPercent ? Number(config.withholdingPercent) : 0;
+  const feesPercent = config.feesPercent ? Number(config.feesPercent) : 0;
+  const iibbPercent = config.iibbPercent ? Number(config.iibbPercent) : 0;
+  const taxDebCredPercent = config.taxDebCredPercent ? Number(config.taxDebCredPercent) : 0;
+
+  const withholdingCents = Math.round((amountCents * withholdingPercent) / 100);
+  const feesCents = Math.round((amountCents * feesPercent) / 100);
+  const netAfterProcessorCents = amountCents - withholdingCents - feesCents;
+  const iibbCents = Math.round((netAfterProcessorCents * iibbPercent) / 100);
+  const taxDebCredCents = Math.round((netAfterProcessorCents * taxDebCredPercent) / 100);
+  const netCents = netAfterProcessorCents - iibbCents - taxDebCredCents;
+
+  return { withholdingCents, feesCents, netAfterProcessorCents, iibbCents, taxDebCredCents, netCents };
+}
 
 export class LocalCashBoxService {
   static async listBoxesByKind(kind: CashBoxKind) {
@@ -39,11 +64,15 @@ export class LocalCashBoxService {
             settlementBusinessDays: c.settlementBusinessDays,
             withholdingPercent: c.withholdingPercent,
             feesPercent: c.feesPercent,
+            iibbPercent: c.iibbPercent,
+            taxDebCredPercent: c.taxDebCredPercent,
           },
           update: {
             settlementBusinessDays: c.settlementBusinessDays,
             withholdingPercent: c.withholdingPercent,
             feesPercent: c.feesPercent,
+            iibbPercent: c.iibbPercent,
+            taxDebCredPercent: c.taxDebCredPercent,
           },
         });
       }
@@ -514,8 +543,7 @@ export class LocalCashBoxService {
         createdAt: p.createdAt,
         expectedCreditDate: p.expectedCreditDate,
         overdueDays: Math.floor((referenceDate.getTime() - p.expectedCreditDate.getTime()) / 86400000),
-        withholdingPercent: p.config.withholdingPercent ? Number(p.config.withholdingPercent) : 0,
-        feesPercent: p.config.feesPercent ? Number(p.config.feesPercent) : 0,
+        deductions: computeSaleDeductions(p.amountCents, p.config),
         sale: p.sale,
       }));
   }
@@ -523,15 +551,10 @@ export class LocalCashBoxService {
   static async reconcileSales(params: {
     cashBoxId: string;
     posPaymentIds: string[];
-    withholdingCents: number;
-    feesCents: number;
     date: Date;
     createdByEmployeeId: string;
   }) {
     if (!params.posPaymentIds.length) throw new Error("Elegí al menos una venta para conciliar.");
-    if (params.withholdingCents < 0 || params.feesCents < 0) {
-      throw new Error("Los descuentos no pueden ser negativos.");
-    }
 
     return prisma.$transaction(async (tx) => {
       const payments = await tx.posPayment.findMany({
@@ -546,25 +569,16 @@ export class LocalCashBoxService {
         throw new Error("Una de las ventas seleccionadas ya fue conciliada.");
       }
 
-      const grossTotal = payments.reduce((sum, p) => sum + p.amountCents, 0);
-      if (params.withholdingCents + params.feesCents > grossTotal) {
-        throw new Error("Las retenciones/comisiones no pueden superar el monto bruto seleccionado.");
-      }
+      const configs = await tx.cashBoxPaymentMethodConfig.findMany({
+        where: { cashBoxId: params.cashBoxId, method: { in: payments.map((p) => p.method) } },
+      });
+      const configByMethod = new Map(configs.map((c) => [c.method, c]));
 
-      let withholdingAssigned = 0;
-      let feesAssigned = 0;
-      for (let i = 0; i < payments.length; i++) {
-        const p = payments[i]!;
-        const isLast = i === payments.length - 1;
-        const share = p.amountCents / grossTotal;
-        const withholdingShare = isLast
-          ? params.withholdingCents - withholdingAssigned
-          : Math.round(params.withholdingCents * share);
-        const feesShare = isLast ? params.feesCents - feesAssigned : Math.round(params.feesCents * share);
-        withholdingAssigned += withholdingShare;
-        feesAssigned += feesShare;
-        const netCents = p.amountCents - withholdingShare - feesShare;
-        if (netCents < 0) throw new Error("El descuento supera el monto de una de las ventas.");
+      for (const p of payments) {
+        const config = configByMethod.get(p.method);
+        if (!config) throw new Error(`No hay configuración de conciliación para el método ${p.method}.`);
+        const d = computeSaleDeductions(p.amountCents, config);
+        if (d.netCents < 0) throw new Error("Los descuentos configurados superan el monto de una de las ventas.");
 
         await tx.localCashMovement.create({
           data: {
@@ -573,9 +587,11 @@ export class LocalCashBoxService {
             sourceType: "SALES_DEPOSIT",
             relatedPosPaymentId: p.id,
             grossAmountCents: p.amountCents,
-            bankWithholdingCents: withholdingShare,
-            bankFeesCents: feesShare,
-            amountCents: netCents,
+            bankWithholdingCents: d.withholdingCents,
+            bankFeesCents: d.feesCents,
+            iibbCents: d.iibbCents,
+            taxDebCredCents: d.taxDebCredCents,
+            amountCents: d.netCents,
             date: params.date,
             description: `Conciliación venta ${p.method}`,
             createdByEmployeeId: params.createdByEmployeeId,
