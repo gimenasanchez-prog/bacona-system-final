@@ -399,6 +399,14 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
     });
   }
 
+  function selectAll() {
+    setSelectedIds(new Set(sales.map((s) => s.id)));
+  }
+
+  function deselectAll() {
+    setSelectedIds(new Set());
+  }
+
   const selectedSales = sales.filter((s) => selectedIds.has(s.id));
   const totalGrossCents = selectedSales.reduce((sum, s) => sum + s.amountCents, 0);
   const withholdingCents = selectedSales.reduce((sum, s) => sum + s.deductions.withholdingCents, 0);
@@ -442,7 +450,16 @@ function ReconcileSalesModal({ account, onClose, onSuccess }: { account: Account
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 border-b">
                 <tr>
-                  <th className="px-2 py-2 text-left"></th>
+                  <th className="px-2 py-2 text-left">
+                    <input
+                      type="checkbox"
+                      checked={sales.length > 0 && selectedIds.size === sales.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < sales.length;
+                      }}
+                      onChange={() => (selectedIds.size === sales.length ? deselectAll() : selectAll())}
+                    />
+                  </th>
                   <th className="px-2 py-2 text-left font-medium">Fecha y hora</th>
                   <th className="px-2 py-2 text-left font-medium">Método</th>
                   <th className="px-2 py-2 text-left font-medium">Referencia</th>
