@@ -169,6 +169,7 @@ export class LocalCashBoxService {
           relatedLocalExpense: {
             select: { id: true, supplierNameSnapshot: true, description: true },
           },
+          relatedPosPayment: { select: { createdAt: true } },
           createdByEmployee: { select: { id: true, displayName: true } },
         },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],

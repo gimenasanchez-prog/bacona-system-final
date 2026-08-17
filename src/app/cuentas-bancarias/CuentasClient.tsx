@@ -40,6 +40,7 @@ type Movement = {
   description: string | null;
   balanceAfterCents: number;
   createdByEmployee: { displayName: string };
+  relatedPosPayment: { createdAt: string } | null;
 };
 
 type SaleDeductions = {
@@ -351,7 +352,18 @@ function MovementsModal({ account, onClose }: { account: Account; onClose: () =>
             <tbody>
               {movements.map((m) => (
                 <tr key={m.id} className="border-b last:border-b-0">
-                  <td className="px-3 py-2">{new Date(m.date).toLocaleDateString("es-AR")}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {new Date(m.date).toLocaleDateString("es-AR")}
+                    {m.relatedPosPayment && (
+                      <div className="text-xs text-neutral-500">
+                        Venta: {new Date(m.relatedPosPayment.createdAt).toLocaleDateString("es-AR")}{" "}
+                        {new Date(m.relatedPosPayment.createdAt).toLocaleTimeString("es-AR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{SOURCE_LABEL[m.sourceType] ?? m.sourceType}</td>
                   <td className="px-3 py-2 text-xs">{m.description ?? "—"}</td>
                   <td className={`px-3 py-2 text-right font-semibold ${m.type === "IN" ? "text-green-700" : "text-red-700"}`}>
