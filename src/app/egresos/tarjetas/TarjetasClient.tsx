@@ -160,7 +160,7 @@ export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
                     {expanded && (
                       <tr className="border-b last:border-b-0 bg-neutral-50">
                         <td colSpan={7} className="px-3 py-3">
-                          <PeriodDetail cardId={card.id} period={p.period} />
+                          <PeriodDetail cardId={card.id} period={p.period} isGerencia={isGerencia} />
                         </td>
                       </tr>
                     )}
@@ -207,14 +207,27 @@ export function TarjetasClient({ isGerencia }: { isGerencia: boolean }) {
   );
 }
 
-function PeriodDetail({ cardId, period }: { cardId: string; period: string }) {
+function PeriodDetail({ cardId, period, isGerencia }: { cardId: string; period: string; isGerencia: boolean }) {
   const [detail, setDetail] = useState<PeriodDetail | null>(null);
+  const [editingPayment, setEditingPayment] = useState<PeriodDetail["payments"][number] | null>(null);
 
-  useEffect(() => {
+  const loadDetail = useCallback(() => {
     fetch(`/api/egresos/tarjetas/${cardId}/periodo?period=${encodeURIComponent(period)}`)
       .then((r) => r.json())
       .then(setDetail);
   }, [cardId, period]);
+
+  useEffect(() => {
+    loadDetail();
+  }, [loadDetail]);
+
+  async function handleDeletePayment(paymentId: string) {
+    if (!window.confirm("¿Eliminar este pago de resumen? Esto revierte el impacto en la cuenta de origen.")) return;
+    const res = await fetch(`/api/egresos/tarjetas/${cardId}/pagos/${paymentId}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || "Error al eliminar el pago."); return; }
+    loadDetail();
+  }
 
   if (!detail) return <div className="text-xs text-neutral-500">Cargando...</div>;
 
@@ -248,12 +261,114 @@ function PeriodDetail({ cardId, period }: { cardId: string; period: string }) {
                   {new Date(p.paidAt).toLocaleDateString("es-AR")} · {p.cashBox.name}
                   {p.notes ? ` · ${p.notes}` : ""}
                 </span>
-                <span className="font-medium">{formatArsFromCents(p.totalAmountCents)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{formatArsFromCents(p.totalAmountCents)}</span>
+                  {isGerencia && (
+                    <>
+                      <button onClick={() => setEditingPayment(p)} className="underline text-neutral-500 hover:text-neutral-700">
+                        Editar
+                      </button>
+                      <button onClick={() => handleDeletePayment(p.id)} className="underline text-red-500 hover:text-red-700">
+                        Eliminar
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
+      {editingPayment && (
+        <EditStatementPaymentModal
+          cardId={cardId}
+          payment={editingPayment}
+          onClose={() => setEditingPayment(null)}
+          onSuccess={() => { setEditingPayment(null); loadDetail(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditStatementPaymentModal({
+  cardId,
+  payment,
+  onClose,
+  onSuccess,
+}: {
+  cardId: string;
+  payment: PeriodDetail["payments"][number];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [amountArs, setAmountArs] = useState((payment.totalAmountCents / 100).toFixed(2));
+  const [cashBoxId, setCashBoxId] = useState(payment.cashBox.id);
+  const [notes, setNotes] = useState(payment.notes ?? "");
+  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/egresos/cuentas?kind=CUENTA_BANCARIA")
+      .then((r) => r.json())
+      .then((d) => setCashBoxes(d.items ?? []));
+  }, []);
+
+  async function handleSubmit() {
+    setError(null);
+    const amountCents = Math.round(Number(amountArs.replace(",", ".")) * 100);
+    if (!amountCents || amountCents <= 0) return setError("Ingresá un monto válido.");
+    if (!cashBoxId) return setError("Elegí una cuenta bancaria.");
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/egresos/tarjetas/${cardId}/pagos/${payment.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amountCents, cashBoxId, notes: notes || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al actualizar el pago.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+        <div className="border-b px-6 py-4 font-semibold text-neutral-800">Editar pago de resumen</div>
+        <div className="px-6 py-4 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Monto ($)</label>
+            <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Cuenta bancaria</label>
+            <select value={cashBoxId} onChange={(e) => setCashBoxId(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+              <option value="">Elegir...</option>
+              {cashBoxes.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Notas (opcional)</label>
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

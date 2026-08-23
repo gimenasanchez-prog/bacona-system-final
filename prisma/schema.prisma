@@ -196,8 +196,11 @@ model Employee {
   priceHistoryCreated                PriceHistory[]               @relation("EmployeePriceHistoryCreated")
   priceBulkUpdatesCreated            PriceBulkUpdate[]            @relation("EmployeePriceBulkUpdatesCreated")
   supplierPaymentsCreated            SupplierPayment[]            @relation("EmployeeSupplierPaymentsCreated")
+  supplierPaymentsUpdated            SupplierPayment[]            @relation("EmployeeSupplierPaymentsUpdated")
   creditCardStatementPaymentsCreated CreditCardStatementPayment[] @relation("EmployeeCreditCardStatementPaymentsCreated")
+  creditCardStatementPaymentsUpdated CreditCardStatementPayment[] @relation("EmployeeCreditCardStatementPaymentsUpdated")
   costoFijoPaymentsCreated           CostoFijoPayment[]           @relation("EmployeeCostoFijoPaymentsCreated")
+  costoFijoPaymentsUpdated           CostoFijoPayment[]           @relation("EmployeeCostoFijoPaymentsUpdated")
   hourlyRateCents                    Int?
   hoursEntries                       EmployeeHoursEntry[]
   hoursPayments                      EmployeeHoursPayment[]       @relation("EmployeeHoursPaymentsEmployee")
@@ -980,11 +983,14 @@ model SupplierPayment {
   notes               String?
   createdByEmployeeId String
   createdAt           DateTime              @default(now())
+  updatedAt           DateTime?             @updatedAt
+  updatedByEmployeeId String?
   supplier            Supplier              @relation(fields: [supplierId], references: [id])
   payable             SupplierPayable?      @relation(fields: [payableId], references: [id])
   cashBox             LocalCashBox?         @relation(fields: [cashBoxId], references: [id])
   creditCard          CreditCard?           @relation(fields: [creditCardId], references: [id])
   createdByEmployee   Employee              @relation("EmployeeSupplierPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  updatedByEmployee   Employee?             @relation("EmployeeSupplierPaymentsUpdated", fields: [updatedByEmployeeId], references: [id])
   localCashMovement   LocalCashMovement?
   creditCardCharges   CreditCardCharge[]
 
@@ -1034,9 +1040,12 @@ model CreditCardStatementPayment {
   paidAt              DateTime           @default(now())
   createdByEmployeeId String
   notes               String?
+  updatedAt           DateTime?          @updatedAt
+  updatedByEmployeeId String?
   creditCard          CreditCard         @relation(fields: [creditCardId], references: [id])
   cashBox             LocalCashBox       @relation(fields: [cashBoxId], references: [id])
   createdByEmployee   Employee           @relation("EmployeeCreditCardStatementPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  updatedByEmployee   Employee?          @relation("EmployeeCreditCardStatementPaymentsUpdated", fields: [updatedByEmployeeId], references: [id])
   localCashMovement   LocalCashMovement?
 
   @@index([creditCardId, period])
@@ -1050,9 +1059,12 @@ model CostoFijoPayment {
   cashBoxId           String
   paidAt              DateTime           @default(now())
   createdByEmployeeId String
+  updatedAt           DateTime?          @updatedAt
+  updatedByEmployeeId String?
   costoFijo           CostoFijo          @relation(fields: [costoFijoId], references: [id])
   cashBox             LocalCashBox       @relation(fields: [cashBoxId], references: [id])
   createdByEmployee   Employee           @relation("EmployeeCostoFijoPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  updatedByEmployee   Employee?          @relation("EmployeeCostoFijoPaymentsUpdated", fields: [updatedByEmployeeId], references: [id])
   localCashMovement   LocalCashMovement?
 
   @@index([costoFijoId, period])

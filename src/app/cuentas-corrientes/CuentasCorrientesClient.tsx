@@ -296,6 +296,100 @@ const CHARGE_CATEGORY_LABELS: Record<string, string> = {
   OTRO: "Otro",
 };
 
+function EditCargoDirectoModal({ charge, onClose, onSuccess }: {
+  charge: DirectCharge;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [date, setDate] = useState(toDateInputValue(charge.date));
+  const [category, setCategory] = useState<string>(charge.category);
+  const [description, setDescription] = useState(charge.description);
+  const [motive, setMotive] = useState(charge.motive);
+  const [amountArs, setAmountArs] = useState((charge.amountCents / 100).toString());
+  const [comandaNumber, setComandaNumber] = useState(charge.comandaNumber ?? "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setError(null);
+    if (!description.trim()) return setError("La descripción es obligatoria.");
+    if (!motive.trim()) return setError("El motivo es obligatorio.");
+    const amountCents = Number(amountArs.replace(",", "."));
+    if (!amountCents || amountCents <= 0) return setError("Ingresá un monto válido.");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/cuentas-corrientes/direct-charges/${charge.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          date,
+          description: description.trim(),
+          motive: motive.trim(),
+          category,
+          amountCents,
+          comandaNumber: comandaNumber.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar el cargo.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="border-b px-6 py-4 font-semibold text-neutral-800">Editar cargo directo</div>
+        <div className="px-6 py-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha del consumo</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 mb-1">Categoría</label>
+              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+                {Object.entries(CHARGE_CATEGORY_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Descripción</label>
+            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Motivo</label>
+            <textarea value={motive} onChange={(e) => setMotive(e.target.value)} rows={2} className="w-full rounded border px-3 py-2 text-sm resize-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 mb-1">Monto ($)</label>
+              <input type="number" min="0.01" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 mb-1">N° de comanda <span className="text-neutral-400">(opcional)</span></label>
+              <input type="text" value={comandaNumber} onChange={(e) => setComandaNumber(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+            </div>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConsumosPreviewModal({ customerName, period, sales, directCharges, onClose, onRefresh }: {
   customerName: string;
   period: { from: Date | string; to: Date | string };
@@ -309,6 +403,16 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
   const total = salesTotal + chargesTotal;
   const periodStr = formatPeriod(period.from, period.to);
   const isEmpty = sales.length === 0 && directCharges.length === 0;
+
+  const [editingCharge, setEditingCharge] = useState<DirectCharge | null>(null);
+
+  async function handleDeleteCharge(id: string) {
+    if (!window.confirm("¿Eliminar este cargo directo? Esta acción no se puede deshacer.")) return;
+    const res = await fetch(`/api/cuentas-corrientes/direct-charges/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || "Error al eliminar el cargo."); return; }
+    onRefresh();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -372,6 +476,22 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                         <span>{charge.description}</span>
                       </div>
                       <div className="text-xs text-neutral-400 mt-0.5">Motivo: {charge.motive}</div>
+                      {!charge.cuentaCorrienteInvoiceId && (
+                        <div className="mt-1 flex gap-2">
+                          <button
+                            onClick={() => setEditingCharge(charge)}
+                            className="text-xs underline text-neutral-500 hover:text-neutral-700"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCharge(charge.id)}
+                            className="text-xs underline text-red-500 hover:text-red-700"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-4">
                       {charge.comandaNumber
@@ -405,6 +525,13 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
           </div>
         </div>
       </div>
+      {editingCharge && (
+        <EditCargoDirectoModal
+          charge={editingCharge}
+          onClose={() => setEditingCharge(null)}
+          onSuccess={() => { setEditingCharge(null); onRefresh(); }}
+        />
+      )}
     </div>
   );
 }

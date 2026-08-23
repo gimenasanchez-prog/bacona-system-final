@@ -19,6 +19,7 @@ export async function GET() {
               cashBox: { select: { id: true, name: true } },
               creditCard: { select: { id: true, name: true } },
             },
+            orderBy: { date: "asc" },
           },
         },
       },

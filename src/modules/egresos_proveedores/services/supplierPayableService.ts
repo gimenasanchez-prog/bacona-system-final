@@ -1,4 +1,4 @@
-import { Prisma, SupplierPaymentMethod } from "@prisma/client";
+import { Prisma, SupplierPayment, SupplierPaymentMethod } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { assertIntCents } from "@/lib/money";
@@ -16,6 +16,18 @@ export type RegisterSupplierPaymentInput = {
   createdByEmployeeId: string;
   skipCashImpact?: boolean;
 };
+
+export type UpdateSupplierPaymentInput = Partial<{
+  payableId: string | null;
+  amountCents: number;
+  date: Date;
+  method: SupplierPaymentMethod;
+  cashBoxId: string | null;
+  creditCardId: string | null;
+  installments: number;
+  notes: string | null;
+  skipCashImpact: boolean;
+}>;
 
 async function getLocalCashBalanceCents(tx: Prisma.TransactionClient, localCashBoxId: string) {
   const grouped = await tx.localCashMovement.groupBy({
@@ -37,6 +49,180 @@ function nextStatus(totalAmountCents: number, paidAmountCents: number) {
 function addMonths(date: Date, months: number) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
   return d;
+}
+
+// Aplica los efectos de un pago (movimiento de caja, cuotas de tarjeta, avance de
+// deuda) y crea o actualiza el registro `SupplierPayment` según se pase o no
+// `existingPaymentId`. Compartido por `registerPayment` (create) y `updatePayment`
+// (revert + reapply) para no duplicar las validaciones de negocio.
+async function applyPaymentEffects(
+  tx: Prisma.TransactionClient,
+  input: RegisterSupplierPaymentInput,
+  existingPaymentId?: string,
+  updatedByEmployeeId?: string
+): Promise<SupplierPayment> {
+  assertIntCents(input.amountCents, "amountCents");
+  if (input.amountCents <= 0) throw new Error("El monto a pagar debe ser mayor a cero.");
+
+  if (input.method === "TARJETA_CREDITO" && !input.creditCardId) {
+    throw new Error("Elegí una tarjeta de crédito.");
+  }
+  if ((input.method === "EFECTIVO_CAJA" || input.method === "TRANSFERENCIA") && !input.cashBoxId) {
+    throw new Error("Elegí una caja o cuenta.");
+  }
+
+  const supplier = await tx.supplier.findUnique({ where: { id: input.supplierId } });
+  if (!supplier || !supplier.active) throw new Error("Proveedor no encontrado o inactivo.");
+
+  const payable = input.payableId
+    ? await tx.supplierPayable.findUnique({ where: { id: input.payableId } })
+    : await tx.supplierPayable.findFirst({
+        where: { supplierId: input.supplierId, status: { not: "PAID" } },
+        orderBy: { createdAt: "asc" },
+      });
+
+  if (payable && payable.supplierId !== input.supplierId) {
+    throw new Error("La deuda elegida no pertenece a este proveedor.");
+  }
+  if (payable) {
+    const remaining = payable.totalAmountCents - payable.paidAmountCents;
+    if (input.amountCents > remaining) {
+      throw new Error("El monto a pagar supera la deuda pendiente.");
+    }
+  }
+
+  const paymentData = {
+    supplierId: input.supplierId,
+    payableId: payable?.id ?? null,
+    amountCents: input.amountCents,
+    date: input.date,
+    method: input.method,
+    cashBoxId: input.cashBoxId ?? null,
+    creditCardId: input.creditCardId ?? null,
+    installments: input.method === "TARJETA_CREDITO" ? (input.installments ?? 1) : null,
+    notes: input.notes ?? null,
+  };
+
+  const payment = existingPaymentId
+    ? await tx.supplierPayment.update({
+        where: { id: existingPaymentId },
+        data: { ...paymentData, updatedByEmployeeId: updatedByEmployeeId ?? null, updatedAt: new Date() },
+      })
+    : await tx.supplierPayment.create({
+        data: { ...paymentData, createdByEmployeeId: input.createdByEmployeeId },
+      });
+
+  if ((input.method === "EFECTIVO_CAJA" || input.method === "TRANSFERENCIA") && !input.skipCashImpact) {
+    const cashBoxId = input.cashBoxId!;
+    const balance = await getLocalCashBalanceCents(tx, cashBoxId);
+    if (balance < input.amountCents) {
+      throw new Error("Saldo insuficiente en la caja/cuenta elegida.");
+    }
+    await tx.localCashMovement.create({
+      data: {
+        localCashBoxId: cashBoxId,
+        type: "OUT",
+        sourceType: "SUPPLIER_PAYMENT",
+        relatedSupplierPaymentId: payment.id,
+        amountCents: input.amountCents,
+        date: input.date,
+        description: `Pago a ${supplier.name}${input.notes ? ` — ${input.notes}` : ""}`,
+        createdByEmployeeId: updatedByEmployeeId ?? input.createdByEmployeeId,
+      },
+    });
+  }
+
+  if (input.method === "TARJETA_CREDITO") {
+    const card = await tx.creditCard.findUnique({ where: { id: input.creditCardId! } });
+    if (!card || !card.active) throw new Error("Tarjeta no encontrada o inactiva.");
+
+    const installments = Math.max(1, input.installments ?? 1);
+    // El período nombrado es el mes SIGUIENTE al de cierre (no el mes de
+    // cierre en sí) — una compra que entra en el resumen que cierra el
+    // día `closingDay` se llama por el mes que sigue a ese cierre.
+    const basePeriod =
+      input.date.getUTCDate() >= card.closingDay ? addMonths(input.date, 2) : addMonths(input.date, 1);
+
+    const baseAmount = Math.floor(input.amountCents / installments);
+    const remainder = input.amountCents - baseAmount * installments;
+
+    for (let i = 0; i < installments; i++) {
+      await tx.creditCardCharge.create({
+        data: {
+          creditCardId: card.id,
+          supplierPaymentId: payment.id,
+          description: `Pago a ${supplier.name}${installments > 1 ? ` (cuota ${i + 1}/${installments})` : ""}`,
+          statementPeriod: addMonths(basePeriod, i),
+          installmentNumber: i + 1,
+          totalInstallments: installments,
+          amountCents: i === installments - 1 ? baseAmount + remainder : baseAmount,
+        },
+      });
+    }
+  }
+
+  if (payable) {
+    const newPaidAmountCents = payable.paidAmountCents + input.amountCents;
+    await tx.supplierPayable.update({
+      where: { id: payable.id },
+      data: {
+        paidAmountCents: newPaidAmountCents,
+        status: nextStatus(payable.totalAmountCents, newPaidAmountCents),
+      },
+    });
+  }
+
+  return payment;
+}
+
+// Deshace los efectos de un pago YA aplicado: borra el movimiento de caja
+// asociado (nunca queda huérfano sumando al saldo), borra las cuotas de tarjeta
+// generadas (si method=TARJETA_CREDITO) y revierte el avance sobre la deuda
+// (SupplierPayable) a la que estaba aplicado, si corresponde.
+async function revertPaymentEffects(tx: Prisma.TransactionClient, payment: SupplierPayment) {
+  await tx.localCashMovement.deleteMany({ where: { relatedSupplierPaymentId: payment.id } });
+
+  if (payment.method === "TARJETA_CREDITO") {
+    await tx.creditCardCharge.deleteMany({ where: { supplierPaymentId: payment.id } });
+  }
+
+  if (payment.payableId) {
+    const payable = await tx.supplierPayable.findUnique({ where: { id: payment.payableId } });
+    if (payable) {
+      const newPaidAmountCents = Math.max(0, payable.paidAmountCents - payment.amountCents);
+      await tx.supplierPayable.update({
+        where: { id: payment.payableId },
+        data: {
+          paidAmountCents: newPaidAmountCents,
+          status: nextStatus(payable.totalAmountCents, newPaidAmountCents),
+        },
+      });
+    }
+  }
+}
+
+// Si este pago fue con tarjeta y alguna de las cuotas que generó ya cayó dentro
+// de un resumen que la tarjeta ya pagó (aunque sea parcialmente), bloquear —
+// tocar el pago ahora dejaría el resumen ya pagado desalineado con sus cuotas.
+async function assertNoStatementPaid(tx: Prisma.TransactionClient, payment: SupplierPayment) {
+  if (payment.method !== "TARJETA_CREDITO" || !payment.creditCardId) return;
+
+  const charges = await tx.creditCardCharge.findMany({
+    where: { supplierPaymentId: payment.id },
+    select: { statementPeriod: true },
+  });
+  if (charges.length === 0) return;
+
+  const periods = [...new Set(charges.map((c) => c.statementPeriod.getTime()))].map((t) => new Date(t));
+  const conflict = await tx.creditCardStatementPayment.findFirst({
+    where: { creditCardId: payment.creditCardId, period: { in: periods } },
+  });
+  if (conflict) {
+    throw new Error(
+      "No se puede modificar/eliminar este pago: ya se registró un pago del resumen de tarjeta que incluye " +
+        "una cuota generada por este pago. Anulá primero ese pago de resumen."
+    );
+  }
 }
 
 export type ListSuppliersFilters = {
@@ -138,115 +324,55 @@ export class SupplierPayableService {
   }
 
   static async registerPayment(input: RegisterSupplierPaymentInput) {
-    assertIntCents(input.amountCents, "amountCents");
-    if (input.amountCents <= 0) throw new Error("El monto a pagar debe ser mayor a cero.");
+    return prisma.$transaction((tx) => applyPaymentEffects(tx, input));
+  }
 
-    if (input.method === "TARJETA_CREDITO" && !input.creditCardId) {
-      throw new Error("Elegí una tarjeta de crédito.");
-    }
-    if ((input.method === "EFECTIVO_CAJA" || input.method === "TRANSFERENCIA") && !input.cashBoxId) {
-      throw new Error("Elegí una caja o cuenta.");
-    }
-
+  static async updatePayment(
+    paymentId: string,
+    input: UpdateSupplierPaymentInput,
+    updatedByEmployeeId: string
+  ) {
     return prisma.$transaction(async (tx) => {
-      const supplier = await tx.supplier.findUnique({ where: { id: input.supplierId } });
-      if (!supplier || !supplier.active) throw new Error("Proveedor no encontrado o inactivo.");
+      const existing = await tx.supplierPayment.findUnique({ where: { id: paymentId } });
+      if (!existing) throw new Error("Pago no encontrado.");
 
-      let payable = input.payableId
-        ? await tx.supplierPayable.findUnique({ where: { id: input.payableId } })
-        : await tx.supplierPayable.findFirst({
-            where: { supplierId: input.supplierId, status: { not: "PAID" } },
-            orderBy: { createdAt: "asc" },
-          });
+      await assertNoStatementPaid(tx, existing);
 
-      if (payable && payable.supplierId !== input.supplierId) {
-        throw new Error("La deuda elegida no pertenece a este proveedor.");
-      }
-      if (payable) {
-        const remaining = payable.totalAmountCents - payable.paidAmountCents;
-        if (input.amountCents > remaining) {
-          throw new Error("El monto a pagar supera la deuda pendiente.");
-        }
-      }
+      const hadMovement = !!(await tx.localCashMovement.findFirst({
+        where: { relatedSupplierPaymentId: paymentId },
+        select: { id: true },
+      }));
+      const previousSkipCashImpact =
+        (existing.method === "EFECTIVO_CAJA" || existing.method === "TRANSFERENCIA") && !hadMovement;
 
-      const payment = await tx.supplierPayment.create({
-        data: {
-          supplierId: input.supplierId,
-          payableId: payable?.id ?? null,
-          amountCents: input.amountCents,
-          date: input.date,
-          method: input.method,
-          cashBoxId: input.cashBoxId ?? null,
-          creditCardId: input.creditCardId ?? null,
-          installments: input.method === "TARJETA_CREDITO" ? (input.installments ?? 1) : null,
-          notes: input.notes ?? null,
-          createdByEmployeeId: input.createdByEmployeeId,
-        },
-      });
+      await revertPaymentEffects(tx, existing);
 
-      if ((input.method === "EFECTIVO_CAJA" || input.method === "TRANSFERENCIA") && !input.skipCashImpact) {
-        const cashBoxId = input.cashBoxId!;
-        const balance = await getLocalCashBalanceCents(tx, cashBoxId);
-        if (balance < input.amountCents) {
-          throw new Error("Saldo insuficiente en la caja/cuenta elegida.");
-        }
-        await tx.localCashMovement.create({
-          data: {
-            localCashBoxId: cashBoxId,
-            type: "OUT",
-            sourceType: "SUPPLIER_PAYMENT",
-            relatedSupplierPaymentId: payment.id,
-            amountCents: input.amountCents,
-            date: input.date,
-            description: `Pago a ${supplier.name}${input.notes ? ` — ${input.notes}` : ""}`,
-            createdByEmployeeId: input.createdByEmployeeId,
-          },
-        });
-      }
+      const merged: RegisterSupplierPaymentInput = {
+        supplierId: existing.supplierId,
+        payableId: input.payableId !== undefined ? input.payableId : existing.payableId,
+        amountCents: input.amountCents ?? existing.amountCents,
+        date: input.date ?? existing.date,
+        method: input.method ?? existing.method,
+        cashBoxId: input.cashBoxId !== undefined ? input.cashBoxId : existing.cashBoxId,
+        creditCardId: input.creditCardId !== undefined ? input.creditCardId : existing.creditCardId,
+        installments: input.installments ?? existing.installments ?? 1,
+        notes: input.notes !== undefined ? input.notes : existing.notes,
+        createdByEmployeeId: existing.createdByEmployeeId,
+        skipCashImpact: input.skipCashImpact ?? previousSkipCashImpact,
+      };
 
-      if (input.method === "TARJETA_CREDITO") {
-        const card = await tx.creditCard.findUnique({ where: { id: input.creditCardId! } });
-        if (!card || !card.active) throw new Error("Tarjeta no encontrada o inactiva.");
+      return applyPaymentEffects(tx, merged, paymentId, updatedByEmployeeId);
+    });
+  }
 
-        const installments = Math.max(1, input.installments ?? 1);
-        // El período nombrado es el mes SIGUIENTE al de cierre (no el mes de
-        // cierre en sí) — una compra que entra en el resumen que cierra el
-        // día `closingDay` se llama por el mes que sigue a ese cierre.
-        const basePeriod =
-          input.date.getUTCDate() >= card.closingDay
-            ? addMonths(input.date, 2)
-            : addMonths(input.date, 1);
+  static async deletePayment(paymentId: string) {
+    return prisma.$transaction(async (tx) => {
+      const payment = await tx.supplierPayment.findUnique({ where: { id: paymentId } });
+      if (!payment) throw new Error("Pago no encontrado.");
 
-        const baseAmount = Math.floor(input.amountCents / installments);
-        const remainder = input.amountCents - baseAmount * installments;
-
-        for (let i = 0; i < installments; i++) {
-          await tx.creditCardCharge.create({
-            data: {
-              creditCardId: card.id,
-              supplierPaymentId: payment.id,
-              description: `Pago a ${supplier.name}${installments > 1 ? ` (cuota ${i + 1}/${installments})` : ""}`,
-              statementPeriod: addMonths(basePeriod, i),
-              installmentNumber: i + 1,
-              totalInstallments: installments,
-              amountCents: i === installments - 1 ? baseAmount + remainder : baseAmount,
-            },
-          });
-        }
-      }
-
-      if (payable) {
-        const newPaidAmountCents = payable.paidAmountCents + input.amountCents;
-        await tx.supplierPayable.update({
-          where: { id: payable.id },
-          data: {
-            paidAmountCents: newPaidAmountCents,
-            status: nextStatus(payable.totalAmountCents, newPaidAmountCents),
-          },
-        });
-      }
-
-      return payment;
+      await assertNoStatementPaid(tx, payment);
+      await revertPaymentEffects(tx, payment);
+      await tx.supplierPayment.delete({ where: { id: paymentId } });
     });
   }
 }

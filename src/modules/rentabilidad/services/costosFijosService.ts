@@ -243,4 +243,105 @@ export class CostosFijosService {
       return payment;
     });
   }
+
+  static async getPeriodDetail(costoFijoId: string, period: Date) {
+    const start = periodStart(period);
+    const [costoFijo, payments] = await Promise.all([
+      prisma.costoFijo.findUniqueOrThrow({ where: { id: costoFijoId } }),
+      prisma.costoFijoPayment.findMany({
+        where: { costoFijoId, period: start },
+        include: { cashBox: { select: { id: true, name: true } } },
+        orderBy: { paidAt: "asc" },
+      }),
+    ]);
+    const paidAmountCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
+    return {
+      costoFijo,
+      payments,
+      totalAmountCents: costoFijo.amountCents,
+      paidAmountCents,
+      remainingCents: costoFijo.amountCents - paidAmountCents,
+    };
+  }
+
+  static async updatePayment(
+    paymentId: string,
+    input: Partial<{ amountCents: number; cashBoxId: string; skipCashImpact: boolean }>,
+    updatedByEmployeeId: string
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.costoFijoPayment.findUnique({ where: { id: paymentId } });
+      if (!existing) throw new Error("Pago no encontrado.");
+
+      const costoFijo = await tx.costoFijo.findUnique({ where: { id: existing.costoFijoId } });
+      if (!costoFijo) throw new Error("Costo fijo no encontrado.");
+
+      const hadMovement = !!(await tx.localCashMovement.findFirst({
+        where: { relatedCostoFijoPaymentId: paymentId },
+        select: { id: true },
+      }));
+      const previousSkipCashImpact = !hadMovement;
+
+      await tx.localCashMovement.deleteMany({ where: { relatedCostoFijoPaymentId: paymentId } });
+
+      const amountCents = input.amountCents ?? existing.amountCents;
+      const cashBoxId = input.cashBoxId ?? existing.cashBoxId;
+      const skipCashImpact = input.skipCashImpact ?? previousSkipCashImpact;
+
+      assertIntCents(amountCents, "amountCents");
+      if (amountCents <= 0) throw new Error("El monto a pagar debe ser mayor a cero.");
+
+      const others = await tx.costoFijoPayment.findMany({
+        where: { costoFijoId: existing.costoFijoId, period: existing.period, id: { not: paymentId } },
+      });
+      const othersPaidCents = others.reduce((sum, p) => sum + p.amountCents, 0);
+      if (othersPaidCents + amountCents > costoFijo.amountCents) {
+        throw new Error("El monto supera lo pendiente de este período.");
+      }
+
+      if (!skipCashImpact) {
+        const grouped = await tx.localCashMovement.groupBy({
+          by: ["type"],
+          where: { localCashBoxId: cashBoxId },
+          _sum: { amountCents: true },
+        });
+        const inSum = grouped.find((g) => g.type === "IN")?._sum.amountCents ?? 0;
+        const outSum = grouped.find((g) => g.type === "OUT")?._sum.amountCents ?? 0;
+        if (inSum - outSum < amountCents) {
+          throw new Error("Saldo insuficiente en la caja/cuenta elegida.");
+        }
+      }
+
+      const updated = await tx.costoFijoPayment.update({
+        where: { id: paymentId },
+        data: { amountCents, cashBoxId, updatedByEmployeeId, updatedAt: new Date() },
+      });
+
+      if (!skipCashImpact) {
+        await tx.localCashMovement.create({
+          data: {
+            localCashBoxId: cashBoxId,
+            type: "OUT",
+            sourceType: "COSTO_FIJO_PAYMENT",
+            relatedCostoFijoPaymentId: updated.id,
+            amountCents,
+            date: updated.paidAt,
+            description: `${costoFijo.nombre} — período ${existing.period.toISOString().slice(0, 7)}`,
+            createdByEmployeeId: updatedByEmployeeId,
+          },
+        });
+      }
+
+      return updated;
+    });
+  }
+
+  static async deletePayment(paymentId: string) {
+    return prisma.$transaction(async (tx) => {
+      const payment = await tx.costoFijoPayment.findUnique({ where: { id: paymentId } });
+      if (!payment) throw new Error("Pago no encontrado.");
+      await tx.localCashMovement.deleteMany({ where: { relatedCostoFijoPaymentId: paymentId } });
+      await tx.costoFijoPayment.delete({ where: { id: paymentId } });
+    });
+  }
 }

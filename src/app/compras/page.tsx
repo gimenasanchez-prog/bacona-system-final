@@ -81,14 +81,16 @@ function paymentStatusLabel(p: Purchase): string {
     const prefix = p.payable.status === "PARTIAL" ? "Parcial, resta" : "Pendiente";
     return `${prefix} ${formatArsFromCents(remaining)}`;
   }
-  const lastPayment = p.payable.payments[p.payable.payments.length - 1];
-  if (!lastPayment) return "Pagado";
-  const methodLabel = METHOD_LABEL[lastPayment.method] ?? lastPayment.method;
-  const source = lastPayment.cashBox?.name ?? lastPayment.creditCard?.name;
-  const cuotas = lastPayment.method === "TARJETA_CREDITO" && lastPayment.installments && lastPayment.installments > 1
-    ? ` (${lastPayment.installments} cuotas)`
-    : "";
-  return `Pagado — ${methodLabel}${source ? ` ${source}` : ""}${cuotas}`;
+  if (p.payable.payments.length === 0) return "Pagado";
+  const labels = p.payable.payments.map((payment) => {
+    const methodLabel = METHOD_LABEL[payment.method] ?? payment.method;
+    const source = payment.cashBox?.name ?? payment.creditCard?.name;
+    const cuotas = payment.method === "TARJETA_CREDITO" && payment.installments && payment.installments > 1
+      ? ` (${payment.installments} cuotas)`
+      : "";
+    return `${methodLabel}${source ? ` ${source}` : ""}${cuotas}`;
+  });
+  return `Pagado — ${labels.join(" + ")}`;
 }
 
 const METRIC_BASE: Record<string, number> = { ML: 1, L: 1000, G: 1, KG: 1000, UN: 1 };

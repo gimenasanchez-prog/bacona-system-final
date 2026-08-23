@@ -195,4 +195,103 @@ export class CreditCardService {
       return statementPayment;
     });
   }
+
+  static async updateStatementPayment(
+    paymentId: string,
+    input: Partial<{ period: Date; amountCents: number; cashBoxId: string; notes: string | null; skipCashImpact: boolean }>,
+    updatedByEmployeeId: string
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.creditCardStatementPayment.findUnique({ where: { id: paymentId } });
+      if (!existing) throw new Error("Pago no encontrado.");
+
+      const card = await tx.creditCard.findUnique({ where: { id: existing.creditCardId } });
+      if (!card) throw new Error("Tarjeta no encontrada.");
+
+      const hadMovement = !!(await tx.localCashMovement.findFirst({
+        where: { relatedCreditCardStatementPaymentId: paymentId },
+        select: { id: true },
+      }));
+      const previousSkipCashImpact = !hadMovement;
+
+      await tx.localCashMovement.deleteMany({ where: { relatedCreditCardStatementPaymentId: paymentId } });
+
+      const period = input.period ?? existing.period;
+      const amountCents = input.amountCents ?? existing.totalAmountCents;
+      const cashBoxId = input.cashBoxId ?? existing.cashBoxId;
+      const notes = input.notes !== undefined ? input.notes : existing.notes;
+      const skipCashImpact = input.skipCashImpact ?? previousSkipCashImpact;
+
+      assertIntCents(amountCents, "amountCents");
+      if (amountCents <= 0) throw new Error("El monto a pagar debe ser mayor a cero.");
+
+      const [chargesAgg, paymentsAgg] = await Promise.all([
+        tx.creditCardCharge.aggregate({
+          where: { creditCardId: existing.creditCardId, statementPeriod: period },
+          _sum: { amountCents: true },
+        }),
+        tx.creditCardStatementPayment.aggregate({
+          where: { creditCardId: existing.creditCardId, period, id: { not: paymentId } },
+          _sum: { totalAmountCents: true },
+        }),
+      ]);
+      const totalAmountCents = chargesAgg._sum.amountCents ?? 0;
+      const paidAmountCents = paymentsAgg._sum.totalAmountCents ?? 0;
+      const remainingCents = totalAmountCents - paidAmountCents;
+      if (amountCents > remainingCents) {
+        throw new Error("El monto supera el saldo pendiente del período.");
+      }
+
+      if (!skipCashImpact) {
+        const grouped = await tx.localCashMovement.groupBy({
+          by: ["type"],
+          where: { localCashBoxId: cashBoxId },
+          _sum: { amountCents: true },
+        });
+        const inSum = grouped.find((g) => g.type === "IN")?._sum.amountCents ?? 0;
+        const outSum = grouped.find((g) => g.type === "OUT")?._sum.amountCents ?? 0;
+        if (inSum - outSum < amountCents) {
+          throw new Error("Saldo insuficiente en la cuenta elegida.");
+        }
+      }
+
+      const updated = await tx.creditCardStatementPayment.update({
+        where: { id: paymentId },
+        data: {
+          period,
+          totalAmountCents: amountCents,
+          cashBoxId,
+          notes,
+          updatedByEmployeeId,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (!skipCashImpact) {
+        await tx.localCashMovement.create({
+          data: {
+            localCashBoxId: cashBoxId,
+            type: "OUT",
+            sourceType: "CREDIT_CARD_STATEMENT_PAYMENT",
+            relatedCreditCardStatementPaymentId: updated.id,
+            amountCents,
+            date: updated.paidAt,
+            description: `Pago resumen ${card.name} — período ${period.toISOString().slice(0, 7)}`,
+            createdByEmployeeId: updatedByEmployeeId,
+          },
+        });
+      }
+
+      return updated;
+    });
+  }
+
+  static async deleteStatementPayment(paymentId: string) {
+    return prisma.$transaction(async (tx) => {
+      const payment = await tx.creditCardStatementPayment.findUnique({ where: { id: paymentId } });
+      if (!payment) throw new Error("Pago no encontrado.");
+      await tx.localCashMovement.deleteMany({ where: { relatedCreditCardStatementPaymentId: paymentId } });
+      await tx.creditCardStatementPayment.delete({ where: { id: paymentId } });
+    });
+  }
 }

@@ -48,6 +48,7 @@ export type DirectCharge = {
   amountCents: number;
   comandaNumber: string | null;
   createdAt: Date;
+  cuentaCorrienteInvoiceId: string | null;
 };
 
 export type InvoiceSummary = {
@@ -310,6 +311,7 @@ export class CuentaCorrienteService {
         amountCents: c.amountCents,
         comandaNumber: c.comandaNumber,
         createdAt: c.createdAt,
+        cuentaCorrienteInvoiceId: c.cuentaCorrienteInvoiceId,
       }));
 
       // Construir mapa de facturas por período (key = periodFrom ISO date)

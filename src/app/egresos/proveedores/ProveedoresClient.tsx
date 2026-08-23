@@ -27,9 +27,12 @@ type Payable = {
 
 type Payment = {
   id: string;
+  payableId: string | null;
   amountCents: number;
   date: string;
   method: "EFECTIVO_CAJA" | "TRANSFERENCIA" | "TARJETA_CREDITO";
+  cashBoxId: string | null;
+  creditCardId: string | null;
   installments: number | null;
   notes: string | null;
   cashBox: { name: string } | null;
@@ -211,6 +214,7 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
       {selectedSupplierId && (
         <SupplierDetailModal
           supplierId={selectedSupplierId}
+          isGerencia={isGerencia}
           onClose={() => setSelectedSupplierId(null)}
         />
       )}
@@ -317,19 +321,32 @@ function SupplierFormModal({
   );
 }
 
-function SupplierDetailModal({ supplierId, onClose }: { supplierId: string; onClose: () => void }) {
+function SupplierDetailModal({ supplierId, isGerencia, onClose }: { supplierId: string; isGerencia: boolean; onClose: () => void }) {
   const [detail, setDetail] = useState<{
     supplier: { name: string };
     payables: Payable[];
     payments: Payment[];
     debtCents: number;
   } | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
 
-  useEffect(() => {
+  const loadDetail = useCallback(() => {
     fetch(`/api/egresos/proveedores/${supplierId}`)
       .then((r) => r.json())
       .then(setDetail);
   }, [supplierId]);
+
+  useEffect(() => {
+    loadDetail();
+  }, [loadDetail]);
+
+  async function handleDeletePayment(paymentId: string) {
+    if (!window.confirm("¿Eliminar este pago? Esto revierte el impacto en la caja/cuenta de origen y en la deuda asociada.")) return;
+    const res = await fetch(`/api/egresos/proveedores/pagos/${paymentId}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || "Error al eliminar el pago."); return; }
+    loadDetail();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -381,7 +398,19 @@ function SupplierDetailModal({ supplierId, onClose }: { supplierId: string; onCl
                           {new Date(p.date).toLocaleDateString("es-AR")} · {p.cashBox?.name ?? p.creditCard?.name ?? "—"} · {p.createdByEmployee.displayName}
                         </div>
                       </div>
-                      <span className="font-semibold">{formatArsFromCents(p.amountCents)}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold">{formatArsFromCents(p.amountCents)}</span>
+                        {isGerencia && (
+                          <div className="flex gap-2">
+                            <button onClick={() => setEditingPayment(p)} className="text-xs underline text-neutral-500 hover:text-neutral-700">
+                              Editar
+                            </button>
+                            <button onClick={() => handleDeletePayment(p.id)} className="text-xs underline text-red-500 hover:text-red-700">
+                              Eliminar
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {!detail.payments.length && <div className="text-sm text-neutral-500">Sin pagos registrados.</div>}
@@ -389,6 +418,166 @@ function SupplierDetailModal({ supplierId, onClose }: { supplierId: string; onCl
               </div>
             </>
           )}
+        </div>
+      </div>
+      {editingPayment && (
+        <EditSupplierPaymentModal
+          payment={editingPayment}
+          payables={detail?.payables ?? []}
+          onClose={() => setEditingPayment(null)}
+          onSuccess={() => { setEditingPayment(null); loadDetail(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditSupplierPaymentModal({
+  payment,
+  payables,
+  onClose,
+  onSuccess,
+}: {
+  payment: Payment;
+  payables: Payable[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [amountArs, setAmountArs] = useState((payment.amountCents / 100).toFixed(2));
+  const [date, setDate] = useState(payment.date.slice(0, 10));
+  const [method, setMethod] = useState(payment.method);
+  const [payableId, setPayableId] = useState(payment.payableId ?? "");
+  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  const [cards, setCards] = useState<CreditCard[]>([]);
+  const [cashBoxId, setCashBoxId] = useState(payment.cashBoxId ?? "");
+  const [creditCardId, setCreditCardId] = useState(payment.creditCardId ?? "");
+  const [installments, setInstallments] = useState(payment.installments ?? 1);
+  const [notes, setNotes] = useState(payment.notes ?? "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/egresos/cuentas?kind=EFECTIVO").then((r) => r.json()),
+      fetch("/api/egresos/cuentas?kind=CUENTA_BANCARIA").then((r) => r.json()),
+      fetch("/api/egresos/tarjetas").then((r) => r.json()),
+    ]).then(([efectivo, bancarias, tarjetas]) => {
+      setCashBoxes([...(efectivo.items ?? []), ...(bancarias.items ?? [])]);
+      setCards(tarjetas.items ?? []);
+    });
+  }, []);
+
+  const boxesForMethod = cashBoxes.filter((b) =>
+    method === "EFECTIVO_CAJA" ? b.kind === "EFECTIVO" : b.kind === "CUENTA_BANCARIA"
+  );
+  const payableOptions = payables.filter((p) => p.status !== "PAID" || p.id === payment.payableId);
+
+  async function handleSubmit() {
+    setError(null);
+    const amountCents = Math.round(Number(amountArs.replace(",", ".")) * 100);
+    if (!amountCents || amountCents <= 0) return setError("Ingresá un monto válido.");
+    if (method !== "TARJETA_CREDITO" && !cashBoxId) return setError("Elegí una caja o cuenta.");
+    if (method === "TARJETA_CREDITO" && !creditCardId) return setError("Elegí una tarjeta.");
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/egresos/proveedores/pagos/${payment.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          payableId: payableId || null,
+          amountCents,
+          date: new Date(date + "T12:00:00.000Z").toISOString(),
+          method,
+          cashBoxId: method !== "TARJETA_CREDITO" ? cashBoxId : null,
+          creditCardId: method === "TARJETA_CREDITO" ? creditCardId : null,
+          installments: method === "TARJETA_CREDITO" ? installments : undefined,
+          notes: notes || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al actualizar el pago.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+        <div className="border-b px-6 py-4 font-semibold text-neutral-800">Editar pago a proveedor</div>
+        <div className="px-6 py-4 space-y-3 overflow-y-auto flex-1">
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Aplicar a factura/deuda (opcional)</label>
+            <select value={payableId} onChange={(e) => setPayableId(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+              <option value="">Sin asignar</option>
+              {payableOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.sourcePurchase ? `Compra ${p.sourcePurchase.invoiceNumber ?? p.sourcePurchase.id.slice(0, 8)}` : p.description ?? "Deuda manual"}
+                  {" — total "}{formatArsFromCents(p.totalAmountCents)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Monto ($)</label>
+            <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Método de pago</label>
+            <select value={method} onChange={(e) => { setMethod(e.target.value as typeof method); setCashBoxId(""); setCreditCardId(""); }} className="w-full rounded border px-3 py-2 text-sm">
+              <option value="EFECTIVO_CAJA">Efectivo de caja</option>
+              <option value="TRANSFERENCIA">Transferencia</option>
+              <option value="TARJETA_CREDITO">Tarjeta de crédito</option>
+            </select>
+          </div>
+          {method !== "TARJETA_CREDITO" ? (
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 mb-1">
+                {method === "EFECTIVO_CAJA" ? "Caja" : "Cuenta bancaria"}
+              </label>
+              <select value={cashBoxId} onChange={(e) => setCashBoxId(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+                <option value="">Elegir...</option>
+                {boxesForMethod.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">Tarjeta</label>
+                <select value={creditCardId} onChange={(e) => setCreditCardId(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+                  <option value="">Elegir...</option>
+                  {cards.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-500 mb-1">Cuotas</label>
+                <input type="number" min="1" max="24" value={installments} onChange={(e) => setInstallments(Number(e.target.value))} className="w-full rounded border px-3 py-2 text-sm" />
+              </div>
+            </>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Notas (opcional)</label>
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Guardar"}
+          </button>
         </div>
       </div>
     </div>
@@ -407,6 +596,8 @@ function RegisterPaymentModal({
   onSuccess: () => void;
 }) {
   const [supplierId, setSupplierId] = useState(initialSupplier.id);
+  const [payableId, setPayableId] = useState("");
+  const [payables, setPayables] = useState<Payable[]>([]);
   const [amountArs, setAmountArs] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<"EFECTIVO_CAJA" | "TRANSFERENCIA" | "TARJETA_CREDITO">("EFECTIVO_CAJA");
@@ -431,9 +622,23 @@ function RegisterPaymentModal({
     });
   }, []);
 
+  useEffect(() => {
+    setPayableId("");
+    if (!supplierId) { setPayables([]); return; }
+    fetch(`/api/egresos/proveedores/${supplierId}`)
+      .then((r) => r.json())
+      .then((d: { payables?: Payable[] }) => setPayables((d.payables ?? []).filter((p) => p.status !== "PAID")));
+  }, [supplierId]);
+
   const boxesForMethod = cashBoxes.filter((b) =>
     method === "EFECTIVO_CAJA" ? b.kind === "EFECTIVO" : b.kind === "CUENTA_BANCARIA"
   );
+
+  function handleSelectPayable(id: string) {
+    setPayableId(id);
+    const p = payables.find((x) => x.id === id);
+    if (p) setAmountArs(((p.totalAmountCents - p.paidAmountCents) / 100).toFixed(2));
+  }
 
   async function handleSubmit() {
     setError(null);
@@ -450,6 +655,7 @@ function RegisterPaymentModal({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           supplierId,
+          payableId: payableId || undefined,
           amountCents,
           date: new Date(date + "T12:00:00.000Z").toISOString(),
           method,
@@ -484,6 +690,20 @@ function RegisterPaymentModal({
               ))}
             </select>
           </div>
+          {payables.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-neutral-500 mb-1">Aplicar a factura/deuda (opcional)</label>
+              <select value={payableId} onChange={(e) => handleSelectPayable(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+                <option value="">Automático (la más antigua pendiente)</option>
+                {payables.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.sourcePurchase ? `Compra ${p.sourcePurchase.invoiceNumber ?? p.sourcePurchase.id.slice(0, 8)}` : p.description ?? "Deuda manual"}
+                    {" — saldo "}{formatArsFromCents(p.totalAmountCents - p.paidAmountCents)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Monto ($)</label>
             <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
