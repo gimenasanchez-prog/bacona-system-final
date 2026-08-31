@@ -35,7 +35,8 @@ export default async function CajaLocalPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const role = (await cookies()).get("bcn_role")?.value;
-  if (role !== "CAJA_LOCAL") redirect("/");
+  if (role !== "CAJA_LOCAL" && role !== "GERENCIA") redirect("/");
+  const isGerencia = role === "GERENCIA";
 
   const sp = await props.searchParams;
   const errorMsg = typeof sp.error === "string" ? decodeURIComponent(sp.error) : null;
@@ -64,9 +65,15 @@ export default async function CajaLocalPage(props: {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50" href="/caja/turno">
-            Mi turno
-          </Link>
+          {isGerencia ? (
+            <Link className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50" href="/caja/consolidado">
+              Consolidado de Caja
+            </Link>
+          ) : (
+            <Link className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50" href="/caja/turno">
+              Mi turno
+            </Link>
+          )}
         </div>
       </div>
 

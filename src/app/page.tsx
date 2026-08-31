@@ -65,6 +65,7 @@ export default async function HomePage() {
       {role === "GERENCIA" && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <NavCard title="Gestión">
+            <NavRow href="/caja/local" label="Caja BCÑ" />
             <NavRow href="/caja/gerencia" label="Caja Gerencia" />
             <NavRow href="/caja/consolidado" label="Consolidado de Caja" />
             <NavRow href="/cuentas-bancarias" label="Cuentas Bancarias" />
