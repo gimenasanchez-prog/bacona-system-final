@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
   const accounts = await prisma.cuentaCorrienteAccount.findMany({
     where: {
       isActive: true,
+      accountKind: "CORPORATIVA",
       // Las cuentas "padre" de facturación (con satélites) no se venden
       // directamente en el POS — solo sus cuentas satélite.
       satelliteAccounts: { none: {} },

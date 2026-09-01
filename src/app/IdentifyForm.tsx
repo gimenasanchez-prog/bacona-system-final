@@ -10,6 +10,7 @@ const roleLabel: Record<string, string> = {
   CAJA_LOCAL: "Encargada de caja",
   ASOCIADO: "Asociada/o",
   ADMINISTRATIVO: "Administrativo",
+  COMERCIAL: "Comercial",
 };
 
 export function IdentifyForm({ employees }: { employees: Employee[] }) {

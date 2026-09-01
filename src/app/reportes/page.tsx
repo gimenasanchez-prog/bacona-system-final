@@ -40,10 +40,11 @@ export default async function ReportesPage(props: {
           credit: acc.credit + d.creditCents,
           transfer: acc.transfer + d.transferCents,
           qr: acc.qr + d.qrCents,
+          cheque: acc.cheque + d.chequeCents,
           cc: acc.cc + d.ccCents,
           internal: acc.internal + d.internalCents,
         }),
-        { cash: 0, debit: 0, credit: 0, transfer: 0, qr: 0, cc: 0, internal: 0 }
+        { cash: 0, debit: 0, credit: 0, transfer: 0, qr: 0, cheque: 0, cc: 0, internal: 0 }
       )
     : null;
 
@@ -121,6 +122,10 @@ export default async function ReportesPage(props: {
               <div className="flex items-center justify-between gap-2">
                 <span className="text-neutral-500">QR</span>
                 <span className="font-medium">{formatArsFromCents(paymentTotals.qr)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-neutral-500">Cheque</span>
+                <span className="font-medium">{formatArsFromCents(paymentTotals.cheque)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-neutral-500">Cta. corriente</span>

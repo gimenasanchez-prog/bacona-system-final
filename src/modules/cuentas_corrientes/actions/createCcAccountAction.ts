@@ -10,7 +10,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const schema = z.object({
   displayName: z.string().trim().min(1, "El nombre del cliente es obligatorio"),
-  billingCycle: z.enum(["QUINCENAL", "MENSUAL"]),
+  accountKind: z.enum(["CORPORATIVA", "TRANSITORIA"]).default("CORPORATIVA"),
+  billingCycle: z.enum(["QUINCENAL", "MENSUAL"]).optional(),
+  estimatedPaymentDate: z.string().optional(),
   planCode: z.string().optional(),
   uncapped: z.string().optional(),
   coverageAmountCents: z.string().optional(),
@@ -40,7 +42,7 @@ export async function createCcAccountAction(
   const jar = await cookies();
   const role = jar.get("bcn_role")?.value;
 
-  if (role !== "GERENCIA" && role !== "ADMINISTRATIVO") {
+  if (role !== "GERENCIA" && role !== "ADMINISTRATIVO" && role !== "COMERCIAL") {
     return { error: "Sin permisos para crear cuentas corrientes.", createdId: null };
   }
 
@@ -50,20 +52,40 @@ export async function createCcAccountAction(
   }
 
   const data = parsed.data;
+  const isTransitoria = data.accountKind === "TRANSITORIA";
 
-  const planCode = emptyToNull(data.planCode);
-  if (planCode && !(PLAN_CODES as readonly string[]).includes(planCode)) {
-    return { error: "Tarifa inválida.", createdId: null };
-  }
-
-  const uncapped = data.uncapped === "true";
+  let planCode: string | null = null;
   let coverageAmountCents: number | null = null;
-  if (!uncapped) {
-    const amount = Number(data.coverageAmountCents);
-    if (!data.coverageAmountCents || !Number.isFinite(amount) || amount <= 0) {
-      return { error: "El tope de cobertura es obligatorio (o marcá \"Sin tope\").", createdId: null };
+  let billingCycle: "QUINCENAL" | "MENSUAL" = "MENSUAL";
+  let estimatedPaymentDate: Date | null = null;
+
+  if (isTransitoria) {
+    if (!data.estimatedPaymentDate) {
+      return { error: "La fecha de pago estipulada es obligatoria para cuentas transitorias.", createdId: null };
     }
-    coverageAmountCents = Math.round(amount * 100);
+    estimatedPaymentDate = new Date(data.estimatedPaymentDate + "T12:00:00.000Z");
+    if (Number.isNaN(estimatedPaymentDate.getTime())) {
+      return { error: "Fecha de pago inválida.", createdId: null };
+    }
+  } else {
+    planCode = emptyToNull(data.planCode);
+    if (planCode && !(PLAN_CODES as readonly string[]).includes(planCode)) {
+      return { error: "Tarifa inválida.", createdId: null };
+    }
+
+    const uncapped = data.uncapped === "true";
+    if (!uncapped) {
+      const amount = Number(data.coverageAmountCents);
+      if (!data.coverageAmountCents || !Number.isFinite(amount) || amount <= 0) {
+        return { error: "El tope de cobertura es obligatorio (o marcá \"Sin tope\").", createdId: null };
+      }
+      coverageAmountCents = Math.round(amount * 100);
+    }
+
+    if (!data.billingCycle) {
+      return { error: "El ciclo de facturación es obligatorio.", createdId: null };
+    }
+    billingCycle = data.billingCycle;
   }
 
   const ivaConditionRaw = emptyToNull(data.ivaCondition);
@@ -109,8 +131,10 @@ export async function createCcAccountAction(
     return tx.cuentaCorrienteAccount.create({
       data: {
         customerId: customer.id,
+        accountKind: data.accountKind,
+        estimatedPaymentDate,
         planCode,
-        billingCycle: data.billingCycle,
+        billingCycle,
         coverageAmountCents,
         isActive: true,
       },

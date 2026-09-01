@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { BillingCycle, CcDirectChargeCategory } from "@prisma/client";
+import { BillingCycle, CcDirectChargeCategory, CuentaCorrienteAccountKind } from "@prisma/client";
 
 export type BillingPeriod = { from: Date; to: Date };
 
-function getPeriodForDate(date: Date, cycle: BillingCycle): BillingPeriod {
+export function getPeriodForDate(date: Date, cycle: BillingCycle): BillingPeriod {
   const year = date.getFullYear();
   const month = date.getMonth();
   const day = date.getDate();
@@ -93,6 +93,9 @@ export type AccountWithBillingState = {
   id: string;
   customerId: string;
   customerName: string;
+  accountKind: CuentaCorrienteAccountKind;
+  estimatedPaymentDate: Date | null;
+  isActive: boolean;
   planCode: string | null;
   billingCycle: BillingCycle;
   currentPeriod: BillingPeriod;
@@ -222,7 +225,7 @@ function buildInvoiceSummary(inv: {
 }
 
 export class CuentaCorrienteService {
-  static async getAccountsWithBillingState(): Promise<AccountWithBillingState[]> {
+  static async getAccountsWithBillingState(params?: { includeInactive?: boolean }): Promise<AccountWithBillingState[]> {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
@@ -230,7 +233,7 @@ export class CuentaCorrienteService {
     // (billsToAccountId != null, ej. Posco Enc Arg/Kor) se usan en el POS para
     // elegir tarifa, pero su consumo se consolida acá bajo la cuenta padre.
     const rootAccounts = await prisma.cuentaCorrienteAccount.findMany({
-      where: { isActive: true, billsToAccountId: null },
+      where: { isActive: params?.includeInactive ? undefined : true, billsToAccountId: null },
       include: {
         customer: { select: { displayName: true } },
         satelliteAccounts: { select: { id: true } },
@@ -443,6 +446,9 @@ export class CuentaCorrienteService {
         id: acc.id,
         customerId: acc.customerId,
         customerName: acc.customer.displayName,
+        accountKind: acc.accountKind,
+        estimatedPaymentDate: acc.estimatedPaymentDate,
+        isActive: acc.isActive,
         planCode: acc.planCode,
         billingCycle: acc.billingCycle,
         currentPeriod,

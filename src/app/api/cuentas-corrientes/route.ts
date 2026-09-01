@@ -3,10 +3,12 @@ import { CuentaCorrienteService } from "@/modules/cuentas_corrientes/services/cu
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const includeInactive = searchParams.get("includeInactive") === "true";
   try {
     const [accounts, lastPaymentAt] = await Promise.all([
-      CuentaCorrienteService.getAccountsWithBillingState(),
+      CuentaCorrienteService.getAccountsWithBillingState({ includeInactive }),
       CuentaCorrienteService.getLastPaymentDate(),
     ]);
     return NextResponse.json({ accounts, lastPaymentAt });

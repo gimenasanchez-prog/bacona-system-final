@@ -97,6 +97,7 @@ export default async function ConsolidadoCierresPage(props: {
           credit: rows.reduce((s, r) => s + r.totalCreditCents, 0),
           transfer: rows.reduce((s, r) => s + r.totalTransferCents, 0),
           qr: rows.reduce((s, r) => s + r.totalQrCents, 0),
+          cheque: rows.reduce((s, r) => s + r.totalChequeCents, 0),
           cc: rows.reduce((s, r) => s + r.totalCuentaCorrienteCents, 0),
           internal: rows.reduce((s, r) => s + r.totalCuentasInternasCents, 0),
           envelope: rows.reduce(
@@ -213,6 +214,10 @@ export default async function ConsolidadoCierresPage(props: {
             <div className="flex items-center justify-between gap-2">
               <span className="text-neutral-500">QR</span>
               <span className="font-medium">{formatArsFromCents(totals.qr)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-neutral-500">Cheque</span>
+              <span className="font-medium">{formatArsFromCents(totals.cheque)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-neutral-500">Cta. corriente</span>

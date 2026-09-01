@@ -5,7 +5,7 @@ import { useState } from "react";
 import { EmpleadosClient } from "./EmpleadosClient";
 import { HorasTabClient } from "./HorasTabClient";
 
-type Role = "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" | "ADMINISTRATIVO";
+type Role = "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" | "ADMINISTRATIVO" | "COMERCIAL";
 
 type Employee = {
   id: string;

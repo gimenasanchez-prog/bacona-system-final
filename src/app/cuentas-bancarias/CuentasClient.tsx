@@ -11,7 +11,7 @@ type ReconciliationSummary = {
 };
 
 type PaymentMethodConfig = {
-  method: "DEBITO" | "CREDITO" | "TRANSFERENCIA" | "QR";
+  method: "DEBITO" | "CREDITO" | "TRANSFERENCIA" | "QR" | "CHEQUE";
   settlementBusinessDays: number;
   withholdingPercent: string | number | null;
   feesPercent: string | number | null;
@@ -79,6 +79,7 @@ const PAYMENT_METHODS: { value: PaymentMethodConfig["method"]; label: string }[]
   { value: "CREDITO", label: "Crédito" },
   { value: "TRANSFERENCIA", label: "Transferencia" },
   { value: "QR", label: "QR" },
+  { value: "CHEQUE", label: "Cheque" },
 ];
 
 function saleReference(s: PendingSale) {

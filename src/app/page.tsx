@@ -69,12 +69,13 @@ export default async function HomePage() {
             <NavRow href="/caja/gerencia" label="Caja Gerencia" />
             <NavRow href="/caja/consolidado" label="Consolidado de Caja" />
             <NavRow href="/cuentas-bancarias" label="Cuentas Bancarias" />
-            <NavRow href="/cuentas-corrientes" label="Cuentas Corrientes" />
+            <NavRow href="/cuentas-corrientes" label="Cuentas Corrientes y Cheques" />
             <NavRow href="/egresos" label="Egresos" />
             <NavRow href="/gerencia/empleados" label="Empleados" />
             <NavRow href="/gerencia/precios" label="Precios" />
             <NavRow href="/rentabilidad" label="Rentabilidad" />
             <NavRow href="/reportes" label="Reportes" />
+            <NavRow href="/ventas-comerciales" label="Ventas Comerciales" />
           </NavCard>
           <NavCard title="Operación">
             {hasSession ? (
@@ -116,13 +117,21 @@ export default async function HomePage() {
           <NavCard title="Administración">
             <NavRow href="/caja/consolidado" label="Consolidado de Caja" />
             <NavRow href="/cuentas-bancarias" label="Cuentas Bancarias" />
-            <NavRow href="/cuentas-corrientes" label="Cuentas Corrientes" />
+            <NavRow href="/cuentas-corrientes" label="Cuentas Corrientes y Cheques" />
             <NavRow href="/egresos" label="Egresos" />
             <NavRow href="/rentabilidad" label="Rentabilidad" />
             <NavRow href="/reportes" label="Reportes" />
           </NavCard>
           <NavCard title="Operación">
             <NavRow href="/stock" label="Stock" />
+          </NavCard>
+        </div>
+      )}
+
+      {role === "COMERCIAL" && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <NavCard title="Ventas">
+            <NavRow href="/ventas-comerciales" label="Ventas Comerciales" primary />
           </NavCard>
         </div>
       )}

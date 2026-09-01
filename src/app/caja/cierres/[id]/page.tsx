@@ -88,6 +88,10 @@ export default async function CierreDetailPage(props: { params: Promise<{ id: st
             <div className="font-semibold">{formatArsFromCents(cashSession.totalQrCents)}</div>
           </div>
           <div className="flex items-center justify-between">
+            <div>Cheque</div>
+            <div className="font-semibold">{formatArsFromCents(cashSession.totalChequeCents)}</div>
+          </div>
+          <div className="flex items-center justify-between">
             <div>Cuenta corriente</div>
             <div className="font-semibold">{formatArsFromCents(cashSession.totalCuentaCorrienteCents)}</div>
           </div>

@@ -7,7 +7,7 @@ import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxS
 const ConfigSchema = z.object({
   configs: z.array(
     z.object({
-      method: z.enum(["CREDITO", "DEBITO", "TRANSFERENCIA", "QR"]),
+      method: z.enum(["CREDITO", "DEBITO", "TRANSFERENCIA", "QR", "CHEQUE"]),
       enabled: z.boolean(),
       settlementBusinessDays: z.number().int().min(0).max(30),
       withholdingPercent: z.number().min(0).max(100).nullable(),

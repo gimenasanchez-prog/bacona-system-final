@@ -20,6 +20,7 @@ export type SalesByDayRow = {
   creditCents: number;
   transferCents: number;
   qrCents: number;
+  chequeCents: number;
   ccCents: number;
   internalCents: number;
   totalCents: number;
@@ -71,6 +72,7 @@ export class ReportesDataService {
           creditCents: 0,
           transferCents: 0,
           qrCents: 0,
+          chequeCents: 0,
           ccCents: 0,
           internalCents: 0,
           totalCents: 0,
@@ -80,6 +82,7 @@ export class ReportesDataService {
       row.creditCents += c.totalCreditCents;
       row.transferCents += c.totalTransferCents;
       row.qrCents += c.totalQrCents;
+      row.chequeCents += c.totalChequeCents;
       row.ccCents += c.totalCuentaCorrienteCents;
       row.internalCents += c.totalCuentasInternasCents;
       row.totalCents =
@@ -88,6 +91,7 @@ export class ReportesDataService {
         row.creditCents +
         row.transferCents +
         row.qrCents +
+        row.chequeCents +
         row.ccCents +
         row.internalCents;
       byDay.set(key, row);

@@ -69,6 +69,7 @@ export class ReportesExportService {
       { header: "Crédito", key: "credito", width: 14, style: { numFmt: MONEY_FMT } },
       { header: "Transferencia", key: "transferencia", width: 14, style: { numFmt: MONEY_FMT } },
       { header: "QR", key: "qr", width: 14, style: { numFmt: MONEY_FMT } },
+      { header: "Cheque", key: "cheque", width: 14, style: { numFmt: MONEY_FMT } },
       { header: "Cta. corriente", key: "cc", width: 14, style: { numFmt: MONEY_FMT } },
       { header: "Ctas. internas", key: "internas", width: 14, style: { numFmt: MONEY_FMT } },
       { header: "Total", key: "total", width: 14, style: { numFmt: MONEY_FMT } },
@@ -82,6 +83,7 @@ export class ReportesExportService {
         credito: d.creditCents / 100,
         transferencia: d.transferCents / 100,
         qr: d.qrCents / 100,
+        cheque: d.chequeCents / 100,
         cc: d.ccCents / 100,
         internas: d.internalCents / 100,
         total: d.totalCents / 100,
@@ -90,7 +92,7 @@ export class ReportesExportService {
 
     freezeHeaderRow(sheet);
 
-    sheet.getCell("G1").note =
+    sheet.getCell("H1").note =
       '"Cta. corriente" es lo registrado en el cierre de cada turno (igual que en Consolidado de Caja) — ' +
       "puede no coincidir con el módulo de Cuentas Corrientes si hubo ventas con cuenta corriente canceladas " +
       "después del cierre del turno, o cargos directos a la cuenta (que no son ventas del POS).";

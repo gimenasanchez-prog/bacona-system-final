@@ -15,8 +15,9 @@ const IVA_CONDITION_LABELS: Record<string, string> = {
   OTRO: "Otro",
 };
 
-export function NuevaCuentaModal({ onCreated }: { onCreated: () => void }) {
+export function NuevaCuentaModal({ onCreated }: { onCreated: (createdId?: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [accountKind, setAccountKind] = useState<"CORPORATIVA" | "TRANSITORIA">("CORPORATIVA");
   const [planCode, setPlanCode] = useState("");
   const [uncapped, setUncapped] = useState(true);
   const [coverageInput, setCoverageInput] = useState("");
@@ -27,10 +28,11 @@ export function NuevaCuentaModal({ onCreated }: { onCreated: () => void }) {
   useEffect(() => {
     if (state.createdId) {
       setOpen(false);
+      setAccountKind("CORPORATIVA");
       setPlanCode("");
       setUncapped(true);
       setCoverageInput("");
-      onCreated();
+      onCreated(state.createdId ?? undefined);
     }
   }, [state.createdId, onCreated]);
 
@@ -105,66 +107,114 @@ export function NuevaCuentaModal({ onCreated }: { onCreated: () => void }) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium">Tipo de cuenta</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAccountKind("CORPORATIVA")}
+                      className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium ${
+                        accountKind === "CORPORATIVA" ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      Corporativa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAccountKind("TRANSITORIA")}
+                      className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium ${
+                        accountKind === "TRANSITORIA" ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      Transitoria
+                    </button>
+                  </div>
+                  <input type="hidden" name="accountKind" value={accountKind} />
+                  <div className="text-xs text-neutral-400">
+                    {accountKind === "CORPORATIVA"
+                      ? "Cliente con convenio fijo: ciclo de facturación, tarifa y tope de cobertura."
+                      : "Cliente esporádico sin convenio. No aparece como opción de cuenta corriente en el POS. Se factura con la fecha de pago que se indique."}
+                  </div>
+                </div>
+
+                {accountKind === "CORPORATIVA" ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium">Ciclo de facturación</label>
+                        <select
+                          name="billingCycle"
+                          defaultValue="MENSUAL"
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                          required
+                        >
+                          <option value="MENSUAL">Mensual</option>
+                          <option value="QUINCENAL">Quincenal</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium">Tarifa</label>
+                        <select
+                          name="planCode"
+                          value={planCode}
+                          onChange={(ev) => setPlanCode(ev.target.value)}
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                        >
+                          <option value="">— Sin plan (ve todo el menú) —</option>
+                          {PLAN_CODES.map((code) => (
+                            <option key={code} value={code}>{PLAN_LABELS[code]}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium">Tope de cobertura por comensal (pesos)</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          name="coverageAmountCents"
+                          value={coverageInput}
+                          onChange={(ev) => setCoverageInput(ev.target.value)}
+                          disabled={uncapped}
+                          required={!uncapped}
+                          min={1}
+                          step={1}
+                          className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-neutral-100 disabled:text-neutral-400"
+                          placeholder="Ej: 13500"
+                        />
+                        <label className="flex shrink-0 items-center gap-1.5 text-xs text-neutral-600">
+                          <input
+                            type="checkbox"
+                            checked={uncapped}
+                            onChange={(ev) => setUncapped(ev.target.checked)}
+                          />
+                          Sin tope
+                        </label>
+                      </div>
+                      <input type="hidden" name="uncapped" value={uncapped ? "true" : "false"} />
+                      <div className="text-xs text-neutral-400">
+                        Sugerido automáticamente según la tarifa elegida (precio del producto corporativo más caro
+                        habilitado). Se puede sobrescribir.
+                      </div>
+                    </div>
+                  </>
+                ) : (
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium">Ciclo de facturación</label>
-                    <select
-                      name="billingCycle"
-                      defaultValue="MENSUAL"
+                    <label className="block text-xs font-medium">Fecha de pago estipulada</label>
+                    <input
+                      type="date"
+                      name="estimatedPaymentDate"
                       className="w-full rounded-md border px-3 py-2 text-sm"
                       required
-                    >
-                      <option value="MENSUAL">Mensual</option>
-                      <option value="QUINCENAL">Quincenal</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">Tarifa</label>
-                    <select
-                      name="planCode"
-                      value={planCode}
-                      onChange={(ev) => setPlanCode(ev.target.value)}
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                    >
-                      <option value="">— Sin plan (ve todo el menú) —</option>
-                      {PLAN_CODES.map((code) => (
-                        <option key={code} value={code}>{PLAN_LABELS[code]}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium">Tope de cobertura por comensal (pesos)</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      name="coverageAmountCents"
-                      value={coverageInput}
-                      onChange={(ev) => setCoverageInput(ev.target.value)}
-                      disabled={uncapped}
-                      required={!uncapped}
-                      min={1}
-                      step={1}
-                      className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-neutral-100 disabled:text-neutral-400"
-                      placeholder="Ej: 13500"
                     />
-                    <label className="flex shrink-0 items-center gap-1.5 text-xs text-neutral-600">
-                      <input
-                        type="checkbox"
-                        checked={uncapped}
-                        onChange={(ev) => setUncapped(ev.target.checked)}
-                      />
-                      Sin tope
-                    </label>
+                    <div className="text-xs text-neutral-400">
+                      Cuando se cobre una venta a esta cuenta por cuenta corriente, se va a facturar automáticamente
+                      con esta fecha de vencimiento.
+                    </div>
                   </div>
-                  <input type="hidden" name="uncapped" value={uncapped ? "true" : "false"} />
-                  <div className="text-xs text-neutral-400">
-                    Sugerido automáticamente según la tarifa elegida (precio del producto corporativo más caro
-                    habilitado). Se puede sobrescribir.
-                  </div>
-                </div>
+                )}
               </div>
 
               <div className="space-y-3 rounded-md border border-neutral-200 p-3">

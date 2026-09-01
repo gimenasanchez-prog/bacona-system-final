@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 const patchSchema = z
   .object({
     isActive: z.boolean().optional(),
-    role: z.enum(["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO"]).optional(),
+    role: z.enum(["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO", "COMERCIAL"]).optional(),
     pin: z.string().regex(/^\d{4}$/, "El PIN debe tener exactamente 4 dígitos").optional(),
     hourlyRateCents: z.number().int().nonnegative().optional(),
   })

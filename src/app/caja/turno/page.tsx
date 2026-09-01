@@ -120,6 +120,7 @@ export default async function CajaTurnoPage() {
             <LabelValue label="Crédito" value={formatArsFromCents(summary.totals.CREDITO)} />
             <LabelValue label="Transferencia" value={formatArsFromCents(summary.totals.TRANSFERENCIA)} />
             <LabelValue label="QR" value={formatArsFromCents(summary.totals.QR)} />
+            <LabelValue label="Cheque" value={formatArsFromCents(summary.totals.CHEQUE)} />
             <LabelValue
               label="Cuenta corriente"
               value={formatArsFromCents(summary.totals.CUENTA_CORRIENTE)}

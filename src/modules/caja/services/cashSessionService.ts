@@ -18,6 +18,7 @@ export type CashSessionSummary = {
     CREDITO: number;
     TRANSFERENCIA: number;
     QR: number;
+    CHEQUE: number;
     CUENTA_CORRIENTE: number;
     CUENTAS_INTERNAS: number;
     totalIncomeCents: number;
@@ -107,6 +108,7 @@ export class CashSessionService {
       CREDITO: 0,
       TRANSFERENCIA: 0,
       QR: 0,
+      CHEQUE: 0,
       CUENTA_CORRIENTE: 0,
       CUENTAS_INTERNAS: 0,
     };
@@ -219,6 +221,7 @@ export class CashSessionService {
         CREDITO: totalsByMethod.CREDITO,
         TRANSFERENCIA: totalsByMethod.TRANSFERENCIA,
         QR: totalsByMethod.QR,
+        CHEQUE: totalsByMethod.CHEQUE,
         CUENTA_CORRIENTE: totalsByMethod.CUENTA_CORRIENTE,
         CUENTAS_INTERNAS: totalsByMethod.CUENTAS_INTERNAS,
         totalIncomeCents,
@@ -292,6 +295,7 @@ export class CashSessionService {
           totalCreditCents: summary.totals.CREDITO,
           totalTransferCents: summary.totals.TRANSFERENCIA,
           totalQrCents: summary.totals.QR,
+          totalChequeCents: summary.totals.CHEQUE,
           totalCuentaCorrienteCents: summary.totals.CUENTA_CORRIENTE,
           totalCuentasInternasCents: summary.totals.CUENTAS_INTERNAS,
           totalIncomeCents: summary.totals.totalIncomeCents,

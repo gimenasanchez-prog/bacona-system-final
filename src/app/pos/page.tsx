@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatArsFromCents } from "@/lib/money";
 import { PLAN_TARIFF_CONFIG, matchesCorpoFilter } from "@/modules/cuentas_corrientes/lib/planTariffs";
 import { QuantityStepper } from "./QuantityStepper";
+import { ComercialesPanel } from "./ComercialesPanel";
 
 type Category = { id: string; name: string };
 type ProductListItem = { id: string; name: string; priceCents: number };
@@ -20,7 +21,7 @@ type ProductDetails = { id: string; name: string; priceCents: number; modifierGr
 
 type Customer = { id: string; displayName: string };
 type CuentaCorrienteAccount = { id: string; customer: Customer; planCode: string | null; coverageAmountCents: number | null };
-type ReservationSummary = { id: string; source: "POS" | "COMERCIAL"; reservationAt: string; status: SaleStatus; customerName: string; totalCents: number; itemCount: number; coverCount: number | null };
+type ReservationSummary = { id: string; reservationAt: string; status: SaleStatus; customerName: string; totalCents: number; itemCount: number; coverCount: number | null };
 type Employee = { id: string; displayName: string };
 type PosTable = { id: string; label: string };
 type InventoryItemPicker = { id: string; name: string; unit: "UN" | "KG" | "G" | "L" | "ML" };
@@ -366,7 +367,9 @@ export default function PosPage() {
   }, [sale, paidTotalCents]);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
+    <div className="space-y-4">
+      <ComercialesPanel />
+      <div className="grid gap-4 lg:grid-cols-[260px_1fr_360px]">
       <div className="flex flex-col gap-3">
         <div className="rounded-lg border bg-white p-3">
           <div className="mb-2">
@@ -411,43 +414,21 @@ export default function PosPage() {
                 <div key={r.id} className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs">
                   <div className="min-w-0 flex-1 truncate">
                     <span className="font-medium">{r.customerName}</span>
-                    {r.source === "COMERCIAL" && (
-                      <span className="ml-1.5 rounded bg-violet-100 px-1 py-0.5 text-[10px] font-medium text-violet-700">
-                        Comercial
-                      </span>
-                    )}
                     <span className="ml-1.5 text-neutral-500">
                       {new Date(r.reservationAt!).toLocaleString("es-AR", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {r.coverCount ? <span className="ml-1 text-neutral-400">· {r.coverCount}p</span> : null}
                   </div>
-                  {r.source === "COMERCIAL" ? (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
-                      onClick={async () => {
-                        try {
-                          await apiJson(`/api/ventas-comerciales/${r.id}/deliver`, { method: "POST" });
-                          setUpcomingReservations((prev) => prev.filter((x) => x.id !== r.id));
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
-                    >
-                      Marcar entregada
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
-                      onClick={async () => {
-                        setSaleId(r.id);
-                        await refreshSale(r.id);
-                      }}
-                    >
-                      Cargar
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="shrink-0 rounded border px-2 py-0.5 hover:bg-neutral-50"
+                    onClick={async () => {
+                      setSaleId(r.id);
+                      await refreshSale(r.id);
+                    }}
+                  >
+                    Cargar
+                  </button>
                 </div>
               ))}
             </div>
@@ -1592,6 +1573,7 @@ export default function PosPage() {
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

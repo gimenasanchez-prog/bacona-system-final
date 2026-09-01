@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 const createSchema = z.object({
   displayName: z.string().min(1, "El nombre es obligatorio").max(100),
-  role: z.enum(["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO"]),
+  role: z.enum(["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO", "COMERCIAL"]),
 });
 
 export async function GET() {

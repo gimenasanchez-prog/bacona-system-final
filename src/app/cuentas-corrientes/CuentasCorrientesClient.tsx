@@ -1122,11 +1122,12 @@ function PeriodsTable({ account, onRefresh }: { account: AccountWithBillingState
 
 // ─── Account Row ──────────────────────────────────────────────────────────────
 
-function AccountRow({ account, expanded, onToggle, onRefresh }: {
+function AccountRow({ account, expanded, onToggle, onRefresh, onArchiveChange }: {
   account: AccountWithBillingState;
   expanded: boolean;
   onToggle: () => void;
   onRefresh: () => void;
+  onArchiveChange: (accountId: string, isActive: boolean) => void;
 }) {
   const hasActivity = account.periods.length > 0;
   const overdueTotal = account.overdueInvoicesTotalCents;
@@ -1136,19 +1137,37 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
     <>
       <tr
         onClick={hasActivity ? onToggle : undefined}
-        className={`border-b transition-colors ${hasActivity ? "cursor-pointer hover:bg-neutral-50" : ""} ${expanded ? "bg-neutral-50" : "bg-white"}`}
+        className={`border-b transition-colors ${hasActivity ? "cursor-pointer hover:bg-neutral-50" : ""} ${expanded ? "bg-neutral-50" : "bg-white"} ${!account.isActive ? "opacity-60" : ""}`}
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
             {hasActivity && <span className="text-neutral-300 text-xs">{expanded ? "▼" : "▶"}</span>}
             <div>
-              <div className="font-medium text-neutral-800 text-sm">{account.customerName}</div>
+              <div className="font-medium text-neutral-800 text-sm">
+                {account.customerName}
+                {account.accountKind === "TRANSITORIA" && (
+                  <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                    Transitoria
+                  </span>
+                )}
+                {!account.isActive && (
+                  <span className="ml-1.5 rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                    Archivada
+                  </span>
+                )}
+              </div>
               {account.planCode && <div className="text-xs text-neutral-400">{account.planCode}</div>}
             </div>
           </div>
         </td>
         <td className="px-4 py-3 text-xs text-neutral-500">
-          {account.billingCycle === "QUINCENAL" ? "Quincenal" : "Mensual"}
+          {account.accountKind === "TRANSITORIA"
+            ? account.estimatedPaymentDate
+              ? `Vence ${formatDate(account.estimatedPaymentDate)}`
+              : "Transitoria"
+            : account.billingCycle === "QUINCENAL"
+            ? "Quincenal"
+            : "Mensual"}
         </td>
         <td className="px-4 py-3 text-sm text-right">
           {account.unbilledTotalCents > 0
@@ -1175,10 +1194,21 @@ function AccountRow({ account, expanded, onToggle, onRefresh }: {
             ? <span className={overdueTotal > 0 ? "text-red-700" : "text-neutral-800"}>{formatArsFromCents(totalDebt)}</span>
             : <span className="text-green-600 font-normal text-xs">Al día</span>}
         </td>
+        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+          {account.accountKind === "TRANSITORIA" && (
+            <button
+              type="button"
+              onClick={() => onArchiveChange(account.id, !account.isActive)}
+              className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+            >
+              {account.isActive ? "Archivar" : "Reactivar"}
+            </button>
+          )}
+        </td>
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={7} className="p-0">
+          <td colSpan={8} className="p-0">
             <PeriodsTable account={account} onRefresh={onRefresh} />
           </td>
         </tr>
@@ -1202,11 +1232,12 @@ export default function CuentasCorrientesClient({
   const [lastPaymentAt, setLastPaymentAt] = useState(initialLastPaymentAt);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (includeInactive?: boolean) => {
     setRefreshing(true);
     try {
-      const res = await fetch("/api/cuentas-corrientes");
+      const res = await fetch(`/api/cuentas-corrientes?includeInactive=${includeInactive ?? showArchived}`);
       if (res.ok) {
         const data = await res.json();
         setAccounts(data.accounts);
@@ -1215,7 +1246,21 @@ export default function CuentasCorrientesClient({
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [showArchived]);
+
+  async function handleArchiveChange(accountId: string, isActive: boolean) {
+    const res = await fetch(`/api/cuentas-corrientes/${accountId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ isActive }),
+    });
+    if (res.ok) await refresh();
+  }
+
+  function handleToggleShowArchived(checked: boolean) {
+    setShowArchived(checked);
+    refresh(checked);
+  }
 
   const totalUnbilled = accounts.reduce((s, a) => s + a.unbilledTotalCents, 0);
   const totalUnbilledClosed = accounts.reduce((s, a) => s + a.unbilledClosedCents, 0);
@@ -1235,14 +1280,22 @@ export default function CuentasCorrientesClient({
         <div className="flex items-center gap-3">
           {(role === "GERENCIA" || role === "ADMINISTRATIVO") && (
             <>
-              <NuevaCuentaModal onCreated={refresh} />
+              <NuevaCuentaModal onCreated={() => refresh()} />
               <CargosDirectosModal
                 accounts={accounts.map((a) => ({ id: a.id, customerName: a.customerName }))}
                 onCreated={refresh}
               />
             </>
           )}
-          <button onClick={refresh} disabled={refreshing} className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
+          <label className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => handleToggleShowArchived(e.target.checked)}
+            />
+            Mostrar archivadas
+          </label>
+          <button onClick={() => refresh()} disabled={refreshing} className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
             {refreshing ? "Actualizando..." : "Actualizar"}
           </button>
         </div>
@@ -1306,6 +1359,7 @@ export default function CuentasCorrientesClient({
               <th className="px-4 py-2 text-right font-medium">Mora</th>
               <th className="px-4 py-2 text-right font-medium">Cobrado</th>
               <th className="px-4 py-2 text-right font-medium">Deuda activa</th>
+              <th className="px-4 py-2 text-right font-medium">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -1315,7 +1369,8 @@ export default function CuentasCorrientesClient({
                 account={acc}
                 expanded={expandedId === acc.id}
                 onToggle={() => setExpandedId(expandedId === acc.id ? null : acc.id)}
-                onRefresh={refresh}
+                onRefresh={() => refresh()}
+                onArchiveChange={handleArchiveChange}
               />
             ))}
           </tbody>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Role = "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" | "ADMINISTRATIVO";
+type Role = "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" | "ADMINISTRATIVO" | "COMERCIAL";
 
 type Employee = {
   id: string;
@@ -17,9 +17,10 @@ const ROLE_LABELS: Record<Role, string> = {
   CAJA_LOCAL: "Caja Local",
   GERENCIA: "Gerencia",
   ADMINISTRATIVO: "Administrativo",
+  COMERCIAL: "Comercial",
 };
 
-const ROLES: Role[] = ["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO"];
+const ROLES: Role[] = ["ASOCIADO", "CAJA_LOCAL", "GERENCIA", "ADMINISTRATIVO", "COMERCIAL"];
 
 export function EmpleadosClient({ initial }: { initial: Employee[] }) {
   const [employees, setEmployees] = useState<Employee[]>(initial);

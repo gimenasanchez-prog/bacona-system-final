@@ -484,10 +484,15 @@ export class LocalCashBoxService {
   }
 
   private static async getDuePosPayments(cashBoxId: string, referenceDate: Date) {
-    const [box, configs] = await Promise.all([
+    const [box, allConfigs] = await Promise.all([
       prisma.localCashBox.findUnique({ where: { id: cashBoxId }, select: { reconciliationStartDate: true } }),
       prisma.cashBoxPaymentMethodConfig.findMany({ where: { cashBoxId } }),
     ]);
+    // CHEQUE tiene su propio ciclo de vida (En cartera → Depositado → Acreditado, ver
+    // módulo de Cheques) que arranca desde la fecha de depósito, no desde la venta —
+    // por eso se excluye de la pantalla genérica de conciliación, aunque tenga config
+    // propia (esa config la usa igual `reconcileSales` cuando se acredita un cheque).
+    const configs = allConfigs.filter((c) => c.method !== "CHEQUE");
     if (!configs.length) return [];
 
     const configByMethod = new Map(configs.map((c) => [c.method, c]));
