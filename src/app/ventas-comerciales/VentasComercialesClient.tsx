@@ -52,6 +52,10 @@ const STATUS_COLORS: Record<LineStatus, string> = {
   CANCELADA: "bg-red-100 text-red-700",
 };
 
+function toDateInputValue(d: string | Date) {
+  return new Date(d).toISOString().slice(0, 10);
+}
+
 function formatDate(d: string | Date) {
   return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -89,6 +93,9 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [detailTarget, setDetailTarget] = useState<{ batchId: string; lineId: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<{ batchId: string; lineId: string } | null>(null);
+  const [addLineBatchId, setAddLineBatchId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   const [accountId, setAccountId] = useState("");
   const [notes, setNotes] = useState("");
@@ -103,6 +110,19 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
     const res = await fetch("/api/ventas-comerciales/accounts");
     if (res.ok) setAccounts(await res.json());
   }, []);
+
+  async function handleDeleteLine(lineId: string) {
+    setListError(null);
+    if (!window.confirm("¿Eliminar esta línea del cierre?")) return;
+    try {
+      const res = await fetch(`/api/ventas-comerciales/lines/${lineId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Error al eliminar la línea.");
+      await refreshBatches();
+    } catch (e) {
+      setListError(e instanceof Error ? e.message : "Error al eliminar la línea.");
+    }
+  }
 
   const handleAccountCreated = useCallback(
     async (createdId?: string) => {
@@ -236,6 +256,11 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
 
       {view === "list" && (
         <div className="space-y-3">
+          {listError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {listError}
+            </div>
+          )}
           {batches.length === 0 && (
             <div className="rounded-lg border border-neutral-200 bg-white px-4 py-8 text-center text-neutral-400">
               Todavía no hay cierres comerciales cargados.
@@ -250,7 +275,16 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
                   </div>
                   {b.notes && <div className="text-xs text-neutral-500">{b.notes}</div>}
                 </div>
-                <div className="text-xs text-neutral-400">{formatDate(b.createdAt)}</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-xs text-neutral-400">{formatDate(b.createdAt)}</div>
+                  <button
+                    type="button"
+                    className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+                    onClick={() => setAddLineBatchId(b.id)}
+                  >
+                    + Agregar línea
+                  </button>
+                </div>
               </div>
               <table className="w-full text-sm">
                 <thead className="text-left text-xs font-semibold text-neutral-500">
@@ -282,13 +316,33 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
                         </span>
                       </td>
                       <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
-                          onClick={() => setDetailTarget({ batchId: b.id, lineId: l.id })}
-                        >
-                          Ver detalle
-                        </button>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+                            onClick={() => setDetailTarget({ batchId: b.id, lineId: l.id })}
+                          >
+                            Ver detalle
+                          </button>
+                          {l.status === "PENDIENTE" && (
+                            <>
+                              <button
+                                type="button"
+                                className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+                                onClick={() => setEditTarget({ batchId: b.id, lineId: l.id })}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteLine(l.id)}
+                              >
+                                Eliminar
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -504,6 +558,25 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
           onClose={() => setDetailTarget(null)}
         />
       )}
+
+      {editTarget && (
+        <LineEditModal
+          line={batches.find((b) => b.id === editTarget.batchId)!.lines.find((l) => l.id === editTarget.lineId)!}
+          onClose={() => setEditTarget(null)}
+          onSaved={refreshBatches}
+        />
+      )}
+
+      {addLineBatchId && (
+        <AddLineModal
+          batchId={addLineBatchId}
+          defaultClienteLabel={
+            batches.find((b) => b.id === addLineBatchId)?.cuentaCorrienteAccount?.customer.displayName ?? ""
+          }
+          onClose={() => setAddLineBatchId(null)}
+          onSaved={refreshBatches}
+        />
+      )}
     </div>
   );
 }
@@ -619,6 +692,386 @@ function LineDetailModal({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function LineEditModal({
+  line,
+  onClose,
+  onSaved,
+}: {
+  line: BatchLine;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [deliveryDate, setDeliveryDate] = useState(toDateInputValue(line.deliveryDate));
+  const [clienteLabel, setClienteLabel] = useState(line.clienteLabel);
+  const [tipoVianda, setTipoVianda] = useState(line.tipoVianda);
+  const [cant, setCant] = useState(String(line.cant));
+  const [horarioRetiro, setHorarioRetiro] = useState(line.horarioRetiro);
+  const [unitPriceArs, setUnitPriceArs] = useState(String(line.unitPriceCents / 100));
+  const [formaDePagoPlanificada, setFormaDePagoPlanificada] = useState(line.formaDePagoPlanificada ?? "");
+  const [viandasCobradasPlanned, setViandasCobradasPlanned] = useState(String(line.viandasCobradasPlanned));
+  const [detalleComanda, setDetalleComanda] = useState(line.detalleComanda ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setError(null);
+    const cantNum = parseInt(cant, 10);
+    const cobradasNum = parseInt(viandasCobradasPlanned, 10);
+    const priceCents = Math.round((parseFloat(unitPriceArs) || 0) * 100);
+    if (!deliveryDate || !clienteLabel.trim() || !tipoVianda.trim() || !horarioRetiro.trim()) {
+      setError("Completá todos los campos obligatorios.");
+      return;
+    }
+    if (!Number.isFinite(cantNum) || cantNum < 1) {
+      setError("Cantidad inválida.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ventas-comerciales/lines/${line.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          deliveryDate: new Date(deliveryDate + "T12:00:00.000Z").toISOString(),
+          clienteLabel: clienteLabel.trim(),
+          tipoVianda: tipoVianda.trim(),
+          cant: cantNum,
+          horarioRetiro: horarioRetiro.trim(),
+          unitPriceCents: priceCents,
+          formaDePagoPlanificada,
+          viandasCobradasPlanned: cobradasNum,
+          detalleComanda,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Error al guardar.");
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al guardar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-base font-semibold">Editar línea</div>
+          <button type="button" onClick={onClose} className="rounded-md border px-2 py-1 text-sm text-neutral-500">
+            Cerrar
+          </button>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Día de entrega</span>
+              <input
+                type="date"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Horario</span>
+              <input
+                type="text"
+                value={horarioRetiro}
+                onChange={(e) => setHorarioRetiro(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">Cliente</span>
+            <input
+              type="text"
+              value={clienteLabel}
+              onChange={(e) => setClienteLabel(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">Tipo de vianda</span>
+            <input
+              type="text"
+              value={tipoVianda}
+              onChange={(e) => setTipoVianda(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Cantidad</span>
+              <input
+                type="number"
+                min={1}
+                value={cant}
+                onChange={(e) => setCant(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Precio unitario ($)</span>
+              <input
+                type="number"
+                min={0}
+                value={unitPriceArs}
+                onChange={(e) => setUnitPriceArs(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Cobradas planificadas</span>
+              <input
+                type="number"
+                min={0}
+                value={viandasCobradasPlanned}
+                onChange={(e) => setViandasCobradasPlanned(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">
+              Forma de pago planificada <span className="text-neutral-400">(opcional)</span>
+            </span>
+            <input
+              type="text"
+              value={formaDePagoPlanificada}
+              onChange={(e) => setFormaDePagoPlanificada(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">
+              Detalle <span className="text-neutral-400">(opcional)</span>
+            </span>
+            <input
+              type="text"
+              value={detalleComanda}
+              onChange={(e) => setDetalleComanda(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSave}
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {saving ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddLineModal({
+  batchId,
+  defaultClienteLabel,
+  onClose,
+  onSaved,
+}: {
+  batchId: string;
+  defaultClienteLabel: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [clienteLabel, setClienteLabel] = useState(defaultClienteLabel);
+  const [tipoVianda, setTipoVianda] = useState("");
+  const [cant, setCant] = useState("1");
+  const [horarioRetiro, setHorarioRetiro] = useState("");
+  const [unitPriceArs, setUnitPriceArs] = useState("");
+  const [formaDePagoPlanificada, setFormaDePagoPlanificada] = useState("");
+  const [viandasCobradasPlanned, setViandasCobradasPlanned] = useState("1");
+  const [detalleComanda, setDetalleComanda] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setError(null);
+    const cantNum = parseInt(cant, 10);
+    const cobradasNum = parseInt(viandasCobradasPlanned, 10);
+    const priceCents = Math.round((parseFloat(unitPriceArs) || 0) * 100);
+    if (!deliveryDate || !clienteLabel.trim() || !tipoVianda.trim() || !horarioRetiro.trim()) {
+      setError("Completá todos los campos obligatorios.");
+      return;
+    }
+    if (!Number.isFinite(cantNum) || cantNum < 1) {
+      setError("Cantidad inválida.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ventas-comerciales/${batchId}/lines`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          deliveryDate,
+          clienteLabel: clienteLabel.trim(),
+          tipoVianda: tipoVianda.trim(),
+          cant: cantNum,
+          horarioRetiro: horarioRetiro.trim(),
+          unitPriceCents: priceCents,
+          formaDePagoPlanificada,
+          viandasCobradasPlanned: cobradasNum,
+          detalleComanda,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Error al guardar.");
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al guardar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-base font-semibold">Agregar línea al cierre</div>
+          <button type="button" onClick={onClose} className="rounded-md border px-2 py-1 text-sm text-neutral-500">
+            Cerrar
+          </button>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Día de entrega</span>
+              <input
+                type="date"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Horario</span>
+              <input
+                type="text"
+                value={horarioRetiro}
+                onChange={(e) => setHorarioRetiro(e.target.value)}
+                placeholder="12:00"
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">Cliente</span>
+            <input
+              type="text"
+              value={clienteLabel}
+              onChange={(e) => setClienteLabel(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">Tipo de vianda</span>
+            <input
+              type="text"
+              value={tipoVianda}
+              onChange={(e) => setTipoVianda(e.target.value)}
+              placeholder="ALMUERZO"
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Cantidad</span>
+              <input
+                type="number"
+                min={1}
+                value={cant}
+                onChange={(e) => setCant(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Precio unitario ($)</span>
+              <input
+                type="number"
+                min={0}
+                value={unitPriceArs}
+                onChange={(e) => setUnitPriceArs(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Cobradas planificadas</span>
+              <input
+                type="number"
+                min={0}
+                value={viandasCobradasPlanned}
+                onChange={(e) => setViandasCobradasPlanned(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">
+              Forma de pago planificada <span className="text-neutral-400">(opcional)</span>
+            </span>
+            <input
+              type="text"
+              value={formaDePagoPlanificada}
+              onChange={(e) => setFormaDePagoPlanificada(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="block text-xs font-medium">
+              Detalle <span className="text-neutral-400">(opcional)</span>
+            </span>
+            <input
+              type="text"
+              value={detalleComanda}
+              onChange={(e) => setDetalleComanda(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </label>
+
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSave}
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {saving ? "Guardando..." : "Agregar línea"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
