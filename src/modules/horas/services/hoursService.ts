@@ -1,4 +1,4 @@
-import { EmployeeRole, Prisma } from "@prisma/client";
+import { EmployeePaymentType, EmployeeRole, Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
@@ -91,7 +91,7 @@ export class HoursService {
 
     const employees = await prisma.employee.findMany({
       where: { isActive: true, role: { in: [EmployeeRole.ASOCIADO, EmployeeRole.CAJA_LOCAL] } },
-      select: { id: true, displayName: true, hourlyRateCents: true },
+      select: { id: true, displayName: true, hourlyRateCents: true, paymentType: true, monthlySalaryCents: true },
       orderBy: { displayName: "asc" },
     });
     const employeeIds = employees.map((e) => e.id);
@@ -113,7 +113,11 @@ export class HoursService {
     return employees.map((employee) => {
       const totalHours = hoursByEmployee.get(employee.id) ?? new Prisma.Decimal(0);
       const amountCents =
-        employee.hourlyRateCents != null ? HoursService.calcAmountCents(totalHours, employee.hourlyRateCents) : null;
+        employee.paymentType === EmployeePaymentType.FIXED_MONTHLY
+          ? employee.monthlySalaryCents
+          : employee.hourlyRateCents != null
+            ? HoursService.calcAmountCents(totalHours, employee.hourlyRateCents)
+            : null;
       const payment = paymentByEmployee.get(employee.id) ?? null;
 
       return {
@@ -132,18 +136,36 @@ export class HoursService {
 
     const employee = await prisma.employee.findUnique({
       where: { id: input.employeeId },
-      select: { hourlyRateCents: true },
+      select: { hourlyRateCents: true, paymentType: true, monthlySalaryCents: true },
     });
     if (!employee) throw new Error("Empleado no encontrado.");
-    if (employee.hourlyRateCents == null) {
-      throw new Error("Definí la tarifa por hora del empleado antes de marcar el mes como pagado.");
-    }
 
     const existing = await prisma.employeeHoursPayment.findUnique({
       where: { employeeId_period: { employeeId: input.employeeId, period: start } },
     });
     if (existing) {
       throw new Error("Este período ya fue marcado como pagado.");
+    }
+
+    if (employee.paymentType === EmployeePaymentType.FIXED_MONTHLY) {
+      if (employee.monthlySalaryCents == null) {
+        throw new Error("Definí el sueldo fijo del empleado antes de marcar el mes como pagado.");
+      }
+
+      return prisma.employeeHoursPayment.create({
+        data: {
+          employeeId: input.employeeId,
+          period: start,
+          paymentType: EmployeePaymentType.FIXED_MONTHLY,
+          monthlySalaryCentsSnapshot: employee.monthlySalaryCents,
+          amountCents: employee.monthlySalaryCents,
+          createdByEmployeeId: input.createdByEmployeeId,
+        },
+      });
+    }
+
+    if (employee.hourlyRateCents == null) {
+      throw new Error("Definí la tarifa por hora del empleado antes de marcar el mes como pagado.");
     }
 
     const { totalHours } = await HoursService.listMonthEntries(input.employeeId, start);
@@ -153,11 +175,23 @@ export class HoursService {
       data: {
         employeeId: input.employeeId,
         period: start,
+        paymentType: EmployeePaymentType.HOURLY,
         hoursSnapshot: totalHours,
         hourlyRateCentsSnapshot: employee.hourlyRateCents,
         amountCents,
         createdByEmployeeId: input.createdByEmployeeId,
       },
+    });
+  }
+
+  static async listPaymentHistory(params: { employeeId?: string; from?: Date; to?: Date }) {
+    return prisma.employeeHoursPayment.findMany({
+      where: {
+        employeeId: params.employeeId,
+        period: { gte: params.from, lte: params.to },
+      },
+      include: { employee: { select: { displayName: true } } },
+      orderBy: [{ period: "desc" }, { employee: { displayName: "asc" } }],
     });
   }
 }

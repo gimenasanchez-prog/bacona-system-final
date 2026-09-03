@@ -4,13 +4,29 @@ import { useState } from "react";
 
 import { formatArsFromCents } from "@/lib/money";
 
+type PaymentType = "HOURLY" | "FIXED_MONTHLY";
+
 type HoursRow = {
-  employee: { id: string; displayName: string; hourlyRateCents: number | null };
+  employee: {
+    id: string;
+    displayName: string;
+    hourlyRateCents: number | null;
+    paymentType: PaymentType;
+    monthlySalaryCents: number | null;
+  };
   totalHours: string;
   amountCents: number | null;
   isPaid: boolean;
   paidAt: string | null;
   paidAmountCents: number | null;
+};
+
+type DailyEntry = {
+  id: string;
+  workDate: string;
+  checkIn: string;
+  checkOut: string;
+  hoursWorked: string;
 };
 
 const MESES = [
@@ -21,6 +37,16 @@ const MESES = [
 function periodLabel(period: string) {
   const [year, month] = period.split("-").map(Number);
   return `${MESES[month - 1]} de ${year}`;
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 export function HorasTabClient({
@@ -35,8 +61,8 @@ export function HorasTabClient({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rateTargetId, setRateTargetId] = useState<string | null>(null);
-  const [rateValue, setRateValue] = useState("");
+  const [dailyDetail, setDailyDetail] = useState<Record<string, DailyEntry[]>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
   async function fetchSummary(month: string) {
     setLoading(true);
@@ -46,6 +72,7 @@ export function HorasTabClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al cargar horas");
       setSummary(data.summary);
+      setDailyDetail({});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido");
     } finally {
@@ -58,29 +85,18 @@ export function HorasTabClient({
     await fetchSummary(next);
   }
 
-  async function saveRate(employeeId: string) {
-    const cents = Math.round(Number(rateValue.replace(",", ".")) * 100);
-    if (!Number.isFinite(cents) || cents < 0) {
-      setError("Ingresá una tarifa válida");
-      return;
-    }
-    setBusyId(employeeId);
-    setError(null);
+  async function loadDailyDetail(employeeId: string) {
+    if (dailyDetail[employeeId]) return;
+    setLoadingDetailId(employeeId);
     try {
-      const res = await fetch(`/api/gerencia/empleados/${employeeId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ hourlyRateCents: cents }),
-      });
+      const res = await fetch(`/api/gerencia/horas/detalle?employeeId=${employeeId}&month=${period}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error al guardar tarifa");
-      setRateTargetId(null);
-      setRateValue("");
-      await fetchSummary(period);
+      if (!res.ok) throw new Error(data.error ?? "Error al cargar el detalle");
+      setDailyDetail((prev) => ({ ...prev, [employeeId]: data.entries }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido");
     } finally {
-      setBusyId(null);
+      setLoadingDetailId(null);
     }
   }
 
@@ -124,7 +140,7 @@ export function HorasTabClient({
             <tr>
               <th className="px-4 py-2 text-left">Empleado</th>
               <th className="px-4 py-2 text-left">Horas del mes</th>
-              <th className="px-4 py-2 text-left">Tarifa/hora</th>
+              <th className="px-4 py-2 text-left">Tarifa/Sueldo</th>
               <th className="px-4 py-2 text-left">Monto a pagar</th>
               <th className="px-4 py-2 text-left">Estado</th>
               <th className="px-4 py-2 text-left">Acción</th>
@@ -146,62 +162,65 @@ export function HorasTabClient({
             ) : (
               summary.map((row) => {
                 const busy = busyId === row.employee.id;
-                const editingRate = rateTargetId === row.employee.id;
+                const isHourly = row.employee.paymentType === "HOURLY";
+                const currentAmountCents = isHourly
+                  ? row.employee.hourlyRateCents
+                  : row.employee.monthlySalaryCents;
+                const entries = dailyDetail[row.employee.id];
+                const loadingDetail = loadingDetailId === row.employee.id;
+
                 return (
                   <tr key={row.employee.id} className={busy ? "bg-neutral-50" : ""}>
-                    <td className="px-4 py-3 font-medium">{row.employee.displayName}</td>
-                    <td className="px-4 py-3">{row.totalHours} hs</td>
-                    <td className="px-4 py-3">
-                      {editingRate ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={rateValue}
-                            onChange={(e) => setRateValue(e.target.value)}
-                            placeholder="$/hora"
-                            className="w-24 rounded border px-2 py-1 text-xs"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => saveRate(row.employee.id)}
-                            disabled={busy}
-                            className="text-xs text-blue-600 hover:underline disabled:opacity-40"
-                          >
-                            Guardar
-                          </button>
-                          <button
-                            onClick={() => {
-                              setRateTargetId(null);
-                              setRateValue("");
-                            }}
-                            className="text-xs text-neutral-400 hover:text-neutral-600"
-                          >
-                            Cancelar
-                          </button>
-                        </div>
+                    <td className="px-4 py-3 font-medium align-top">{row.employee.displayName}</td>
+                    <td className="px-4 py-3 align-top">
+                      {isHourly ? (
+                        <details onToggle={(e) => e.currentTarget.open && loadDailyDetail(row.employee.id)}>
+                          <summary className="cursor-pointer list-none text-blue-600 hover:underline [&::-webkit-details-marker]:hidden">
+                            {row.totalHours} hs <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
+                          </summary>
+                          <div className="mt-2 overflow-auto rounded-md border">
+                            {loadingDetail ? (
+                              <div className="px-3 py-2 text-xs text-neutral-400">Cargando...</div>
+                            ) : !entries || entries.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-neutral-400">Sin horas cargadas.</div>
+                            ) : (
+                              <table className="w-full text-xs">
+                                <thead className="bg-neutral-50 text-neutral-500">
+                                  <tr>
+                                    <th className="px-3 py-1.5 text-left">Fecha</th>
+                                    <th className="px-3 py-1.5 text-left">Ingreso</th>
+                                    <th className="px-3 py-1.5 text-left">Salida</th>
+                                    <th className="px-3 py-1.5 text-left">Horas</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {entries.map((entry) => (
+                                    <tr key={entry.id} className="border-t">
+                                      <td className="px-3 py-1.5">{formatDate(entry.workDate)}</td>
+                                      <td className="px-3 py-1.5">{formatTime(entry.checkIn)}</td>
+                                      <td className="px-3 py-1.5">{formatTime(entry.checkOut)}</td>
+                                      <td className="px-3 py-1.5">{entry.hoursWorked}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </details>
                       ) : (
-                        <button
-                          onClick={() => {
-                            setRateTargetId(row.employee.id);
-                            setRateValue(
-                              row.employee.hourlyRateCents != null
-                                ? (row.employee.hourlyRateCents / 100).toFixed(2)
-                                : ""
-                            );
-                          }}
-                          className="text-xs text-blue-600 hover:underline"
-                        >
-                          {row.employee.hourlyRateCents != null
-                            ? formatArsFromCents(row.employee.hourlyRateCents)
-                            : "Sin definir"}
-                        </button>
+                        <span className="text-neutral-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
+                      {currentAmountCents != null ? formatArsFromCents(currentAmountCents) : "Sin definir"}
+                      <div className="text-xs text-neutral-400">
+                        {isHourly ? "por hora" : "sueldo fijo"} — configurar en Empleados
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 align-top">
                       {row.amountCents != null ? formatArsFromCents(row.amountCents) : "—"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       <span
                         className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${
                           row.isPaid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
@@ -210,13 +229,19 @@ export function HorasTabClient({
                         {row.isPaid ? "Pagado" : "Pendiente"}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       {!row.isPaid && (
                         <button
                           onClick={() => markPaid(row.employee.id)}
                           disabled={busy || row.amountCents == null}
                           className="text-xs text-neutral-800 hover:underline disabled:opacity-40"
-                          title={row.amountCents == null ? "Definí la tarifa primero" : undefined}
+                          title={
+                            row.amountCents == null
+                              ? isHourly
+                                ? "Definí la tarifa primero"
+                                : "Definí el sueldo fijo primero"
+                              : undefined
+                          }
                         >
                           {busy ? "Guardando..." : "Marcar pagado"}
                         </button>

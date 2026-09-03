@@ -210,6 +210,8 @@ model Employee {
   costoFijoPaymentsCreated           CostoFijoPayment[]           @relation("EmployeeCostoFijoPaymentsCreated")
   costoFijoPaymentsUpdated           CostoFijoPayment[]           @relation("EmployeeCostoFijoPaymentsUpdated")
   hourlyRateCents                    Int?
+  paymentType                        EmployeePaymentType          @default(HOURLY)
+  monthlySalaryCents                 Int?
   hoursEntries                       EmployeeHoursEntry[]
   hoursPayments                      EmployeeHoursPayment[]       @relation("EmployeeHoursPaymentsEmployee")
   hoursPaymentsCreated               EmployeeHoursPayment[]       @relation("EmployeeHoursPaymentsCreatedBy")
@@ -1298,6 +1300,11 @@ enum PriceChangeType {
   BULK
 }
 
+enum EmployeePaymentType {
+  HOURLY
+  FIXED_MONTHLY
+}
+
 // ─── Horas trabajadas y sueldos por hora ────────────────────────────────────
 
 model EmployeeHoursEntry {
@@ -1315,16 +1322,18 @@ model EmployeeHoursEntry {
 }
 
 model EmployeeHoursPayment {
-  id                      String   @id @default(cuid())
-  employeeId              String
-  period                  DateTime
-  hoursSnapshot           Decimal  @db.Decimal(6, 2)
-  hourlyRateCentsSnapshot Int
-  amountCents             Int
-  paidAt                  DateTime @default(now())
-  createdByEmployeeId     String
-  employee                Employee @relation("EmployeeHoursPaymentsEmployee", fields: [employeeId], references: [id])
-  createdByEmployee       Employee @relation("EmployeeHoursPaymentsCreatedBy", fields: [createdByEmployeeId], references: [id])
+  id                         String              @id @default(cuid())
+  employeeId                 String
+  period                     DateTime
+  paymentType                EmployeePaymentType @default(HOURLY)
+  hoursSnapshot              Decimal?            @db.Decimal(6, 2)
+  hourlyRateCentsSnapshot    Int?
+  monthlySalaryCentsSnapshot Int?
+  amountCents                Int
+  paidAt                     DateTime            @default(now())
+  createdByEmployeeId        String
+  employee                   Employee            @relation("EmployeeHoursPaymentsEmployee", fields: [employeeId], references: [id])
+  createdByEmployee          Employee            @relation("EmployeeHoursPaymentsCreatedBy", fields: [createdByEmployeeId], references: [id])
 
   @@unique([employeeId, period])
 }

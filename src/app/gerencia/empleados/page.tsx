@@ -11,7 +11,16 @@ export default async function EmpleadosPage() {
   if (jar.get("bcn_role")?.value !== "GERENCIA") redirect("/");
 
   const raw = await prisma.employee.findMany({
-    select: { id: true, displayName: true, role: true, isActive: true, pinHash: true },
+    select: {
+      id: true,
+      displayName: true,
+      role: true,
+      isActive: true,
+      pinHash: true,
+      hourlyRateCents: true,
+      paymentType: true,
+      monthlySalaryCents: true,
+    },
     orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
   });
   const employees = raw.map(({ pinHash, ...e }) => ({ ...e, hasPin: pinHash !== null }));

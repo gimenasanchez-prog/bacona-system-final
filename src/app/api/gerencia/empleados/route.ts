@@ -16,7 +16,16 @@ export async function GET() {
   }
 
   const raw = await prisma.employee.findMany({
-    select: { id: true, displayName: true, role: true, isActive: true, pinHash: true },
+    select: {
+      id: true,
+      displayName: true,
+      role: true,
+      isActive: true,
+      pinHash: true,
+      hourlyRateCents: true,
+      paymentType: true,
+      monthlySalaryCents: true,
+    },
     orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
   });
 
@@ -38,7 +47,15 @@ export async function POST(req: NextRequest) {
 
   const created = await prisma.employee.create({
     data: { displayName: parsed.data.displayName.trim(), role: parsed.data.role },
-    select: { id: true, displayName: true, role: true, isActive: true },
+    select: {
+      id: true,
+      displayName: true,
+      role: true,
+      isActive: true,
+      hourlyRateCents: true,
+      paymentType: true,
+      monthlySalaryCents: true,
+    },
   });
 
   return NextResponse.json({ employee: { ...created, hasPin: false } }, { status: 201 });

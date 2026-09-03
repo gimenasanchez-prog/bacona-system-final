@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 
+import { formatArsFromCents } from "@/lib/money";
+
 type Role = "ASOCIADO" | "CAJA_LOCAL" | "GERENCIA" | "ADMINISTRATIVO" | "COMERCIAL";
+type PaymentType = "HOURLY" | "FIXED_MONTHLY";
 
 type Employee = {
   id: string;
@@ -10,6 +13,14 @@ type Employee = {
   role: Role;
   isActive: boolean;
   hasPin: boolean;
+  hourlyRateCents: number | null;
+  paymentType: PaymentType;
+  monthlySalaryCents: number | null;
+};
+
+const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
+  HOURLY: "Por hora",
+  FIXED_MONTHLY: "Sueldo fijo",
 };
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -33,8 +44,15 @@ export function EmpleadosClient({ initial }: { initial: Employee[] }) {
   const [pinValue, setPinValue] = useState("");
   const [pinSaving, setPinSaving] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  const [amountTargetId, setAmountTargetId] = useState<string | null>(null);
+  const [amountValue, setAmountValue] = useState("");
 
-  async function patch(id: string, data: Partial<Pick<Employee, "isActive" | "role">> & { pin?: string }) {
+  async function patch(
+    id: string,
+    data: Partial<Pick<Employee, "isActive" | "role" | "paymentType" | "hourlyRateCents" | "monthlySalaryCents">> & {
+      pin?: string;
+    }
+  ) {
     setLoadingId(id);
     setError(null);
     try {
@@ -80,6 +98,22 @@ export function EmpleadosClient({ initial }: { initial: Employee[] }) {
       setPinValue("");
     } finally {
       setPinSaving(false);
+    }
+  }
+
+  async function saveAmount(id: string, paymentType: PaymentType) {
+    const cents = Math.round(Number(amountValue.replace(",", ".")) * 100);
+    if (!Number.isFinite(cents) || cents < 0) {
+      setError("Ingresá un monto válido");
+      return;
+    }
+    const ok = await patch(
+      id,
+      paymentType === "HOURLY" ? { hourlyRateCents: cents } : { monthlySalaryCents: cents }
+    );
+    if (ok) {
+      setAmountTargetId(null);
+      setAmountValue("");
     }
   }
 
@@ -207,8 +241,15 @@ export function EmpleadosClient({ initial }: { initial: Employee[] }) {
           loadingId={loadingId}
           onToggle={(id) => patch(id, { isActive: false })}
           onRoleChange={(id, role) => patch(id, { role })}
+          onPaymentTypeChange={(id, paymentType) => patch(id, { paymentType })}
           onSetPin={(id) => { setPinTargetId(id); setPinValue(""); setPinError(null); }}
           pinTargetId={pinTargetId}
+          amountTargetId={amountTargetId}
+          amountValue={amountValue}
+          onAmountValueChange={setAmountValue}
+          onStartAmountEdit={(id, current) => { setAmountTargetId(id); setAmountValue(current); }}
+          onCancelAmountEdit={() => { setAmountTargetId(null); setAmountValue(""); }}
+          onSaveAmount={saveAmount}
           toggleLabel="Desactivar"
           toggleClass="text-red-600 hover:underline"
         />
@@ -225,8 +266,15 @@ export function EmpleadosClient({ initial }: { initial: Employee[] }) {
             loadingId={loadingId}
             onToggle={(id) => patch(id, { isActive: true })}
             onRoleChange={(id, role) => patch(id, { role })}
+            onPaymentTypeChange={(id, paymentType) => patch(id, { paymentType })}
             onSetPin={(id) => { setPinTargetId(id); setPinValue(""); setPinError(null); }}
             pinTargetId={pinTargetId}
+            amountTargetId={amountTargetId}
+            amountValue={amountValue}
+            onAmountValueChange={setAmountValue}
+            onStartAmountEdit={(id, current) => { setAmountTargetId(id); setAmountValue(current); }}
+            onCancelAmountEdit={() => { setAmountTargetId(null); setAmountValue(""); }}
+            onSaveAmount={saveAmount}
             toggleLabel="Reactivar"
             toggleClass="text-green-700 hover:underline"
           />
@@ -241,8 +289,15 @@ function EmployeeTable({
   loadingId,
   onToggle,
   onRoleChange,
+  onPaymentTypeChange,
   onSetPin,
   pinTargetId,
+  amountTargetId,
+  amountValue,
+  onAmountValueChange,
+  onStartAmountEdit,
+  onCancelAmountEdit,
+  onSaveAmount,
   toggleLabel,
   toggleClass,
 }: {
@@ -250,8 +305,15 @@ function EmployeeTable({
   loadingId: string | null;
   onToggle: (id: string) => void;
   onRoleChange: (id: string, role: Role) => void;
+  onPaymentTypeChange: (id: string, paymentType: PaymentType) => void;
   onSetPin: (id: string) => void;
   pinTargetId: string | null;
+  amountTargetId: string | null;
+  amountValue: string;
+  onAmountValueChange: (v: string) => void;
+  onStartAmountEdit: (id: string, current: string) => void;
+  onCancelAmountEdit: () => void;
+  onSaveAmount: (id: string, paymentType: PaymentType) => void;
   toggleLabel: string;
   toggleClass: string;
 }) {
@@ -266,6 +328,8 @@ function EmployeeTable({
           <tr>
             <th className="px-4 py-2 text-left">Nombre</th>
             <th className="px-4 py-2 text-left">Rol</th>
+            <th className="px-4 py-2 text-left">Tipo de pago</th>
+            <th className="px-4 py-2 text-left">Monto</th>
             <th className="px-4 py-2 text-left">PIN</th>
             <th className="px-4 py-2 text-left">Acciones</th>
           </tr>
@@ -274,8 +338,11 @@ function EmployeeTable({
           {employees.map((emp) => {
             const busy = loadingId === emp.id;
             const editingPin = pinTargetId === emp.id;
+            const editingAmount = amountTargetId === emp.id;
+            const currentAmountCents =
+              emp.paymentType === "HOURLY" ? emp.hourlyRateCents : emp.monthlySalaryCents;
             return (
-              <tr key={emp.id} className={busy || editingPin ? "bg-neutral-50" : ""}>
+              <tr key={emp.id} className={busy || editingPin || editingAmount ? "bg-neutral-50" : ""}>
                 <td className="px-4 py-3 font-medium">{emp.displayName}</td>
                 <td className="px-4 py-3">
                   <select
@@ -290,6 +357,60 @@ function EmployeeTable({
                       </option>
                     ))}
                   </select>
+                </td>
+                <td className="px-4 py-3">
+                  <select
+                    value={emp.paymentType}
+                    disabled={busy}
+                    onChange={(e) => onPaymentTypeChange(emp.id, e.target.value as PaymentType)}
+                    className="rounded border px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                  >
+                    {(Object.keys(PAYMENT_TYPE_LABELS) as PaymentType[]).map((pt) => (
+                      <option key={pt} value={pt}>
+                        {PAYMENT_TYPE_LABELS[pt]}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-4 py-3">
+                  {editingAmount ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={amountValue}
+                        onChange={(e) => onAmountValueChange(e.target.value)}
+                        placeholder={emp.paymentType === "HOURLY" ? "$/hora" : "Sueldo mensual"}
+                        className="w-24 rounded border px-2 py-1 text-xs"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => onSaveAmount(emp.id, emp.paymentType)}
+                        disabled={busy}
+                        className="text-xs text-blue-600 hover:underline disabled:opacity-40"
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        onClick={onCancelAmountEdit}
+                        className="text-xs text-neutral-400 hover:text-neutral-600"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        onStartAmountEdit(
+                          emp.id,
+                          currentAmountCents != null ? (currentAmountCents / 100).toFixed(2) : ""
+                        )
+                      }
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      {currentAmountCents != null ? formatArsFromCents(currentAmountCents) : "Sin definir"}
+                    </button>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span
