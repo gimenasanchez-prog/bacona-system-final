@@ -112,7 +112,7 @@ src/lib/                     ← Shared utilities (prisma client, money helpers)
 | `ASOCIADO` | POS, Cierre de caja (propio turno) |
 | `CAJA_LOCAL` | Todo ASOCIADO + Caja BCN + apertura de sobres |
 | `GERENCIA` | Todo + Consolidado completo + control de sobres |
-| `ADMINISTRATIVO` | Cuentas Corrientes (lectura) + Consolidado (lectura), sin POS ni caja |
+| `ADMINISTRATIVO` | Cuentas Corrientes y Cheques (igual que Gerencia) + Consolidado (lectura) + Ventas Comerciales (solo lectura), sin POS ni caja |
 
 **UI** — Tailwind CSS only, no component library. No global state library; local `useState`/`useEffect` plus cookies for session state.
 

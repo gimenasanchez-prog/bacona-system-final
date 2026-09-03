@@ -121,6 +121,7 @@ export default async function HomePage() {
             <NavRow href="/egresos" label="Egresos" />
             <NavRow href="/rentabilidad" label="Rentabilidad" />
             <NavRow href="/reportes" label="Reportes" />
+            <NavRow href="/ventas-comerciales" label="Ventas Comerciales (solo lectura)" />
           </NavCard>
           <NavCard title="Operación">
             <NavRow href="/stock" label="Stock" />

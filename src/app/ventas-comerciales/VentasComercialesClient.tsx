@@ -87,7 +87,8 @@ function emptyLine(clienteLabel: string): LineDraft {
   };
 }
 
-export default function VentasComercialesClient({ initialBatches }: { initialBatches: Batch[] }) {
+export default function VentasComercialesClient({ initialBatches, role }: { initialBatches: Batch[]; role: string }) {
+  const canEdit = role === "GERENCIA" || role === "COMERCIAL";
   const [batches, setBatches] = useState<Batch[]>(initialBatches);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [view, setView] = useState<"list" | "form">("list");
@@ -244,7 +245,7 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Ventas Comerciales</h1>
-        {view === "list" && (
+        {view === "list" && canEdit && (
           <button
             type="button"
             onClick={openNewForm}
@@ -278,13 +279,15 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-xs text-neutral-400">{formatDate(b.createdAt)}</div>
-                  <button
-                    type="button"
-                    className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
-                    onClick={() => setAddLineBatchId(b.id)}
-                  >
-                    + Agregar línea
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+                      onClick={() => setAddLineBatchId(b.id)}
+                    >
+                      + Agregar línea
+                    </button>
+                  )}
                 </div>
               </div>
               <table className="w-full text-sm">
@@ -325,7 +328,7 @@ export default function VentasComercialesClient({ initialBatches }: { initialBat
                           >
                             Ver detalle
                           </button>
-                          {l.status === "PENDIENTE" && (
+                          {canEdit && l.status === "PENDIENTE" && (
                             <>
                               <button
                                 type="button"
