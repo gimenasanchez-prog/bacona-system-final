@@ -20,6 +20,15 @@ const UpdateInvoiceSchema = z.discriminatedUnion("action", [
     tisshRetentionCents: z.number().int().min(0).optional(),
   }),
   z.object({
+    action: z.literal("registerPartialPayment"),
+    amountCents: z.number().int().min(1),
+    paymentDate: z.string().datetime(),
+    paymentReference: z.string().optional(),
+    bankAccountId: z.string().cuid(),
+    bankWithholdingCents: z.number().int().min(0).optional(),
+    bankFeesCents: z.number().int().min(0).optional(),
+  }),
+  z.object({
     action: z.literal("update"),
     estimatedPaymentDate: z.string().datetime().optional(),
     arcaFacturaNumber: z.string().nullable().optional(),
@@ -88,6 +97,26 @@ export async function PATCH(
         rentasRetentionCents: d.rentasRetentionCents,
         sussRetentionCents: d.sussRetentionCents,
         tisshRetentionCents: d.tisshRetentionCents,
+        createdByEmployeeId: employeeId,
+      });
+      return NextResponse.json(updated);
+    }
+
+    if (parsed.data.action === "registerPartialPayment") {
+      const jar = await cookies();
+      const employeeId = jar.get("bcn_employeeId")?.value;
+      if (!employeeId) {
+        return NextResponse.json({ error: "Sin sesión" }, { status: 401 });
+      }
+
+      const d = parsed.data;
+      const updated = await CuentaCorrienteService.registerPartialPayment(invoiceId, {
+        amountCents: d.amountCents,
+        paymentDate: new Date(d.paymentDate),
+        paymentReference: d.paymentReference,
+        bankAccountId: d.bankAccountId,
+        bankWithholdingCents: d.bankWithholdingCents,
+        bankFeesCents: d.bankFeesCents,
         createdByEmployeeId: employeeId,
       });
       return NextResponse.json(updated);

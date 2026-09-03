@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { addBusinessDays } from "@/lib/businessDays";
 import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxService";
+import { CuentaCorrienteService } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 
 export class ChequeService {
   static async listCheques() {
@@ -47,6 +48,12 @@ export class ChequeService {
       date: new Date(),
       createdByEmployeeId: employeeId,
     });
+
+    // Si este cheque está vinculado a una factura de cuenta transitoria
+    // (se factura manualmente desde Cuentas Corrientes), la salda sola.
+    if (cheque.cuentaCorrienteInvoiceId) {
+      await CuentaCorrienteService.applyChequeCredit(cheque.cuentaCorrienteInvoiceId, cheque.amountCents);
+    }
 
     return prisma.cheque.update({
       where: { id: chequeId },

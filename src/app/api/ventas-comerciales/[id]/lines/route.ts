@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { ComercialSaleService } from "@/modules/ventas_comerciales/services/comercialSaleService";
+import { parseDateOnly } from "@/lib/dates";
 
 const schema = z.object({
   deliveryDate: z.string().min(1),
@@ -32,7 +33,7 @@ export async function POST(
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
-  const deliveryDate = new Date(parsed.data.deliveryDate);
+  const deliveryDate = parseDateOnly(parsed.data.deliveryDate);
   if (Number.isNaN(deliveryDate.getTime())) {
     return NextResponse.json({ error: "Fecha de entrega inválida." }, { status: 400 });
   }

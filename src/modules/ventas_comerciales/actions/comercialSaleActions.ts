@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { cookies } from "next/headers";
 import { ComercialSaleService } from "@/modules/ventas_comerciales/services/comercialSaleService";
+import { parseDateOnly } from "@/lib/dates";
 
 const lineSchema = z.object({
   deliveryDate: z.string().min(1),
@@ -34,7 +35,7 @@ function checkRole(role: string | undefined): string | null {
 function parseLines(linesJson: string) {
   const raw = z.array(lineSchema).min(1, "Agregá al menos una línea de entrega").parse(JSON.parse(linesJson));
   return raw.map((l) => {
-    const deliveryDate = new Date(l.deliveryDate);
+    const deliveryDate = parseDateOnly(l.deliveryDate);
     if (Number.isNaN(deliveryDate.getTime())) throw new Error("Fecha de entrega inválida");
     return {
       deliveryDate,

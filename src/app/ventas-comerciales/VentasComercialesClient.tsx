@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { saveComercialBatchAction } from "@/modules/ventas_comerciales/actions/comercialSaleActions";
 import { NuevaCuentaModal } from "@/app/cuentas-corrientes/NuevaCuentaModal";
 import { printComercialBatchPreview } from "@/modules/ventas_comerciales/lib/printPreview";
@@ -57,7 +58,7 @@ function toDateInputValue(d: string | Date) {
 }
 
 function formatDate(d: string | Date) {
-  return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return formatBusinessDate(d);
 }
 
 type LineDraft = {

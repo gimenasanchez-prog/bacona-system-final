@@ -8,8 +8,27 @@ import { PLAN_CODES } from "@/modules/cuentas_corrientes/lib/planTariffs";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Detecta nombres "casi iguales" (ej. "MasterBus" vs "MasterBus 2") para avisar
+// antes de crear una cuenta nueva que en realidad debería ser la misma que ya
+// existe. No reemplaza el chequeo de igualdad exacta (ese sigue bloqueando).
+function normalizeCore(name: string): string {
+  return name.trim().toLowerCase().replace(/\s*\d+\s*$/, "").trim();
+}
+
+function isSimilarName(existingName: string, newName: string): boolean {
+  const a = existingName.trim().toLowerCase();
+  const b = newName.trim().toLowerCase();
+  if (a === b) return true;
+  const coreA = normalizeCore(a);
+  const coreB = normalizeCore(b);
+  if (coreA.length < 3) return false;
+  if (coreA === coreB || coreA === b || coreB === a) return true;
+  return a.includes(coreB) || b.includes(coreA);
+}
+
 const schema = z.object({
   displayName: z.string().trim().min(1, "El nombre del cliente es obligatorio"),
+  confirmDespiteSimilar: z.string().optional(),
   accountKind: z.enum(["CORPORATIVA", "TRANSITORIA"]).default("CORPORATIVA"),
   billingCycle: z.enum(["QUINCENAL", "MENSUAL"]).optional(),
   estimatedPaymentDate: z.string().optional(),
@@ -28,7 +47,13 @@ const schema = z.object({
   contactEmail2: z.string().optional(),
 });
 
-export type CreateCcAccountState = { error: string | null; createdId: string | null };
+export type SimilarAccount = { id: string; displayName: string; accountKind: "CORPORATIVA" | "TRANSITORIA" };
+
+export type CreateCcAccountState = {
+  error: string | null;
+  createdId: string | null;
+  similarAccounts?: SimilarAccount[];
+};
 
 function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -108,6 +133,25 @@ export async function createCcAccountAction(
   });
   if (existing) {
     return { error: "Ya existe un cliente con ese nombre.", createdId: null };
+  }
+
+  if (data.confirmDespiteSimilar !== "true") {
+    const activeAccounts = await prisma.cuentaCorrienteAccount.findMany({
+      where: { isActive: true },
+      select: { id: true, accountKind: true, customer: { select: { displayName: true } } },
+    });
+    const similar = activeAccounts.filter((a) => isSimilarName(a.customer.displayName, data.displayName));
+    if (similar.length > 0) {
+      return {
+        error: null,
+        createdId: null,
+        similarAccounts: similar.map((a) => ({
+          id: a.id,
+          displayName: a.customer.displayName,
+          accountKind: a.accountKind,
+        })),
+      };
+    }
   }
 
   const account = await prisma.$transaction(async (tx) => {

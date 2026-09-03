@@ -21,6 +21,7 @@ export function NuevaCuentaModal({ onCreated }: { onCreated: (createdId?: string
   const [planCode, setPlanCode] = useState("");
   const [uncapped, setUncapped] = useState(true);
   const [coverageInput, setCoverageInput] = useState("");
+  const [confirmDespiteSimilar, setConfirmDespiteSimilar] = useState(false);
 
   const initialState: CreateCcAccountState = useMemo(() => ({ error: null, createdId: null }), []);
   const [state, action, pending] = useActionState(createCcAccountAction, initialState);
@@ -32,9 +33,20 @@ export function NuevaCuentaModal({ onCreated }: { onCreated: (createdId?: string
       setPlanCode("");
       setUncapped(true);
       setCoverageInput("");
+      setConfirmDespiteSimilar(false);
       onCreated(state.createdId ?? undefined);
     }
   }, [state.createdId, onCreated]);
+
+  function selectExistingAccount(id: string) {
+    setOpen(false);
+    setAccountKind("CORPORATIVA");
+    setPlanCode("");
+    setUncapped(true);
+    setCoverageInput("");
+    setConfirmDespiteSimilar(false);
+    onCreated(id);
+  }
 
   // Sugerencia de tope de cobertura según la tarifa elegida.
   useEffect(() => {
@@ -103,8 +115,10 @@ export function NuevaCuentaModal({ onCreated }: { onCreated: (createdId?: string
                     name="displayName"
                     className="w-full rounded-md border px-3 py-2 text-sm"
                     placeholder="Ej: Empresa SAU"
+                    onChange={() => setConfirmDespiteSimilar(false)}
                     required
                   />
+                  <input type="hidden" name="confirmDespiteSimilar" value={confirmDespiteSimilar ? "true" : "false"} />
                 </div>
 
                 <div className="space-y-1">
@@ -287,6 +301,38 @@ export function NuevaCuentaModal({ onCreated }: { onCreated: (createdId?: string
               {state.error && (
                 <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   {state.error}
+                </div>
+              )}
+
+              {!state.error && state.similarAccounts && state.similarAccounts.length > 0 && !confirmDespiteSimilar && (
+                <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <div>Ya existe{state.similarAccounts.length > 1 ? "n" : ""} una cuenta parecida. ¿Es la misma?</div>
+                  <div className="space-y-1">
+                    {state.similarAccounts.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between gap-2 rounded border border-amber-200 bg-white px-2 py-1.5">
+                        <span className="text-neutral-700">
+                          {a.displayName}{" "}
+                          <span className="text-xs text-neutral-400">
+                            ({a.accountKind === "TRANSITORIA" ? "Transitoria" : "Corporativa"})
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => selectExistingAccount(a.id)}
+                          className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                        >
+                          Usar esta cuenta
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDespiteSimilar(true)}
+                    className="text-xs font-medium text-amber-800 underline"
+                  >
+                    No, es un cliente distinto — crear de todos modos
+                  </button>
                 </div>
               )}
 

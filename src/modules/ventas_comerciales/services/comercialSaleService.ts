@@ -2,7 +2,6 @@ import { PosPaymentMethod } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PosSaleService } from "@/modules/ventas_pos/services/posSaleService";
 import { PosPricingService } from "@/modules/ventas_pos/services/posPricingService";
-import { CuentaCorrienteService, getPeriodForDate } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 
 const PLACEHOLDER_PRODUCT_ID = "comercial-venta-placeholder-product";
 
@@ -128,7 +127,7 @@ export class ComercialSaleService {
 
   static async getUpcomingLines() {
     const recentCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-    return prisma.comercialSaleLine.findMany({
+    const lines = await prisma.comercialSaleLine.findMany({
       where: {
         OR: [{ status: "PENDIENTE" }, { status: "ENTREGADA", deliveredAt: { gte: recentCutoff } }],
       },
@@ -139,6 +138,14 @@ export class ComercialSaleService {
         products: { include: { product: { select: { id: true, name: true } } } },
       },
       orderBy: [{ deliveryDate: "asc" }, { sortOrder: "asc" }],
+    });
+
+    // Pendientes primero (necesitan acción del asociado); entregadas recientes
+    // abajo, solo como historial. Array.sort es estable, así que el orden por
+    // fecha/sortOrder de la query se conserva dentro de cada grupo.
+    return lines.sort((a, b) => {
+      if (a.status === b.status) return 0;
+      return a.status === "PENDIENTE" ? -1 : 1;
     });
   }
 
@@ -244,6 +251,27 @@ export class ComercialSaleService {
           createdByEmployeeId: params.employeeId,
         },
       });
+
+      // El cheque todavía no es plata acreditada — se deja un cargo pendiente
+      // de facturar (igual que hace cuenta corriente con la venta), sea cual
+      // sea el tipo de cuenta: en una transitoria, Gerencia lo factura
+      // manualmente por selección; en una corporativa, cae en la quincena/mes
+      // en curso y se factura junto con el resto del período. La factura se
+      // salda sola cuando el cheque se acredita (ver ChequeService.markAcreditado).
+      if (account) {
+        await prisma.ccDirectCharge.create({
+          data: {
+            cuentaCorrienteAccountId: account.id,
+            comercialSaleLineId: line.id,
+            date: new Date(),
+            description: `Venta comercial (cheque) — ${line.clienteLabel}`,
+            motive: line.tipoVianda,
+            category: "OTRO",
+            amountCents: totalCents,
+            createdByEmployeeId: params.employeeId,
+          },
+        });
+      }
     }
 
     await PosSaleService.confirmSale(sale.id);
@@ -260,23 +288,6 @@ export class ComercialSaleService {
         deliveredByEmployeeId: params.employeeId,
       },
     });
-
-    if (params.paymentMethod === "CUENTA_CORRIENTE" && account?.accountKind === "TRANSITORIA") {
-      try {
-        const period = getPeriodForDate(new Date(), account.billingCycle);
-        await CuentaCorrienteService.createInvoice(account.id, {
-          periodFrom: period.from,
-          periodTo: period.to,
-          estimatedPaymentDate: account.estimatedPaymentDate ?? period.to,
-          ivaExento: true,
-          ivaDiscriminado: false,
-          ivaAmountCents: 0,
-        });
-      } catch {
-        // Ya existe una factura sin pagar cubriendo este período — queda sin facturar
-        // automáticamente; Gerencia la concilia manualmente desde Cuentas Corrientes.
-      }
-    }
 
     return updatedLine;
   }

@@ -175,6 +175,7 @@ model CuentaCorrienteInvoice {
   sales                   PosSale[]              @relation("InvoicedSales")
   directCharges           CcDirectCharge[]
   localCashMovements      LocalCashMovement[]
+  cheques                 Cheque[]
 
   @@index([accountId, isPaid])
   @@index([estimatedPaymentDate])
@@ -1108,6 +1109,8 @@ model CcDirectCharge {
   cuentaCorrienteAccount   CuentaCorrienteAccount  @relation(fields: [cuentaCorrienteAccountId], references: [id])
   cuentaCorrienteInvoiceId String?
   cuentaCorrienteInvoice   CuentaCorrienteInvoice? @relation(fields: [cuentaCorrienteInvoiceId], references: [id])
+  comercialSaleLineId      String?                 @unique
+  comercialSaleLine        ComercialSaleLine?      @relation(fields: [comercialSaleLineId], references: [id])
   date                     DateTime
   description              String
   motive                   String
@@ -1173,6 +1176,8 @@ model ComercialSaleLine {
   cancelledAt             DateTime?
   cancellationReason      String?
 
+  ccDirectCharge          CcDirectCharge?
+
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
 
@@ -1214,6 +1219,8 @@ model Cheque {
   acreditadoAt              DateTime?
   cuentaBancariaId          String?
   cuentaBancaria            LocalCashBox? @relation(fields: [cuentaBancariaId], references: [id])
+  cuentaCorrienteInvoiceId  String?
+  cuentaCorrienteInvoice    CuentaCorrienteInvoice? @relation(fields: [cuentaCorrienteInvoiceId], references: [id])
   rechazadoAt               DateTime?
   rechazoMotivo             String?
   createdByEmployeeId       String
@@ -1222,6 +1229,7 @@ model Cheque {
   updatedAt                 DateTime     @updatedAt
 
   @@index([status, fechaAcreditacionEstimada])
+  @@index([cuentaCorrienteInvoiceId])
 }
 
 model PriceBulkUpdate {

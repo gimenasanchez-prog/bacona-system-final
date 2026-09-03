@@ -1,4 +1,5 @@
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { openPrintWindow } from "@/lib/printWindow";
 
 const IVA_LABELS: Record<string, string> = {
@@ -31,7 +32,7 @@ export type PreviewLine = {
 
 function formatDate(d: string) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return formatBusinessDate(d);
 }
 
 export function printComercialBatchPreview(params: { account: PreviewAccount | null; lines: PreviewLine[] }) {

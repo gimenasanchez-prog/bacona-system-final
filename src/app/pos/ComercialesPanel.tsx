@@ -41,6 +41,16 @@ function formatArs(cents: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(cents / 100);
 }
 
+// deliveryDate se guarda anclado a mediodía UTC (ver parseDateOnly en @/lib/dates).
+// Formatear con toLocaleDateString (huso del navegador) lo corre un día para
+// atrás en Argentina (UTC-3), así que se leen los componentes en UTC.
+function formatDayMonth(d: string) {
+  const date = new Date(d);
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}`;
+}
+
 export function ComercialesPanel() {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<UpcomingLine[]>([]);
@@ -89,6 +99,7 @@ export function ComercialesPanel() {
 
   const productsModalLine = lines.find((l) => l.id === productsModalLineId) ?? null;
   const deliverLine = lines.find((l) => l.id === deliverLineId) ?? null;
+  const pendingCount = lines.filter((l) => l.status !== "ENTREGADA").length;
 
   return (
     <div className="rounded-lg border bg-violet-50 p-2">
@@ -97,8 +108,12 @@ export function ComercialesPanel() {
         className="w-full text-left text-xs font-semibold text-violet-800"
         onClick={() => setOpen((o) => !o)}
       >
-        {lines.length} venta{lines.length !== 1 ? "s" : ""} comercial{lines.length !== 1 ? "es" : ""} próxima
-        {lines.length !== 1 ? "s" : ""} {open ? "▲" : "▼"}
+        {pendingCount} venta{pendingCount !== 1 ? "s" : ""} comercial{pendingCount !== 1 ? "es" : ""} próxima
+        {pendingCount !== 1 ? "s" : ""}
+        {lines.length > pendingCount && (
+          <span className="font-normal text-violet-500"> ({lines.length - pendingCount} entregada{lines.length - pendingCount !== 1 ? "s" : ""} reciente{lines.length - pendingCount !== 1 ? "s" : ""})</span>
+        )}
+        {" "}{open ? "▲" : "▼"}
       </button>
 
       {error && (
@@ -128,7 +143,7 @@ export function ComercialesPanel() {
                 return (
                   <tr key={l.id} className={`border-t align-top ${delivered ? "opacity-50" : ""}`}>
                     <td className="whitespace-nowrap px-2 py-1.5">
-                      {new Date(l.deliveryDate).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })}
+                      {formatDayMonth(l.deliveryDate)}
                     </td>
                     <td className="px-2 py-1.5">{l.clienteLabel}</td>
                     <td className="px-2 py-1.5">

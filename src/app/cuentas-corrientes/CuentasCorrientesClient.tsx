@@ -8,13 +8,18 @@ import type {
   PeriodSummary,
   DirectCharge,
   InvoiceDetail,
+  PendingCharge,
+  TransitoriaInvoiceSummary,
 } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 import { CargosDirectosModal } from "./CargosDirectosModal";
 import { NuevaCuentaModal } from "./NuevaCuentaModal";
 
 
 function formatDate(d: Date | string) {
-  return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  // timeZone fijo en UTC: los períodos se calculan en UTC en el servidor
+  // (ver getPeriodForDate), así que se muestran siempre igual sin importar
+  // el huso horario del navegador que los mira.
+  return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 }
 
 function formatPeriod(from: Date | string, to: Date | string) {
@@ -1120,6 +1125,399 @@ function PeriodsTable({ account, onRefresh }: { account: AccountWithBillingState
   );
 }
 
+// ─── Cuentas transitorias: facturación manual por selección ──────────────────
+// A diferencia de las corporativas (facturan por quincena/mes, ver PeriodsTable),
+// una cuenta transitoria factura por selección manual de cargos pendientes,
+// agrupados por cierre comercial de origen.
+
+function GenerarFacturaTransitoriaModal({ accountId, customerName, selected, onClose, onSuccess }: {
+  accountId: string;
+  customerName: string;
+  selected: PendingCharge[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const subtotalCents = selected.reduce((sum, c) => sum + c.amountCents, 0);
+  const defaultPaymentDate = new Date();
+  defaultPaymentDate.setDate(defaultPaymentDate.getDate() + 30);
+
+  const [arcaFacturaNumber, setArcaFacturaNumber] = useState("");
+  const [estimatedPaymentDate, setEstimatedPaymentDate] = useState(toDateInputValue(defaultPaymentDate));
+  const [ivaExento, setIvaExento] = useState(true);
+  const [ivaDiscriminado, setIvaDiscriminado] = useState(false);
+  const [ivaAmountArs, setIvaAmountArs] = useState("0.00");
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ivaAmountCents = ars(ivaAmountArs);
+
+  async function handleSubmit() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cuentas-corrientes/${accountId}/invoices`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          saleIds: selected.filter((c) => c.kind === "SALE").map((c) => c.id),
+          directChargeIds: selected.filter((c) => c.kind === "DIRECT_CHARGE").map((c) => c.id),
+          estimatedPaymentDate: new Date(estimatedPaymentDate + "T12:00:00.000Z").toISOString(),
+          arcaFacturaNumber: arcaFacturaNumber || undefined,
+          ivaExento, ivaDiscriminado: ivaExento ? false : ivaDiscriminado,
+          ivaAmountCents: ivaExento ? 0 : ivaAmountCents,
+          notes: notes || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al generar factura.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+        <div className="border-b px-6 py-4">
+          <div className="font-semibold text-neutral-800">Generar factura — {customerName}</div>
+          <div className="text-xs text-neutral-400 mt-0.5">{selected.length} cargo{selected.length !== 1 ? "s" : ""} seleccionado{selected.length !== 1 ? "s" : ""}</div>
+        </div>
+        <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Número de factura ARCA <span className="text-neutral-400">(opcional)</span></label>
+            <input type="text" value={arcaFacturaNumber} onChange={(e) => setArcaFacturaNumber(e.target.value)} placeholder="Ej: 00001-000083" className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha de vencimiento <span className="text-amber-600 font-medium">(Mora si se supera)</span></label>
+            <input type="date" value={estimatedPaymentDate} onChange={(e) => setEstimatedPaymentDate(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div className="rounded-lg bg-neutral-50 px-4 py-3 space-y-1.5 text-sm max-h-40 overflow-y-auto">
+            {selected.map((c) => (
+              <div key={c.id} className="flex justify-between text-xs text-neutral-600">
+                <span>{formatDate(c.date)} · {c.description}</span>
+                <span>{formatArsFromCents(c.amountCents)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={ivaExento} onChange={(e) => setIvaExento(e.target.checked)} className="rounded" />
+              IVA Exento
+            </label>
+            {!ivaExento && (
+              <div className="space-y-2 pl-6">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={ivaDiscriminado} onChange={(e) => setIvaDiscriminado(e.target.checked)} className="rounded" />
+                  IVA Discriminado
+                </label>
+                {ivaDiscriminado && (
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-500 mb-1">Monto IVA ($)</label>
+                    <input type="number" min="0" step="0.01" value={ivaAmountArs} onChange={(e) => setIvaAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="rounded-lg bg-blue-50 px-4 py-3 text-sm space-y-1">
+            <div className="flex justify-between font-semibold text-blue-800"><span>Total factura</span><span>{formatArsFromCents(subtotalCents)}</span></div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Notas (opcional)</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded border px-3 py-2 text-sm resize-none" placeholder="Observaciones..." />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Generar factura"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegisterPartialPaymentModal({ invoice, onClose, onSuccess }: {
+  invoice: TransitoriaInvoiceSummary;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const pendingCents = invoice.totalAmountCents - invoice.paidAmountCents;
+  const [amountArs, setAmountArs] = useState((pendingCents / 100).toFixed(2));
+  const [paymentDate, setPaymentDate] = useState(toDateInputValue(new Date()));
+  const [reference, setReference] = useState("");
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [bankAccounts, setBankAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/egresos/cuentas?kind=CUENTA_BANCARIA")
+      .then((r) => r.json())
+      .then((d) => setBankAccounts(d.items ?? []));
+  }, []);
+
+  async function handleSubmit() {
+    if (!bankAccountId) {
+      setError("Elegí a qué cuenta bancaria se acreditó el pago.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cuentas-corrientes/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "registerPartialPayment",
+          amountCents: ars(amountArs),
+          paymentDate: new Date(paymentDate + "T12:00:00.000Z").toISOString(),
+          paymentReference: reference || undefined,
+          bankAccountId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al registrar el cobro.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+        <div className="border-b px-6 py-4">
+          <div className="font-semibold text-neutral-800">Registrar cobro parcial</div>
+          <div className="text-xs text-neutral-400 mt-0.5">
+            Pendiente: {formatArsFromCents(pendingCents)} de {formatArsFromCents(invoice.totalAmountCents)}
+          </div>
+        </div>
+        <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Monto cobrado ($)</label>
+            <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Fecha de pago</label>
+            <input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Referencia <span className="text-neutral-400">(opcional)</span></label>
+            <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Nro. de transferencia..." className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Cuenta bancaria donde se acreditó</label>
+            <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
+              <option value="">Elegir...</option>
+              {bankAccounts.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="border-t px-6 py-4 flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Registrar cobro"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithBillingState; onRefresh: () => void }) {
+  const [pendingCharges, setPendingCharges] = useState<PendingCharge[] | null>(null);
+  const [invoices, setInvoices] = useState<TransitoriaInvoiceSummary[] | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [partialPaymentTarget, setPartialPaymentTarget] = useState<TransitoriaInvoiceSummary | null>(null);
+  const [showPaidInvoices, setShowPaidInvoices] = useState(false);
+
+  const load = useCallback(() => {
+    fetch(`/api/cuentas-corrientes/${account.id}/pending-charges`)
+      .then((r) => r.json())
+      .then((d) => {
+        setPendingCharges(d.pendingCharges ?? []);
+        setInvoices(d.invoices ?? []);
+      });
+  }, [account.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function toggle(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleGroup(ids: string[], allSelected: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (allSelected) next.delete(id); else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function handleRefreshAll() {
+    load();
+    onRefresh();
+  }
+
+  if (pendingCharges === null || invoices === null) {
+    return <div className="bg-neutral-50 border-t px-6 py-4 text-xs text-neutral-400">Cargando...</div>;
+  }
+
+  const groups = new Map<string, { label: string; items: PendingCharge[] }>();
+  for (const c of pendingCharges) {
+    const key = c.comercialSaleId ?? "__otros__";
+    const label = c.comercialSaleLabel ?? "Otros cargos";
+    if (!groups.has(key)) groups.set(key, { label, items: [] });
+    groups.get(key)!.items.push(c);
+  }
+
+  const selected = pendingCharges.filter((c) => selectedIds.has(c.id));
+  const unpaidInvoices = invoices.filter((inv) => !inv.isPaid);
+  const paidInvoices = invoices.filter((inv) => inv.isPaid);
+
+  return (
+    <div className="bg-neutral-50 border-t px-4 py-3 space-y-4">
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Cargos pendientes de facturar</div>
+          <button
+            type="button"
+            disabled={selected.length === 0}
+            onClick={() => setShowInvoiceModal(true)}
+            className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+          >
+            Generar factura {selected.length > 0 && `(${selected.length})`}
+          </button>
+        </div>
+        {pendingCharges.length === 0 ? (
+          <p className="text-xs text-neutral-400">Sin cargos pendientes.</p>
+        ) : (
+          <div className="space-y-3">
+            {Array.from(groups.entries()).map(([key, group]) => {
+              const ids = group.items.map((i) => i.id);
+              const allSelected = ids.every((id) => selectedIds.has(id));
+              return (
+                <div key={key} className="rounded border bg-white">
+                  <div className="flex items-center gap-2 border-b bg-neutral-50 px-3 py-1.5">
+                    <input type="checkbox" checked={allSelected} onChange={() => toggleGroup(ids, allSelected)} />
+                    <span className="text-xs font-medium text-neutral-600">{group.label}</span>
+                  </div>
+                  {group.items.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm border-b last:border-b-0 cursor-pointer hover:bg-neutral-50">
+                      <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggle(c.id)} />
+                      <span className="flex-1 text-neutral-600">{formatDate(c.date)} · {c.description}</span>
+                      <span className="text-neutral-700">{formatArsFromCents(c.amountCents)}</span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-2">Facturas emitidas</div>
+        {unpaidInvoices.length === 0 && paidInvoices.length === 0 && (
+          <p className="text-xs text-neutral-400">Todavía no se generó ninguna factura.</p>
+        )}
+        <div className="space-y-1.5">
+          {unpaidInvoices.map((inv) => (
+            <div key={inv.id} className="flex items-center justify-between rounded border bg-white px-3 py-2 text-sm">
+              <div>
+                <div className="text-neutral-700">
+                  {formatDate(inv.billingDate)} · {inv.itemsCount} cargo{inv.itemsCount !== 1 ? "s" : ""}
+                  {inv.arcaFacturaNumber && ` · ARCA ${inv.arcaFacturaNumber}`}
+                </div>
+                <div className="text-xs text-neutral-400">
+                  Vence {formatDate(inv.estimatedPaymentDate)}
+                  {inv.paidAmountCents > 0 && ` · Cobrado ${formatArsFromCents(inv.paidAmountCents)} de ${formatArsFromCents(inv.totalAmountCents)}`}
+                  {inv.hasChequePending && " · Cheque en curso"}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-medium text-amber-600">{formatArsFromCents(inv.totalAmountCents - inv.paidAmountCents)}</span>
+                <button
+                  type="button"
+                  onClick={() => setPartialPaymentTarget(inv)}
+                  className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+                >
+                  Registrar cobro parcial
+                </button>
+              </div>
+            </div>
+          ))}
+          {paidInvoices.length > 0 && (
+            <>
+              <button
+                onClick={() => setShowPaidInvoices((v) => !v)}
+                className="w-full px-2 py-1.5 text-xs text-neutral-400 hover:text-neutral-600 text-left"
+              >
+                {showPaidInvoices ? "▲" : "▼"} {paidInvoices.length} factura{paidInvoices.length !== 1 ? "s" : ""} pagada{paidInvoices.length !== 1 ? "s" : ""}
+              </button>
+              {showPaidInvoices && paidInvoices.map((inv) => (
+                <div key={inv.id} className="flex items-center justify-between rounded border bg-white px-3 py-2 text-sm opacity-70">
+                  <div>
+                    <div className="text-neutral-700">
+                      {formatDate(inv.billingDate)} · {inv.itemsCount} cargo{inv.itemsCount !== 1 ? "s" : ""}
+                      {inv.arcaFacturaNumber && ` · ARCA ${inv.arcaFacturaNumber}`}
+                    </div>
+                    <div className="text-xs text-green-600">Pagada ✓</div>
+                  </div>
+                  <span className="font-medium text-neutral-700">{formatArsFromCents(inv.totalAmountCents)}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+
+      {showInvoiceModal && (
+        <GenerarFacturaTransitoriaModal
+          accountId={account.id}
+          customerName={account.customerName}
+          selected={selected}
+          onClose={() => setShowInvoiceModal(false)}
+          onSuccess={() => {
+            setShowInvoiceModal(false);
+            setSelectedIds(new Set());
+            handleRefreshAll();
+          }}
+        />
+      )}
+      {partialPaymentTarget && (
+        <RegisterPartialPaymentModal
+          invoice={partialPaymentTarget}
+          onClose={() => setPartialPaymentTarget(null)}
+          onSuccess={() => {
+            setPartialPaymentTarget(null);
+            handleRefreshAll();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Account Row ──────────────────────────────────────────────────────────────
 
 function AccountRow({ account, expanded, onToggle, onRefresh, onArchiveChange }: {
@@ -1209,7 +1607,9 @@ function AccountRow({ account, expanded, onToggle, onRefresh, onArchiveChange }:
       {expanded && (
         <tr>
           <td colSpan={8} className="p-0">
-            <PeriodsTable account={account} onRefresh={onRefresh} />
+            {account.accountKind === "TRANSITORIA"
+              ? <TransitoriaChargesTable account={account} onRefresh={onRefresh} />
+              : <PeriodsTable account={account} onRefresh={onRefresh} />}
           </td>
         </tr>
       )}
