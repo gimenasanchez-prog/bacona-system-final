@@ -50,9 +50,23 @@ export type DirectCharge = {
   motive: string;
   category: CcDirectChargeCategory;
   amountCents: number;
+  creditNotesTotalCents: number;
+  netAmountCents: number;
   comandaNumber: string | null;
   createdAt: Date;
   cuentaCorrienteInvoiceId: string | null;
+};
+
+export type CreditNoteEntry = {
+  id: string;
+  date: Date;
+  description: string;
+  motive: string;
+  amountCents: number;
+  arcaFacturaNumber: string | null;
+  ivaExento: boolean;
+  ivaDiscriminado: boolean;
+  ivaAmountCents: number;
 };
 
 export type InvoiceSummary = {
@@ -82,6 +96,8 @@ export type InvoiceSummary = {
   digitalInvoiceUrl: string | null;
   notes: string | null;
   salesCount: number;
+  creditNotesTotalCents: number;
+  outstandingCents: number;
 };
 
 export type PeriodSummary = {
@@ -155,6 +171,8 @@ export type InvoiceDetail = {
     paymentReference: string | null;
     digitalInvoiceUrl: string | null;
     notes: string | null;
+    creditNotesTotalCents: number;
+    outstandingCents: number;
   };
   account: {
     customerName: string;
@@ -168,6 +186,8 @@ export type InvoiceDetail = {
     ccAmountCents: number;
     items: { qty: number; productName: string; unitPriceCents: number; lineTotalCents: number; modifiers: string[] }[];
   }[];
+  directCharges: DirectCharge[];
+  creditNotes: CreditNoteEntry[];
 };
 
 // ─── Facturación manual por selección (solo cuentas TRANSITORIA) ───────────
@@ -184,6 +204,19 @@ export type PendingCharge = {
   amountCents: number;
   comercialSaleId: string | null;
   comercialSaleLabel: string | null;
+};
+
+export type CreateCreditNoteParams = {
+  target: { type: "invoice"; invoiceId: string } | { type: "directCharge"; chargeId: string };
+  date: Date;
+  description: string;
+  motive: string;
+  amountCents: number;
+  arcaFacturaNumber?: string;
+  ivaExento: boolean;
+  ivaDiscriminado: boolean;
+  ivaAmountCents: number;
+  createdByEmployeeId: string;
 };
 
 export type CreateInvoiceFromSelectionParams = {
@@ -208,6 +241,8 @@ export type TransitoriaInvoiceSummary = {
   notes: string | null;
   itemsCount: number;
   hasChequePending: boolean;
+  creditNotesTotalCents: number;
+  outstandingCents: number;
 };
 
 function buildInvoiceSummary(inv: {
@@ -237,7 +272,7 @@ function buildInvoiceSummary(inv: {
   digitalInvoiceUrl: string | null;
   notes: string | null;
   sales: { id: string }[];
-}): InvoiceSummary {
+}, creditNotesTotalCents: number): InvoiceSummary {
   return {
     id: inv.id,
     periodFrom: inv.periodFrom,
@@ -265,6 +300,8 @@ function buildInvoiceSummary(inv: {
     digitalInvoiceUrl: inv.digitalInvoiceUrl,
     notes: inv.notes,
     salesCount: inv.sales.length,
+    creditNotesTotalCents,
+    outstandingCents: inv.totalAmountCents - inv.paidAmountCents - creditNotesTotalCents,
   };
 }
 
@@ -296,7 +333,7 @@ export class CuentaCorrienteService {
       prisma.cuentaCorrienteInvoice.findMany({
         where: { accountId: { in: allAccountIds } },
         orderBy: { periodFrom: "desc" },
-        include: { sales: { select: { id: true } } },
+        include: { sales: { select: { id: true } }, creditNotes: { select: { amountCents: true } } },
       }),
       // Traer TODAS las ventas de CC (sin filtro de fecha ni de factura), de la cuenta raíz y sus satélites
       prisma.posSale.findMany({
@@ -322,6 +359,7 @@ export class CuentaCorrienteService {
       prisma.ccDirectCharge.findMany({
         where: { cuentaCorrienteAccountId: { in: allAccountIds } },
         orderBy: { date: "desc" },
+        include: { creditNotes: { select: { amountCents: true } } },
       }),
     ]);
 
@@ -350,17 +388,22 @@ export class CuentaCorrienteService {
         })),
       }));
 
-      const allDirectCharges: DirectCharge[] = accDirectChargesRaw.map((c) => ({
-        id: c.id,
-        date: c.date,
-        description: c.description,
-        motive: c.motive,
-        category: c.category,
-        amountCents: c.amountCents,
-        comandaNumber: c.comandaNumber,
-        createdAt: c.createdAt,
-        cuentaCorrienteInvoiceId: c.cuentaCorrienteInvoiceId,
-      }));
+      const allDirectCharges: DirectCharge[] = accDirectChargesRaw.map((c) => {
+        const creditNotesTotalCents = c.creditNotes.reduce((s, n) => s + n.amountCents, 0);
+        return {
+          id: c.id,
+          date: c.date,
+          description: c.description,
+          motive: c.motive,
+          category: c.category,
+          amountCents: c.amountCents,
+          creditNotesTotalCents,
+          netAmountCents: c.amountCents - creditNotesTotalCents,
+          comandaNumber: c.comandaNumber,
+          createdAt: c.createdAt,
+          cuentaCorrienteInvoiceId: c.cuentaCorrienteInvoiceId,
+        };
+      });
 
       // Construir mapa de facturas por período. La clave NO sale del periodFrom
       // guardado en la factura (puede estar mal grabado — ej. un día corrido —
@@ -389,7 +432,14 @@ export class CuentaCorrienteService {
         invoicePeriodKeyById.set(inv.id, key);
         // Si hay múltiples facturas para el mismo período (edge case), guardar la más reciente
         if (!invoiceByPeriodKey.has(key)) {
-          invoiceByPeriodKey.set(key, buildInvoiceSummary(inv));
+          // Solo NC vinculadas directamente a la factura reducen su saldo pendiente
+          // acá. Las NC vinculadas a un cargo directo únicamente se permiten
+          // mientras el cargo está sin facturar (ver createCreditNote), así que
+          // para cualquier cargo ya vinculado a esta factura, su NC ya quedó
+          // descontada en subtotalCents/totalAmountCents al momento de facturar
+          // (ver createInvoice) — sumarla acá otra vez sería contarla dos veces.
+          const invoiceCreditNotesCents = inv.creditNotes.reduce((s, n) => s + n.amountCents, 0);
+          invoiceByPeriodKey.set(key, buildInvoiceSummary(inv, invoiceCreditNotesCents));
         }
       }
 
@@ -439,7 +489,7 @@ export class CuentaCorrienteService {
           );
           const totalConsumptionCents =
             periodSales.reduce((s, x) => s + x.ccAmountCents, 0) +
-            periodCharges.reduce((s, x) => s + x.amountCents, 0);
+            periodCharges.reduce((s, x) => s + x.netAmountCents, 0);
           return {
             period,
             isCurrentPeriod: key === currentKey,
@@ -485,7 +535,7 @@ export class CuentaCorrienteService {
         } else {
           const inv = p.invoice;
           if (!inv.isPaid) {
-            const outstanding = inv.totalAmountCents - inv.paidAmountCents;
+            const outstanding = inv.outstandingCents;
             if (inv.estimatedPaymentDate <= today) {
               overdueInvoicesTotalCents += outstanding;
             } else {
@@ -566,8 +616,50 @@ export class CuentaCorrienteService {
           },
           orderBy: { createdAt: "asc" },
         },
+        directCharges: {
+          include: { creditNotes: true },
+          orderBy: { date: "asc" },
+        },
+        creditNotes: true,
       },
     });
+
+    const directCharges: DirectCharge[] = inv.directCharges.map((c) => {
+      const creditNotesTotalCents = c.creditNotes.reduce((s, n) => s + n.amountCents, 0);
+      return {
+        id: c.id,
+        date: c.date,
+        description: c.description,
+        motive: c.motive,
+        category: c.category,
+        amountCents: c.amountCents,
+        creditNotesTotalCents,
+        netAmountCents: c.amountCents - creditNotesTotalCents,
+        comandaNumber: c.comandaNumber,
+        createdAt: c.createdAt,
+        cuentaCorrienteInvoiceId: c.cuentaCorrienteInvoiceId,
+      };
+    });
+
+    // Las NC vinculadas a un cargo directo solo se permiten mientras ese cargo
+    // está sin facturar (ver createCreditNote) — para un cargo ya vinculado a
+    // esta factura, su NC ya quedó descontada en subtotalCents/totalAmountCents
+    // al momento de facturar (ver createInvoice), así que acá se muestran solo
+    // como dato informativo (vía directCharges más abajo), sin sumarlas de
+    // nuevo al saldo pendiente. Solo las NC vinculadas directamente a la
+    // factura reducen ese saldo.
+    const creditNotes: CreditNoteEntry[] = inv.creditNotes.map((n) => ({
+      id: n.id,
+      date: n.date,
+      description: n.description,
+      motive: n.motive,
+      amountCents: n.amountCents,
+      arcaFacturaNumber: n.arcaFacturaNumber,
+      ivaExento: n.ivaExento,
+      ivaDiscriminado: n.ivaDiscriminado,
+      ivaAmountCents: n.ivaAmountCents,
+    }));
+    const creditNotesTotalCents = creditNotes.reduce((s, n) => s + n.amountCents, 0);
 
     return {
       invoice: {
@@ -594,6 +686,8 @@ export class CuentaCorrienteService {
         paymentReference: inv.paymentReference,
         digitalInvoiceUrl: inv.digitalInvoiceUrl,
         notes: inv.notes,
+        creditNotesTotalCents,
+        outstandingCents: inv.totalAmountCents - inv.paidAmountCents - creditNotesTotalCents,
       },
       account: {
         customerName: inv.account.customer.displayName,
@@ -613,6 +707,8 @@ export class CuentaCorrienteService {
           modifiers: i.modifiers.map((m) => m.modifierOption.name),
         })),
       })),
+      directCharges,
+      creditNotes,
     };
   }
 
@@ -673,12 +769,13 @@ export class CuentaCorrienteService {
         comercialSaleLine: {
           select: { posSale: { select: { payments: { where: { method: "CHEQUE" }, select: { id: true } } } } },
         },
+        creditNotes: { select: { amountCents: true } },
       },
     });
 
     const subtotalCents =
       sales.reduce((sum, s) => sum + s.payments.reduce((ps, p) => ps + p.amountCents, 0), 0) +
-      directCharges.reduce((sum, c) => sum + c.amountCents, 0);
+      directCharges.reduce((sum, c) => sum + c.amountCents - c.creditNotes.reduce((s, n) => s + n.amountCents, 0), 0);
 
     const totalAmountCents = subtotalCents;
 
@@ -832,9 +929,17 @@ export class CuentaCorrienteService {
   static async voidInvoice(invoiceId: string) {
     const inv = await prisma.cuentaCorrienteInvoice.findUniqueOrThrow({
       where: { id: invoiceId },
+      include: { creditNotes: { select: { id: true } } },
     });
     if (inv.isPaid || inv.paidAmountCents > 0) {
       throw new Error("No se puede anular una factura con pago registrado.");
+    }
+    // Solo bloquea por NC vinculadas directamente a la factura: quedarían
+    // huérfanas si se borra. Las NC vinculadas a un cargo directo no son un
+    // problema — el cargo sigue existiendo y vuelve a "sin facturar" con su
+    // NC intacta.
+    if (inv.creditNotes.length > 0) {
+      throw new Error("No se puede anular una factura con notas de crédito aplicadas.");
     }
 
     return prisma.$transaction(async (tx) => {
@@ -856,6 +961,61 @@ export class CuentaCorrienteService {
       _max: { paidAt: true },
     });
     return result._max.paidAt;
+  }
+
+  // ─── Notas de crédito ───────────────────────────────────────────────────
+  // Siempre vinculadas a un target puntual (factura o cargo directo, nunca
+  // "crédito general" suelto). Nunca mutan el registro original — reducen lo
+  // adeudado restándose en el momento de calcular netos/saldos (ver
+  // buildInvoiceSummary y el mapeo de DirectCharge más arriba), mismo espíritu
+  // ledger que usa Stock ("nunca editar, crear un registro compensatorio").
+
+  static async createCreditNote(params: CreateCreditNoteParams) {
+    if (!Number.isInteger(params.amountCents) || params.amountCents <= 0) {
+      throw new Error("El monto de la nota de crédito debe ser un entero mayor a cero.");
+    }
+
+    let cuentaCorrienteAccountId: string;
+    let cuentaCorrienteInvoiceId: string | null = null;
+    let ccDirectChargeId: string | null = null;
+
+    if (params.target.type === "invoice") {
+      const invoice = await prisma.cuentaCorrienteInvoice.findUniqueOrThrow({
+        where: { id: params.target.invoiceId },
+      });
+      cuentaCorrienteAccountId = invoice.accountId;
+      cuentaCorrienteInvoiceId = invoice.id;
+    } else {
+      const charge = await prisma.ccDirectCharge.findUniqueOrThrow({
+        where: { id: params.target.chargeId },
+      });
+      if (charge.cuentaCorrienteInvoiceId) {
+        throw new Error("Este cargo ya fue facturado — cargá la nota de crédito directamente contra la factura.");
+      }
+      cuentaCorrienteAccountId = charge.cuentaCorrienteAccountId;
+      ccDirectChargeId = charge.id;
+    }
+
+    return prisma.ccCreditNote.create({
+      data: {
+        cuentaCorrienteAccountId,
+        cuentaCorrienteInvoiceId,
+        ccDirectChargeId,
+        date: params.date,
+        description: params.description,
+        motive: params.motive,
+        amountCents: params.amountCents,
+        arcaFacturaNumber: params.arcaFacturaNumber ?? null,
+        ivaExento: params.ivaExento,
+        ivaDiscriminado: params.ivaDiscriminado,
+        ivaAmountCents: params.ivaAmountCents,
+        createdByEmployeeId: params.createdByEmployeeId,
+      },
+    });
+  }
+
+  static async deleteCreditNote(id: string) {
+    await prisma.ccCreditNote.delete({ where: { id } });
   }
 
   static async listInvoicesForExport(params: { from: Date; to: Date }) {
@@ -894,6 +1054,7 @@ export class CuentaCorrienteService {
           comercialSaleLine: {
             select: { comercialSaleId: true, clienteLabel: true, comercialSale: { select: { notes: true } } },
           },
+          creditNotes: { select: { amountCents: true } },
         },
         orderBy: { date: "desc" },
       }),
@@ -917,7 +1078,7 @@ export class CuentaCorrienteService {
       id: c.id,
       date: c.date,
       description: c.description,
-      amountCents: c.amountCents,
+      amountCents: c.amountCents - c.creditNotes.reduce((s, n) => s + n.amountCents, 0),
       comercialSaleId: c.comercialSaleLine?.comercialSaleId ?? null,
       comercialSaleLabel: labelFor(c.comercialSaleLine),
     }));
@@ -932,22 +1093,31 @@ export class CuentaCorrienteService {
         sales: { select: { id: true } },
         directCharges: { select: { id: true } },
         cheques: { select: { status: true } },
+        creditNotes: { select: { amountCents: true } },
       },
       orderBy: { billingDate: "desc" },
     });
 
-    return invoices.map((inv) => ({
-      id: inv.id,
-      billingDate: inv.billingDate,
-      estimatedPaymentDate: inv.estimatedPaymentDate,
-      totalAmountCents: inv.totalAmountCents,
-      isPaid: inv.isPaid,
-      paidAmountCents: inv.paidAmountCents,
-      arcaFacturaNumber: inv.arcaFacturaNumber,
-      notes: inv.notes,
-      itemsCount: inv.sales.length + inv.directCharges.length,
-      hasChequePending: inv.cheques.some((c) => c.status !== "ACREDITADO" && c.status !== "RECHAZADO"),
-    }));
+    return invoices.map((inv) => {
+      // Solo NC vinculadas directamente a la factura — las vinculadas a un
+      // cargo directo ya facturado no existen (ver createCreditNote) y las de
+      // un cargo sin facturar ya quedaron netas en subtotalCents al facturar.
+      const creditNotesTotalCents = inv.creditNotes.reduce((s, n) => s + n.amountCents, 0);
+      return {
+        id: inv.id,
+        billingDate: inv.billingDate,
+        estimatedPaymentDate: inv.estimatedPaymentDate,
+        totalAmountCents: inv.totalAmountCents,
+        isPaid: inv.isPaid,
+        paidAmountCents: inv.paidAmountCents,
+        arcaFacturaNumber: inv.arcaFacturaNumber,
+        notes: inv.notes,
+        itemsCount: inv.sales.length + inv.directCharges.length,
+        hasChequePending: inv.cheques.some((c) => c.status !== "ACREDITADO" && c.status !== "RECHAZADO"),
+        creditNotesTotalCents,
+        outstandingCents: inv.totalAmountCents - inv.paidAmountCents - creditNotesTotalCents,
+      };
+    });
   }
 
   static async createInvoiceFromSelection(accountId: string, params: CreateInvoiceFromSelectionParams) {
@@ -968,6 +1138,7 @@ export class CuentaCorrienteService {
           comercialSaleLine: {
             select: { posSale: { select: { payments: { where: { method: "CHEQUE" }, select: { id: true } } } } },
           },
+          creditNotes: { select: { amountCents: true } },
         },
       }),
     ]);
@@ -978,7 +1149,7 @@ export class CuentaCorrienteService {
 
     const subtotalCents =
       sales.reduce((sum, s) => sum + s.payments.reduce((ps, p) => ps + p.amountCents, 0), 0) +
-      directCharges.reduce((sum, c) => sum + c.amountCents, 0);
+      directCharges.reduce((sum, c) => sum + c.amountCents - c.creditNotes.reduce((s, n) => s + n.amountCents, 0), 0);
     if (subtotalCents <= 0) {
       throw new Error("El total a facturar debe ser mayor a cero.");
     }

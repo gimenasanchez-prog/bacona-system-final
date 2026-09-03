@@ -13,6 +13,7 @@ import type {
 } from "@/modules/cuentas_corrientes/services/cuentaCorrienteService";
 import { CargosDirectosModal } from "./CargosDirectosModal";
 import { NuevaCuentaModal } from "./NuevaCuentaModal";
+import { NotaCreditoModal, type NotaCreditoTarget } from "./NotaCreditoModal";
 
 
 function formatDate(d: Date | string) {
@@ -58,15 +59,15 @@ function printConsumosWindow(customerName: string, period: string, sales: Period
       (c) =>
         `<tr style="background:#fffbeb">
           <td>${formatDate(c.date)}</td>
-          <td>${CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — ${c.description}</td>
+          <td>${CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — ${c.description}${c.creditNotesTotalCents > 0 ? ` <span style="color:#16a34a">(NC −${formatArsFromCents(c.creditNotesTotalCents)})</span>` : ""}</td>
           <td>${c.comandaNumber ? `#${c.comandaNumber}` : ""}</td>
-          <td style="text-align:right">${formatArsFromCents(c.amountCents)}</td>
+          <td style="text-align:right">${formatArsFromCents(c.netAmountCents)}</td>
         </tr>`
     )
     .join("");
   const total = formatArsFromCents(
     sales.reduce((s, x) => s + x.ccAmountCents, 0) +
-    directCharges.reduce((s, x) => s + x.amountCents, 0)
+    directCharges.reduce((s, x) => s + x.netAmountCents, 0)
   );
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Consumos ${customerName}</title>
     <style>
@@ -134,7 +135,8 @@ function printInvoiceDetailWindow(detail: InvoiceDetail) {
       ${inv.ivaRetentionCents > 0 ? `<div class="totales-row"><span>Ret. IVA</span><span>− ${formatArsFromCents(inv.ivaRetentionCents)}</span></div>` : ""}
       ${inv.gananciasRetentionCents > 0 ? `<div class="totales-row"><span>Ret. Ganancias</span><span>− ${formatArsFromCents(inv.gananciasRetentionCents)}</span></div>` : ""}
       ${inv.rentasRetentionCents > 0 ? `<div class="totales-row"><span>Ret. Rentas</span><span>− ${formatArsFromCents(inv.rentasRetentionCents)}</span></div>` : ""}
-      <div class="totales-row bold"><span>Neto a cobrar</span><span>${formatArsFromCents(inv.totalAmountCents)}</span></div>
+      ${inv.creditNotesTotalCents > 0 ? `<div class="totales-row"><span>Notas de crédito</span><span>− ${formatArsFromCents(inv.creditNotesTotalCents)}</span></div>` : ""}
+      <div class="totales-row bold"><span>${inv.creditNotesTotalCents > 0 ? "Saldo pendiente" : "Neto a cobrar"}</span><span>${formatArsFromCents(inv.outstandingCents)}</span></div>
     </div>
     </body></html>`);
   win.document.close();
@@ -213,6 +215,29 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
                   </div>
                 )}
               </div>
+              {detail.directCharges.length > 0 && (
+                <div>
+                  <div className="font-medium text-neutral-600 mb-2">Cargos directos</div>
+                  <div className="divide-y border rounded-lg">
+                    {detail.directCharges.map((c) => (
+                      <div key={c.id} className="px-4 py-2 text-xs">
+                        <div className="flex justify-between text-neutral-600">
+                          <span>{CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — {c.description}</span>
+                          <span className="font-medium text-neutral-700">
+                            {c.creditNotesTotalCents > 0 && (
+                              <span className="line-through text-neutral-400 mr-1">{formatArsFromCents(c.amountCents)}</span>
+                            )}
+                            {formatArsFromCents(c.netAmountCents)}
+                          </span>
+                        </div>
+                        {c.creditNotesTotalCents > 0 && (
+                          <div className="text-green-700 mt-0.5">NC aplicada antes de facturar: − {formatArsFromCents(c.creditNotesTotalCents)}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="rounded-lg bg-neutral-50 px-4 py-3 space-y-1.5">
                 <div className="flex justify-between"><span className="text-neutral-600">Subtotal</span><span className="font-medium">{formatArsFromCents(detail.invoice.subtotalCents)}</span></div>
                 {detail.invoice.ivaExento && <div className="flex justify-between text-neutral-400 text-xs"><span>IVA Exento</span><span>—</span></div>}
@@ -226,6 +251,29 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
                 {detail.invoice.rentasRetentionCents > 0 && <div className="flex justify-between text-neutral-500"><span>Ret. Rentas</span><span>− {formatArsFromCents(detail.invoice.rentasRetentionCents)}</span></div>}
                 <div className="flex justify-between font-bold text-blue-800 border-t pt-2 mt-1"><span>Total neto a cobrar</span><span>{formatArsFromCents(detail.invoice.totalAmountCents)}</span></div>
               </div>
+              {detail.creditNotes.length > 0 && (
+                <div>
+                  <div className="font-medium text-neutral-600 mb-2">Notas de crédito</div>
+                  <div className="divide-y border rounded-lg">
+                    {detail.creditNotes.map((n) => (
+                      <div key={n.id} className="px-4 py-2 text-xs">
+                        <div className="flex justify-between text-neutral-600">
+                          <span>{formatDate(n.date)} · {n.description}</span>
+                          <span className="font-medium text-green-700">− {formatArsFromCents(n.amountCents)}</span>
+                        </div>
+                        <div className="text-neutral-400 mt-0.5">
+                          {n.motive}
+                          {n.arcaFacturaNumber && ` · NC ARCA ${n.arcaFacturaNumber}`}
+                          {!n.ivaExento && n.ivaDiscriminado && n.ivaAmountCents > 0 && ` · IVA ${formatArsFromCents(n.ivaAmountCents)}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between font-bold text-green-800 rounded-lg bg-green-50 px-4 py-3 mt-2">
+                    <span>Saldo pendiente</span><span>{formatArsFromCents(detail.invoice.outstandingCents)}</span>
+                  </div>
+                </div>
+              )}
               {(detail.invoice.paidAmountCents > 0 || detail.invoice.isPaid) && (
                 <div className={`rounded-lg px-4 py-3 text-sm ${detail.invoice.isPaid ? "bg-green-50" : "bg-amber-50"}`}>
                   <div className="font-medium mb-1">{detail.invoice.isPaid ? "✓ Pagada" : "Pago registrado"}</div>
@@ -404,12 +452,13 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
   onRefresh: () => void;
 }) {
   const salesTotal = sales.reduce((s, x) => s + x.ccAmountCents, 0);
-  const chargesTotal = directCharges.reduce((s, x) => s + x.amountCents, 0);
+  const chargesTotal = directCharges.reduce((s, x) => s + x.netAmountCents, 0);
   const total = salesTotal + chargesTotal;
   const periodStr = formatPeriod(period.from, period.to);
   const isEmpty = sales.length === 0 && directCharges.length === 0;
 
   const [editingCharge, setEditingCharge] = useState<DirectCharge | null>(null);
+  const [creditNoteTarget, setCreditNoteTarget] = useState<{ target: NotaCreditoTarget; label: string } | null>(null);
 
   async function handleDeleteCharge(id: string) {
     if (!window.confirm("¿Eliminar este cargo directo? Esta acción no se puede deshacer.")) return;
@@ -481,6 +530,9 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                         <span>{charge.description}</span>
                       </div>
                       <div className="text-xs text-neutral-400 mt-0.5">Motivo: {charge.motive}</div>
+                      {charge.creditNotesTotalCents > 0 && (
+                        <div className="text-xs text-green-700 mt-0.5">NC aplicada: − {formatArsFromCents(charge.creditNotesTotalCents)}</div>
+                      )}
                       {!charge.cuentaCorrienteInvoiceId && (
                         <div className="mt-1 flex gap-2">
                           <button
@@ -495,6 +547,12 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                           >
                             Eliminar
                           </button>
+                          <button
+                            onClick={() => setCreditNoteTarget({ target: { type: "directCharge", chargeId: charge.id }, label: `${customerName} — ${charge.description}` })}
+                            className="text-xs underline text-green-700 hover:text-green-800"
+                          >
+                            + NC
+                          </button>
                         </div>
                       )}
                     </td>
@@ -504,7 +562,12 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                         : <ComandaInlineEdit url={`/api/cuentas-corrientes/direct-charges/${charge.id}`} onSaved={onRefresh} />
                       }
                     </td>
-                    <td className="py-2 text-right text-neutral-800 font-medium">{formatArsFromCents(charge.amountCents)}</td>
+                    <td className="py-2 text-right text-neutral-800 font-medium">
+                      {charge.creditNotesTotalCents > 0 && (
+                        <span className="line-through text-neutral-400 text-xs mr-1">{formatArsFromCents(charge.amountCents)}</span>
+                      )}
+                      {formatArsFromCents(charge.netAmountCents)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -535,6 +598,14 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
           charge={editingCharge}
           onClose={() => setEditingCharge(null)}
           onSuccess={() => { setEditingCharge(null); onRefresh(); }}
+        />
+      )}
+      {creditNoteTarget && (
+        <NotaCreditoModal
+          target={creditNoteTarget.target}
+          label={creditNoteTarget.label}
+          onClose={() => setCreditNoteTarget(null)}
+          onSuccess={() => { setCreditNoteTarget(null); onRefresh(); }}
         />
       )}
     </div>
@@ -696,7 +767,7 @@ function IngresarFacturaModal({ accountId, customerName, period, sales, directCh
 }) {
   const subtotalCents =
     sales.reduce((sum, s) => sum + s.ccAmountCents, 0) +
-    directCharges.reduce((sum, c) => sum + c.amountCents, 0);
+    directCharges.reduce((sum, c) => sum + c.netAmountCents, 0);
   const defaultPaymentDate = new Date();
   defaultPaymentDate.setDate(defaultPaymentDate.getDate() + 30);
 
@@ -788,8 +859,11 @@ function IngresarFacturaModal({ accountId, customerName, period, sales, directCh
             {sales.length > 4 && <div className="text-xs text-neutral-400">+ {sales.length - 4} ventas más...</div>}
             {directCharges.map((c) => (
               <div key={c.id} className="flex justify-between text-xs text-amber-700 bg-amber-50/80 rounded px-1 py-0.5">
-                <span>{formatDate(c.date)} · {CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — {c.description}</span>
-                <span>{formatArsFromCents(c.amountCents)}</span>
+                <span>
+                  {formatDate(c.date)} · {CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — {c.description}
+                  {c.creditNotesTotalCents > 0 && <span className="text-green-700"> (NC −{formatArsFromCents(c.creditNotesTotalCents)})</span>}
+                </span>
+                <span>{formatArsFromCents(c.netAmountCents)}</span>
               </div>
             ))}
           </div>
@@ -881,13 +955,14 @@ function EditUrlModal({ invoiceId, currentUrl, onClose, onSuccess }: { invoiceId
 
 // ─── Invoice Action Menu ──────────────────────────────────────────────────────
 
-function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid, onEditUrl, onVoid }: {
+function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid, onEditUrl, onVoid, onOpenCreditNote }: {
   invoice: InvoiceSummary;
   onOpenPayment: (inv: InvoiceSummary) => void;
   onOpenDetail: (id: string) => void;
   onTogglePaid: (id: string) => Promise<void>;
   onEditUrl: (id: string, url: string | null) => void;
   onVoid: (id: string) => Promise<void>;
+  onOpenCreditNote: (invoiceId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -937,6 +1012,9 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
           <button onClick={() => { setOpen(false); onEditUrl(invoice.id, invoice.digitalInvoiceUrl); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
             {invoice.digitalInvoiceUrl ? "📎 Ver/editar URL" : "+ URL factura"}
           </button>
+          <button onClick={() => { setOpen(false); onOpenCreditNote(invoice.id); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50 text-green-700">
+            + Nota de crédito
+          </button>
           {!invoice.isPaid && (
             <button onClick={handleVoid} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">Anular factura</button>
           )}
@@ -959,12 +1037,13 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
   const [paymentModal, setPaymentModal] = useState<InvoiceSummary | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editUrlState, setEditUrlState] = useState<{ id: string; url: string | null } | null>(null);
+  const [creditNoteInvoiceId, setCreditNoteInvoiceId] = useState<string | null>(null);
 
   const inv = ps.invoice;
   const today = new Date();
   today.setHours(23, 59, 59, 999);
   const isOverdue = inv && !inv.isPaid && inv.estimatedPaymentDate <= today;
-  const outstanding = inv ? inv.totalAmountCents - inv.paidAmountCents : 0;
+  const outstanding = inv ? inv.outstandingCents : 0;
 
   async function handleTogglePaid(invoiceId: string) {
     await fetch(`/api/cuentas-corrientes/invoices/${invoiceId}`, {
@@ -1051,6 +1130,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
                 onTogglePaid={handleTogglePaid}
                 onEditUrl={(id, url) => setEditUrlState({ id, url })}
                 onVoid={handleVoid}
+                onOpenCreditNote={setCreditNoteInvoiceId}
               />
             </>
           )}
@@ -1086,6 +1166,14 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
         <EditUrlModal invoiceId={editUrlState.id} currentUrl={editUrlState.url}
           onClose={() => setEditUrlState(null)}
           onSuccess={() => { setEditUrlState(null); onRefresh(); }}
+        />
+      )}
+      {creditNoteInvoiceId && (
+        <NotaCreditoModal
+          target={{ type: "invoice", invoiceId: creditNoteInvoiceId }}
+          label={`${customerName} — período ${formatPeriod(ps.period.from, ps.period.to)}`}
+          onClose={() => setCreditNoteInvoiceId(null)}
+          onSuccess={() => { setCreditNoteInvoiceId(null); onRefresh(); }}
         />
       )}
     </>
@@ -1248,7 +1336,7 @@ function RegisterPartialPaymentModal({ invoice, onClose, onSuccess }: {
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const pendingCents = invoice.totalAmountCents - invoice.paidAmountCents;
+  const pendingCents = invoice.outstandingCents;
   const [amountArs, setAmountArs] = useState((pendingCents / 100).toFixed(2));
   const [paymentDate, setPaymentDate] = useState(toDateInputValue(new Date()));
   const [reference, setReference] = useState("");
@@ -1343,6 +1431,7 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [partialPaymentTarget, setPartialPaymentTarget] = useState<TransitoriaInvoiceSummary | null>(null);
   const [showPaidInvoices, setShowPaidInvoices] = useState(false);
+  const [creditNoteTarget, setCreditNoteTarget] = useState<{ target: NotaCreditoTarget; label: string } | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/cuentas-corrientes/${account.id}/pending-charges`)
@@ -1422,11 +1511,22 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
                     <span className="text-xs font-medium text-neutral-600">{group.label}</span>
                   </div>
                   {group.items.map((c) => (
-                    <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm border-b last:border-b-0 cursor-pointer hover:bg-neutral-50">
-                      <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggle(c.id)} />
-                      <span className="flex-1 text-neutral-600">{formatDate(c.date)} · {c.description}</span>
-                      <span className="text-neutral-700">{formatArsFromCents(c.amountCents)}</span>
-                    </label>
+                    <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm border-b last:border-b-0 hover:bg-neutral-50">
+                      <label className="flex flex-1 items-center gap-2 cursor-pointer min-w-0">
+                        <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggle(c.id)} />
+                        <span className="flex-1 text-neutral-600 truncate">{formatDate(c.date)} · {c.description}</span>
+                      </label>
+                      {c.kind === "DIRECT_CHARGE" && (
+                        <button
+                          type="button"
+                          onClick={() => setCreditNoteTarget({ target: { type: "directCharge", chargeId: c.id }, label: `${account.customerName} — ${c.description}` })}
+                          className="text-xs underline text-green-700 hover:text-green-800"
+                        >
+                          + NC
+                        </button>
+                      )}
+                      <span className="text-neutral-700 whitespace-nowrap">{formatArsFromCents(c.amountCents)}</span>
+                    </div>
                   ))}
                 </div>
               );
@@ -1451,11 +1551,19 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
                 <div className="text-xs text-neutral-400">
                   Vence {formatDate(inv.estimatedPaymentDate)}
                   {inv.paidAmountCents > 0 && ` · Cobrado ${formatArsFromCents(inv.paidAmountCents)} de ${formatArsFromCents(inv.totalAmountCents)}`}
+                  {inv.creditNotesTotalCents > 0 && ` · NC ${formatArsFromCents(inv.creditNotesTotalCents)}`}
                   {inv.hasChequePending && " · Cheque en curso"}
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-medium text-amber-600">{formatArsFromCents(inv.totalAmountCents - inv.paidAmountCents)}</span>
+                <span className="font-medium text-amber-600">{formatArsFromCents(inv.outstandingCents)}</span>
+                <button
+                  type="button"
+                  onClick={() => setCreditNoteTarget({ target: { type: "invoice", invoiceId: inv.id }, label: `${account.customerName} — factura ${formatDate(inv.billingDate)}` })}
+                  className="rounded border px-2 py-1 text-xs text-green-700 hover:bg-green-50"
+                >
+                  + NC
+                </button>
                 <button
                   type="button"
                   onClick={() => setPartialPaymentTarget(inv)}
@@ -1512,6 +1620,14 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
             setPartialPaymentTarget(null);
             handleRefreshAll();
           }}
+        />
+      )}
+      {creditNoteTarget && (
+        <NotaCreditoModal
+          target={creditNoteTarget.target}
+          label={creditNoteTarget.label}
+          onClose={() => setCreditNoteTarget(null)}
+          onSuccess={() => { setCreditNoteTarget(null); handleRefreshAll(); }}
         />
       )}
     </div>

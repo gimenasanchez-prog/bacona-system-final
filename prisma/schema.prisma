@@ -20,19 +20,19 @@ model Category {
 }
 
 model Product {
-  id                         String                 @id @default(cuid())
+  id                         String                     @id @default(cuid())
   categoryId                 String
   name                       String
   priceCents                 Int
-  isActive                   Boolean                @default(true)
-  createdAt                  DateTime               @default(now())
-  updatedAt                  DateTime               @updatedAt
+  isActive                   Boolean                    @default(true)
+  createdAt                  DateTime                   @default(now())
+  updatedAt                  DateTime                   @updatedAt
   consumptionRecipeVersionId String?
   inventoryItemId            String?
   saleItems                  PosSaleItem[]
-  category                   Category               @relation(fields: [categoryId], references: [id])
-  consumptionRecipeVersion   RecipeVersion?         @relation("ProductConsumptionRecipeVersion", fields: [consumptionRecipeVersionId], references: [id])
-  inventoryItem              InventoryItem?         @relation("ProductInventoryItem", fields: [inventoryItemId], references: [id])
+  category                   Category                   @relation(fields: [categoryId], references: [id])
+  consumptionRecipeVersion   RecipeVersion?             @relation("ProductConsumptionRecipeVersion", fields: [consumptionRecipeVersionId], references: [id])
+  inventoryItem              InventoryItem?             @relation("ProductInventoryItem", fields: [inventoryItemId], references: [id])
   modifierGroups             ProductModifierGroup[]
   priceHistory               PriceHistory[]
   comercialSaleLineLinks     ComercialSaleLineProduct[]
@@ -84,11 +84,11 @@ model ProductModifierGroup {
 }
 
 model Customer {
-  id          String                   @id @default(cuid())
+  id          String   @id @default(cuid())
   displayName String
-  isActive    Boolean                  @default(true)
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   address      String?
   razonSocial  String?
@@ -102,8 +102,8 @@ model Customer {
   contactPhone2 String?
   contactEmail2 String?
 
-  accounts    CuentaCorrienteAccount[]
-  sales       PosSale[]
+  accounts CuentaCorrienteAccount[]
+  sales    PosSale[]
 
   @@index([isActive, displayName])
 }
@@ -132,6 +132,7 @@ model CuentaCorrienteAccount {
   payments             PosPayment[]
   sales                PosSale[]                  @relation("SaleCuentaCorriente")
   directCharges        CcDirectCharge[]
+  creditNotes          CcCreditNote[]
   comercialSales       ComercialSale[]
 
   billsToAccountId  String?
@@ -174,6 +175,7 @@ model CuentaCorrienteInvoice {
   account                 CuentaCorrienteAccount @relation(fields: [accountId], references: [id])
   sales                   PosSale[]              @relation("InvoicedSales")
   directCharges           CcDirectCharge[]
+  creditNotes             CcCreditNote[]
   localCashMovements      LocalCashMovement[]
   cheques                 Cheque[]
 
@@ -197,6 +199,7 @@ model Employee {
   payments                           PosPayment[]
   stockMovementsCreated              StockMovement[]              @relation("EmployeeStockMovementsCreated")
   ccDirectChargesCreated             CcDirectCharge[]             @relation("EmployeeCcDirectChargesCreated")
+  ccCreditNotesCreated               CcCreditNote[]               @relation("EmployeeCcCreditNotesCreated")
   margenConfigsUpdated               ConfigMargenCategoria[]
   priceHistoryCreated                PriceHistory[]               @relation("EmployeePriceHistoryCreated")
   priceBulkUpdatesCreated            PriceBulkUpdate[]            @relation("EmployeePriceBulkUpdatesCreated")
@@ -1120,9 +1123,35 @@ model CcDirectCharge {
   createdAt                DateTime                @default(now())
   createdByEmployeeId      String
   createdByEmployee        Employee                @relation("EmployeeCcDirectChargesCreated", fields: [createdByEmployeeId], references: [id])
+  creditNotes              CcCreditNote[]
 
   @@index([cuentaCorrienteAccountId])
   @@index([cuentaCorrienteInvoiceId])
+}
+
+model CcCreditNote {
+  id                       String                  @id @default(cuid())
+  cuentaCorrienteAccountId String
+  cuentaCorrienteAccount   CuentaCorrienteAccount  @relation(fields: [cuentaCorrienteAccountId], references: [id])
+  cuentaCorrienteInvoiceId String?
+  cuentaCorrienteInvoice   CuentaCorrienteInvoice? @relation(fields: [cuentaCorrienteInvoiceId], references: [id])
+  ccDirectChargeId         String?
+  ccDirectCharge           CcDirectCharge?         @relation(fields: [ccDirectChargeId], references: [id])
+  date                     DateTime
+  description              String
+  motive                   String
+  amountCents              Int
+  arcaFacturaNumber        String?
+  ivaExento                Boolean                 @default(false)
+  ivaDiscriminado          Boolean                 @default(false)
+  ivaAmountCents           Int                     @default(0)
+  createdAt                DateTime                @default(now())
+  createdByEmployeeId      String
+  createdByEmployee        Employee                @relation("EmployeeCcCreditNotesCreated", fields: [createdByEmployeeId], references: [id])
+
+  @@index([cuentaCorrienteAccountId])
+  @@index([cuentaCorrienteInvoiceId])
+  @@index([ccDirectChargeId])
 }
 
 enum ComercialSaleLineStatus {
@@ -1146,40 +1175,40 @@ model ComercialSale {
 }
 
 model ComercialSaleLine {
-  id                      String                  @id @default(cuid())
-  comercialSaleId         String
-  comercialSale           ComercialSale           @relation(fields: [comercialSaleId], references: [id], onDelete: Cascade)
-  status                  ComercialSaleLineStatus @default(PENDIENTE)
+  id              String                  @id @default(cuid())
+  comercialSaleId String
+  comercialSale   ComercialSale           @relation(fields: [comercialSaleId], references: [id], onDelete: Cascade)
+  status          ComercialSaleLineStatus @default(PENDIENTE)
 
-  deliveryDate            DateTime
-  clienteLabel            String
-  tipoVianda              String
-  cant                    Int
-  horarioRetiro           String
-  unitPriceCents          Int
-  formaDePagoPlanificada  String?
-  viandasCobradasPlanned  Int
-  detalleComanda          String?
-  sortOrder               Int                     @default(0)
+  deliveryDate           DateTime
+  clienteLabel           String
+  tipoVianda             String
+  cant                   Int
+  horarioRetiro          String
+  unitPriceCents         Int
+  formaDePagoPlanificada String?
+  viandasCobradasPlanned Int
+  detalleComanda         String?
+  sortOrder              Int      @default(0)
 
-  products                ComercialSaleLineProduct[]
+  products ComercialSaleLineProduct[]
 
-  actualQty               Int?
-  actualCobradas          Int?
-  paymentMethod           PosPaymentMethod?
-  posSaleId               String?                 @unique
-  posSale                 PosSale?                @relation(fields: [posSaleId], references: [id])
-  deliveredAt             DateTime?
-  deliveredByEmployeeId   String?
-  deliveredByEmployee     Employee?               @relation("EmployeeComercialSaleLinesDelivered", fields: [deliveredByEmployeeId], references: [id])
+  actualQty             Int?
+  actualCobradas        Int?
+  paymentMethod         PosPaymentMethod?
+  posSaleId             String?           @unique
+  posSale               PosSale?          @relation(fields: [posSaleId], references: [id])
+  deliveredAt           DateTime?
+  deliveredByEmployeeId String?
+  deliveredByEmployee   Employee?         @relation("EmployeeComercialSaleLinesDelivered", fields: [deliveredByEmployeeId], references: [id])
 
-  cancelledAt             DateTime?
-  cancellationReason      String?
+  cancelledAt        DateTime?
+  cancellationReason String?
 
-  ccDirectCharge          CcDirectCharge?
+  ccDirectCharge CcDirectCharge?
 
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([comercialSaleId, sortOrder])
   @@index([status, deliveryDate])
@@ -1205,28 +1234,28 @@ enum ChequeStatus {
 }
 
 model Cheque {
-  id                        String       @id @default(cuid())
-  posPaymentId              String       @unique
-  posPayment                PosPayment   @relation(fields: [posPaymentId], references: [id])
-  status                    ChequeStatus @default(EN_CARTERA)
+  id                        String                  @id @default(cuid())
+  posPaymentId              String                  @unique
+  posPayment                PosPayment              @relation(fields: [posPaymentId], references: [id])
+  status                    ChequeStatus            @default(EN_CARTERA)
   amountCents               Int
   numeroCheque              String?
   banco                     String?
   librador                  String?
-  fechaRecepcion            DateTime     @default(now())
+  fechaRecepcion            DateTime                @default(now())
   fechaDeposito             DateTime?
   fechaAcreditacionEstimada DateTime?
   acreditadoAt              DateTime?
   cuentaBancariaId          String?
-  cuentaBancaria            LocalCashBox? @relation(fields: [cuentaBancariaId], references: [id])
+  cuentaBancaria            LocalCashBox?           @relation(fields: [cuentaBancariaId], references: [id])
   cuentaCorrienteInvoiceId  String?
   cuentaCorrienteInvoice    CuentaCorrienteInvoice? @relation(fields: [cuentaCorrienteInvoiceId], references: [id])
   rechazadoAt               DateTime?
   rechazoMotivo             String?
   createdByEmployeeId       String
-  createdByEmployee         Employee     @relation(fields: [createdByEmployeeId], references: [id])
-  createdAt                 DateTime     @default(now())
-  updatedAt                 DateTime     @updatedAt
+  createdByEmployee         Employee                @relation(fields: [createdByEmployeeId], references: [id])
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
 
   @@index([status, fechaAcreditacionEstimada])
   @@index([cuentaCorrienteInvoiceId])
