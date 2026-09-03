@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { formatArsFromCents } from "@/lib/money";
 import { parseDateRange } from "@/modules/reportes/lib/dateRange";
+import { REPORT_TYPES, REPORT_TYPE_LABEL, parseReportType } from "@/modules/reportes/lib/reportType";
 import { ReportesDataService, ReportRangeTooLargeError } from "@/modules/reportes/services/reportesDataService";
 
 export const dynamic = "force-dynamic";
@@ -15,13 +16,14 @@ export default async function ReportesPage(props: {
 
   const sp = await props.searchParams;
   const { from, to } = parseDateRange(sp);
+  const reportType = parseReportType(sp.report);
 
   let data: Awaited<ReturnType<typeof ReportesDataService.getReportData>> | null = null;
   let errorMsg: string | null = null;
 
   if (from && to) {
     try {
-      data = await ReportesDataService.getReportData({ from, to });
+      data = await ReportesDataService.getReportData({ from, to, reportType });
     } catch (err) {
       errorMsg = err instanceof ReportRangeTooLargeError ? err.message : "No se pudo generar el reporte.";
     }
@@ -29,7 +31,7 @@ export default async function ReportesPage(props: {
 
   const exportHref =
     from && to
-      ? `/api/reportes/export?from=${typeof sp.from === "string" ? sp.from : ""}&to=${typeof sp.to === "string" ? sp.to : ""}`
+      ? `/api/reportes/export?from=${typeof sp.from === "string" ? sp.from : ""}&to=${typeof sp.to === "string" ? sp.to : ""}&report=${reportType}`
       : null;
 
   const paymentTotals = data
@@ -53,13 +55,13 @@ export default async function ReportesPage(props: {
       <div>
         <div className="text-lg font-semibold">Reportes</div>
         <div className="mt-1 text-sm text-neutral-600">
-          Ventas por método de pago, egresos con dinero de sobres y facturación de cuentas corrientes de un período,
-          con export a Excel.
+          Ventas por método de pago y detalladas, egresos con dinero de sobres y del módulo Egresos (proveedores,
+          costos fijos, tarjetas), y facturación de cuentas corrientes de un período, con export a Excel.
         </div>
       </div>
 
       <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
-        <form className="grid gap-3 sm:grid-cols-4">
+        <form className="grid gap-3 sm:grid-cols-5">
           <div className="space-y-1">
             <div className="text-xs text-neutral-500">Desde</div>
             <input
@@ -80,7 +82,17 @@ export default async function ReportesPage(props: {
               required
             />
           </div>
-          <div className="flex items-end sm:col-span-2">
+          <div className="space-y-1 sm:col-span-2">
+            <div className="text-xs text-neutral-500">Reporte a exportar</div>
+            <select name="report" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={reportType}>
+              {REPORT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {REPORT_TYPE_LABEL[type]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
             <button className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white">Ver resumen</button>
           </div>
         </form>
@@ -154,6 +166,18 @@ export default async function ReportesPage(props: {
               <div className="mt-1 text-xs text-neutral-500">{data.egresos.length} movimientos</div>
             </div>
             <div className="rounded-lg border bg-white p-4 shadow-sm">
+              <div className="text-xs text-neutral-500">Egresos proveedores/costos fijos/tarjetas</div>
+              <div className="mt-1 text-lg font-semibold">
+                {formatArsFromCents(data.totals.egresosModuloTotalCents)}
+              </div>
+              <div className="mt-1 text-xs text-neutral-500">{data.egresosModulo.length} pagos</div>
+            </div>
+            <div className="rounded-lg border bg-white p-4 shadow-sm">
+              <div className="text-xs text-neutral-500">Ventas detalladas</div>
+              <div className="mt-1 text-lg font-semibold">{data.totals.ventasDetalladasSaleCount} ventas</div>
+              <div className="mt-1 text-xs text-neutral-500">{data.totals.ventasDetalladasLineCount} líneas</div>
+            </div>
+            <div className="rounded-lg border bg-white p-4 shadow-sm">
               <div className="text-xs text-neutral-500">Facturado (cuentas corrientes)</div>
               <div className="mt-1 text-lg font-semibold">{formatArsFromCents(data.totals.facturadoTotalCents)}</div>
               <div className="mt-1 text-xs text-neutral-500">{data.facturas.length} facturas</div>
@@ -169,7 +193,7 @@ export default async function ReportesPage(props: {
               href={exportHref}
               className="inline-flex rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
             >
-              Exportar a Excel
+              Exportar a Excel — {REPORT_TYPE_LABEL[reportType]}
             </a>
           ) : null}
         </div>

@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import type { ReportData } from "./reportesDataService";
+import type { ReportType } from "../lib/reportType";
 
 const MONEY_FMT = "#,##0.00";
 const DATE_FMT = "dd/mm/yyyy";
@@ -15,14 +16,17 @@ function freezeHeaderRow(sheet: ExcelJS.Worksheet) {
 }
 
 export class ReportesExportService {
-  static buildWorkbook(data: ReportData): ExcelJS.Workbook {
+  static buildWorkbook(data: ReportData, reportType: ReportType = "TODOS"): ExcelJS.Workbook {
     const workbook = new ExcelJS.Workbook();
     workbook.created = new Date();
+    const includes = (key: ReportType) => reportType === "TODOS" || reportType === key;
 
-    this.buildCierresSheet(workbook, data);
-    this.buildVentasPorDiaSheet(workbook, data);
-    this.buildEgresosSheet(workbook, data);
-    this.buildCuentasCorrientesSheet(workbook, data);
+    if (includes("CIERRES")) this.buildCierresSheet(workbook, data);
+    if (includes("VENTAS_DIA")) this.buildVentasPorDiaSheet(workbook, data);
+    if (includes("VENTAS_DETALLE")) this.buildVentasDetalladasSheet(workbook, data);
+    if (includes("EGRESOS")) this.buildEgresosSheet(workbook, data);
+    if (includes("EGRESOS_MODULO")) this.buildEgresosModuloSheet(workbook, data);
+    if (includes("CUENTAS_CORRIENTES")) this.buildCuentasCorrientesSheet(workbook, data);
 
     return workbook;
   }
@@ -98,6 +102,47 @@ export class ReportesExportService {
       "después del cierre del turno, o cargos directos a la cuenta (que no son ventas del POS).";
   }
 
+  private static buildVentasDetalladasSheet(workbook: ExcelJS.Workbook, data: ReportData) {
+    const sheet = workbook.addWorksheet("Ventas detalladas");
+    sheet.columns = [
+      { header: "Fecha", key: "fecha", width: 12, style: { numFmt: DATE_FMT } },
+      { header: "Tipo de venta", key: "tipoVenta", width: 14 },
+      { header: "Estado", key: "estado", width: 12 },
+      { header: "Cliente", key: "cliente", width: 22 },
+      { header: "Mesa", key: "mesa", width: 10 },
+      { header: "N° comanda", key: "comanda", width: 12 },
+      { header: "Comensales", key: "comensales", width: 10 },
+      { header: "Producto", key: "producto", width: 26 },
+      { header: "Modificadores", key: "modificadores", width: 30 },
+      { header: "Cantidad", key: "cantidad", width: 10 },
+      { header: "Precio unitario", key: "precioUnitario", width: 14, style: { numFmt: MONEY_FMT } },
+      { header: "Total línea", key: "totalLinea", width: 14, style: { numFmt: MONEY_FMT } },
+      { header: "Total venta", key: "totalVenta", width: 14, style: { numFmt: MONEY_FMT } },
+      { header: "Medios de pago", key: "mediosPago", width: 30 },
+    ];
+
+    for (const v of data.ventasDetalladas) {
+      sheet.addRow({
+        fecha: v.date,
+        tipoVenta: v.saleType,
+        estado: v.status,
+        cliente: v.customerName,
+        mesa: v.tableLabel,
+        comanda: v.comandaNumber,
+        comensales: v.coverCount,
+        producto: v.productName,
+        modificadores: v.modifiers,
+        cantidad: v.qty,
+        precioUnitario: v.unitPriceCents / 100,
+        totalLinea: v.lineTotalCents / 100,
+        totalVenta: v.saleTotalCents / 100,
+        mediosPago: v.paymentMethods,
+      });
+    }
+
+    freezeHeaderRow(sheet);
+  }
+
   private static buildEgresosSheet(workbook: ExcelJS.Workbook, data: ReportData) {
     const sheet = workbook.addWorksheet("Egresos");
     sheet.columns = [
@@ -123,11 +168,52 @@ export class ReportesExportService {
     freezeHeaderRow(sheet);
   }
 
+  private static buildEgresosModuloSheet(workbook: ExcelJS.Workbook, data: ReportData) {
+    const sheet = workbook.addWorksheet("Egresos - Prov, CF, Tarj");
+    sheet.columns = [
+      { header: "Fecha", key: "fecha", width: 12, style: { numFmt: DATE_FMT } },
+      { header: "Fuente", key: "fuente", width: 18 },
+      { header: "Tipo", key: "tipo", width: 22 },
+      { header: "Entidad", key: "entidad", width: 22 },
+      { header: "Detalle", key: "detalle", width: 32 },
+      { header: "Vencimiento", key: "vencimiento", width: 14, style: { numFmt: DATE_FMT } },
+      { header: "Fecha de compra", key: "fechaCompra", width: 16, style: { numFmt: DATE_FMT } },
+      { header: "Monto", key: "monto", width: 14, style: { numFmt: MONEY_FMT } },
+      { header: "Caja/Cuenta", key: "cajaCuenta", width: 18 },
+      { header: "Registrado por", key: "registradoPor", width: 20 },
+    ];
+
+    for (const e of data.egresosModulo) {
+      sheet.addRow({
+        fecha: e.date,
+        fuente: e.fuente,
+        tipo: e.tipo,
+        entidad: e.entidad,
+        detalle: e.detalle,
+        vencimiento: e.vencimiento,
+        fechaCompra: e.fechaCompra,
+        monto: e.amountCents / 100,
+        cajaCuenta: e.cajaCuenta,
+        registradoPor: e.registradoPor,
+      });
+    }
+
+    freezeHeaderRow(sheet);
+
+    sheet.getCell("B1").note =
+      "Incluye pagos a proveedores, costos fijos y tarjetas de crédito por cualquier medio " +
+      "(efectivo de caja, transferencia o tarjeta). Los que se pagaron con efectivo de sobre " +
+      '(Caja BCN/Gerencia/turno) también aparecen en la hoja "Egresos" — no sumar ambos totales, ' +
+      "son dos recortes distintos del mismo universo de plata.";
+  }
+
   private static buildCuentasCorrientesSheet(workbook: ExcelJS.Workbook, data: ReportData) {
     const sheet = workbook.addWorksheet("Cuentas corrientes");
     sheet.columns = [
       { header: "Cliente", key: "cliente", width: 24 },
+      { header: "Tipo de cuenta", key: "tipoCuenta", width: 14 },
       { header: "Fecha facturación", key: "billingDate", width: 14, style: { numFmt: DATE_FMT } },
+      { header: "Vencimiento", key: "vencimiento", width: 14, style: { numFmt: DATE_FMT } },
       { header: "Período desde", key: "periodFrom", width: 14, style: { numFmt: DATE_FMT } },
       { header: "Período hasta", key: "periodTo", width: 14, style: { numFmt: DATE_FMT } },
       { header: "N° factura ARCA", key: "arcaFacturaNumber", width: 16 },
@@ -153,7 +239,9 @@ export class ReportesExportService {
     for (const f of data.facturas) {
       sheet.addRow({
         cliente: f.account.customer.displayName,
+        tipoCuenta: f.account.accountKind === "TRANSITORIA" ? "Transitoria" : "Corporativa",
         billingDate: f.billingDate,
+        vencimiento: f.estimatedPaymentDate,
         periodFrom: f.periodFrom,
         periodTo: f.periodTo,
         arcaFacturaNumber: f.arcaFacturaNumber ?? "",

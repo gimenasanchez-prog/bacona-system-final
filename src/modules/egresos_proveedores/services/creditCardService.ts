@@ -294,4 +294,16 @@ export class CreditCardService {
       await tx.creditCardStatementPayment.delete({ where: { id: paymentId } });
     });
   }
+
+  static async listStatementPaymentsInRange(params: { from: Date; to: Date }) {
+    return prisma.creditCardStatementPayment.findMany({
+      where: { paidAt: { gte: params.from, lte: params.to } },
+      include: {
+        creditCard: { select: { name: true, dueDay: true } },
+        cashBox: { select: { name: true } },
+        createdByEmployee: { select: { displayName: true } },
+      },
+      orderBy: { paidAt: "asc" },
+    });
+  }
 }

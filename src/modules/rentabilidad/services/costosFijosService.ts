@@ -344,4 +344,16 @@ export class CostosFijosService {
       await tx.costoFijoPayment.delete({ where: { id: paymentId } });
     });
   }
+
+  static async listPaymentsInRange(params: { from: Date; to: Date }) {
+    return prisma.costoFijoPayment.findMany({
+      where: { paidAt: { gte: params.from, lte: params.to } },
+      include: {
+        costoFijo: { select: { nombre: true, categoria: true } },
+        cashBox: { select: { name: true } },
+        createdByEmployee: { select: { displayName: true } },
+      },
+      orderBy: { paidAt: "asc" },
+    });
+  }
 }

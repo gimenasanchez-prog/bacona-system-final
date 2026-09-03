@@ -375,4 +375,18 @@ export class SupplierPayableService {
       await tx.supplierPayment.delete({ where: { id: paymentId } });
     });
   }
+
+  static async listPaymentsInRange(params: { from: Date; to: Date }) {
+    return prisma.supplierPayment.findMany({
+      where: { date: { gte: params.from, lte: params.to } },
+      include: {
+        supplier: { select: { name: true } },
+        payable: { include: { sourcePurchase: { select: { purchasedAt: true } } } },
+        cashBox: { select: { name: true } },
+        creditCard: { select: { name: true } },
+        createdByEmployee: { select: { displayName: true } },
+      },
+      orderBy: { date: "asc" },
+    });
+  }
 }

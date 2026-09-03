@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { parseDateRange } from "@/modules/reportes/lib/dateRange";
+import { parseReportType, REPORT_TYPE_SLUG } from "@/modules/reportes/lib/reportType";
 import { ReportesDataService, ReportRangeTooLargeError } from "@/modules/reportes/services/reportesDataService";
 import { ReportesExportService } from "@/modules/reportes/services/reportesExportService";
 
@@ -24,16 +25,18 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const { from, to } = parseDateRange(Object.fromEntries(searchParams));
+  const reportType = parseReportType(searchParams.get("report") ?? undefined);
 
   if (!from || !to) {
     return NextResponse.json({ error: "Elegí un rango de fechas (desde/hasta) para exportar." }, { status: 400 });
   }
 
   try {
-    const data = await ReportesDataService.getReportData({ from, to });
-    const workbook = ReportesExportService.buildWorkbook(data);
+    const data = await ReportesDataService.getReportData({ from, to, reportType });
+    const workbook = ReportesExportService.buildWorkbook(data, reportType);
     const buffer = await workbook.xlsx.writeBuffer();
-    const filename = `reportes_${toDateStamp(from)}_a_${toDateStamp(to)}.xlsx`;
+    const reportSlug = REPORT_TYPE_SLUG[reportType];
+    const filename = `reportes_${reportSlug}_${toDateStamp(from)}_a_${toDateStamp(to)}.xlsx`;
 
     return new NextResponse(Buffer.from(buffer), {
       status: 200,

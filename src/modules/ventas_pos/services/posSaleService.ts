@@ -333,5 +333,29 @@ export class PosSaleService {
       });
     });
   }
+
+  static async listSalesForExport(params: { from: Date; to: Date; take: number }) {
+    return prisma.posSale.findMany({
+      where: {
+        createdAt: { gte: params.from, lte: params.to },
+        status: { in: ["CONFIRMED", "PAID"] },
+      },
+      include: {
+        customer: { select: { displayName: true } },
+        cuentaCorrienteAccount: { include: { customer: { select: { displayName: true } } } },
+        table: { select: { label: true } },
+        items: {
+          include: {
+            product: { select: { name: true } },
+            modifiers: { include: { modifierOption: { select: { name: true } } } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        payments: { select: { method: true, amountCents: true } },
+      },
+      orderBy: { createdAt: "asc" },
+      take: params.take,
+    });
+  }
 }
 
