@@ -1,9 +1,49 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { assertIntCents } from "@/lib/money";
+import { PLAN_TARIFF_CONFIG, isUncappedPlan, matchesCorpoFilter } from "@/modules/cuentas_corrientes/lib/planTariffs";
 
 const CORPORATIVO_CATEGORY_NAME = "Corporativo";
 
 export class PreciosService {
+  /**
+   * Recalcula coverageAmountCents (tope del POS por cuenta CC) para toda
+   * cuenta corriente con tarifa corporativa, según el precio actual del
+   * producto "Corporativo" más caro habilitado para su plan. Debe correrse
+   * dentro de la misma transacción que cualquier cambio de precio en la
+   * categoría Corporativo — ver prisma/set-cc-coverage-amounts.ts (script
+   * histórico) y planTariffs.ts para la misma regla usada en el alta de
+   * cuentas.
+   */
+  private static async syncCorporateCoverageAmounts(tx: Prisma.TransactionClient) {
+    const corporateProducts = await tx.product.findMany({
+      where: { category: { name: CORPORATIVO_CATEGORY_NAME } },
+      select: { name: true, priceCents: true },
+    });
+
+    const accounts = await tx.cuentaCorrienteAccount.findMany({
+      where: { planCode: { not: null } },
+      select: { id: true, planCode: true, coverageAmountCents: true },
+    });
+
+    for (const acc of accounts) {
+      if (isUncappedPlan(acc.planCode)) continue;
+      const config = PLAN_TARIFF_CONFIG[acc.planCode as string];
+      if (!config) continue;
+
+      const matching = corporateProducts.filter((p) => matchesCorpoFilter(p.name.toLowerCase(), config.corpoFilter));
+      const suggested = matching.length > 0 ? Math.max(...matching.map((p) => p.priceCents)) : null;
+
+      if (suggested !== acc.coverageAmountCents) {
+        await tx.cuentaCorrienteAccount.update({
+          where: { id: acc.id },
+          data: { coverageAmountCents: suggested },
+        });
+      }
+    }
+  }
+
   static async listGroupedByCategory() {
     const products = await prisma.product.findMany({
       include: { category: true },
@@ -71,6 +111,9 @@ export class PreciosService {
           createdByEmployeeId: employeeId,
         },
       });
+      if (current.category.name === CORPORATIVO_CATEGORY_NAME) {
+        await PreciosService.syncCorporateCoverageAmounts(tx);
+      }
       return updated;
     });
   }
@@ -104,6 +147,7 @@ export class PreciosService {
       async (tx) => {
         const products = await tx.product.findMany({
           where: { categoryId: { in: categoryIds }, isActive: true },
+          include: { category: true },
         });
 
         const bulkUpdate = await tx.priceBulkUpdate.create({
@@ -133,6 +177,10 @@ export class PreciosService {
               createdByEmployeeId: employeeId,
             },
           });
+        }
+
+        if (products.some((p) => p.category.name === CORPORATIVO_CATEGORY_NAME)) {
+          await PreciosService.syncCorporateCoverageAmounts(tx);
         }
 
         return { bulkUpdate, updatedCount: products.length };
