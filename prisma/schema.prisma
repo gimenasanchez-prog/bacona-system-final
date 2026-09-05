@@ -218,6 +218,8 @@ model Employee {
   comercialSalesCreated              ComercialSale[]              @relation("EmployeeComercialSalesCreated")
   comercialSaleLinesDelivered        ComercialSaleLine[]          @relation("EmployeeComercialSaleLinesDelivered")
   chequesCreated                     Cheque[]
+  sierraDeltaDebtPaymentsCreated     SierraDeltaDebtPayment[]     @relation("EmployeeSierraDeltaDebtPaymentsCreated")
+  sierraDeltaDebtPaymentsUpdated     SierraDeltaDebtPayment[]     @relation("EmployeeSierraDeltaDebtPaymentsUpdated")
 
   @@index([isActive, displayName])
 }
@@ -346,6 +348,7 @@ model LocalCashBox {
   costoFijoPayments       CostoFijoPayment[]
   paymentMethodConfigs    CashBoxPaymentMethodConfig[]
   cheques                 Cheque[]
+  sierraDeltaDebtPayments SierraDeltaDebtPayment[]
 
   @@index([active, name])
   @@index([kind, active])
@@ -379,6 +382,7 @@ model LocalCashMovement {
   relatedCreditCardStatementPaymentId String?                     @unique
   relatedCuentaCorrienteInvoiceId     String?
   relatedPosPaymentId                 String?                     @unique
+  relatedSierraDeltaDebtPaymentId     String?                     @unique
   grossAmountCents                    Int?
   bankWithholdingCents                Int?                        @default(0)
   bankFeesCents                       Int?                        @default(0)
@@ -398,6 +402,7 @@ model LocalCashMovement {
   relatedCreditCardStatementPayment   CreditCardStatementPayment? @relation(fields: [relatedCreditCardStatementPaymentId], references: [id])
   relatedCuentaCorrienteInvoice       CuentaCorrienteInvoice?     @relation(fields: [relatedCuentaCorrienteInvoiceId], references: [id])
   relatedPosPayment                   PosPayment?                 @relation(fields: [relatedPosPaymentId], references: [id])
+  relatedSierraDeltaDebtPayment       SierraDeltaDebtPayment?     @relation(fields: [relatedSierraDeltaDebtPaymentId], references: [id])
 
   @@index([localCashBoxId, date])
   @@index([type, date])
@@ -902,6 +907,7 @@ enum LocalCashMovementSourceType {
   CC_INVOICE_PAYMENT
   CREDIT_CARD_STATEMENT_PAYMENT
   OPENING_BALANCE
+  SIERRA_DELTA_DEBT_PAYMENT
 }
 
 enum EmployeeRole {
@@ -1093,6 +1099,77 @@ model CostoFijoPayment {
   localCashMovement   LocalCashMovement?
 
   @@index([costoFijoId, period])
+}
+
+// ─── Deuda a Sierra Delta ────────────────────────────────────────────────────
+// Deuda de BCÑ hacia Grupo SierraDelta SRL (retorno de inversión, sueldos
+// gerenciales adeudados, etc.) — visibilidad exclusiva de GERENCIA, ni
+// siquiera ADMINISTRATIVO. `totalAmountCents`/`paidAmountCents` están en
+// centavos de `currency` (no siempre ARS, a diferencia del resto del sistema).
+
+enum SierraDeltaDebtCurrency {
+  ARS
+  USD
+}
+
+enum SierraDeltaDebtStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+model SierraDeltaDebt {
+  id               String                         @id @default(cuid())
+  concepto         String
+  currency         SierraDeltaDebtCurrency
+  totalAmountCents Int
+  paidAmountCents  Int                            @default(0)
+  status           SierraDeltaDebtStatus          @default(PENDING)
+  notas            String?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  breakdownLines   SierraDeltaDebtBreakdownLine[]
+  payments         SierraDeltaDebtPayment[]
+
+  @@index([status])
+}
+
+// Desglose informativo de cómo se compone una deuda (ej. el arrastre de
+// sueldos por período) — no genera movimientos propios, es solo para que el
+// detalle quede documentado y visible en la pantalla.
+model SierraDeltaDebtBreakdownLine {
+  id                    String          @id @default(cuid())
+  debtId                String
+  debt                  SierraDeltaDebt @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  periodLabel           String
+  paymentMonthLabel     String
+  amountPerPartnerCents Int
+  partnersCount         Int             @default(2)
+  sortOrder             Int             @default(0)
+
+  @@index([debtId, sortOrder])
+}
+
+model SierraDeltaDebtPayment {
+  id                  String             @id @default(cuid())
+  debtId              String
+  debt                SierraDeltaDebt    @relation(fields: [debtId], references: [id])
+  date                DateTime
+  amountCents         Int
+  exchangeRate        Decimal?           @db.Decimal(12, 4)
+  amountArsCents      Int
+  cashBoxId           String
+  cashBox             LocalCashBox       @relation(fields: [cashBoxId], references: [id])
+  notes               String?
+  createdByEmployeeId String
+  createdByEmployee   Employee           @relation("EmployeeSierraDeltaDebtPaymentsCreated", fields: [createdByEmployeeId], references: [id])
+  updatedAt           DateTime?          @updatedAt
+  updatedByEmployeeId String?
+  updatedByEmployee   Employee?          @relation("EmployeeSierraDeltaDebtPaymentsUpdated", fields: [updatedByEmployeeId], references: [id])
+  createdAt           DateTime           @default(now())
+  localCashMovement   LocalCashMovement?
+
+  @@index([debtId, date])
 }
 
 model ConfigMargenCategoria {

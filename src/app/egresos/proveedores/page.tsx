@@ -17,7 +17,7 @@ export default async function ProveedoresPage() {
           Quién nos debe plata, cuánto, y cómo se le paga.
         </div>
       </div>
-      <EgresosNav />
+      <EgresosNav isGerencia={role === "GERENCIA"} />
       <ProveedoresClient isGerencia={role === "GERENCIA"} />
     </div>
   );

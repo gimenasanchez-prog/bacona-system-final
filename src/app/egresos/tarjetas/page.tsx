@@ -17,7 +17,7 @@ export default async function TarjetasPage() {
           Tarjetas de crédito — cuotas acumuladas por período de resumen.
         </div>
       </div>
-      <EgresosNav />
+      <EgresosNav isGerencia={role === "GERENCIA"} />
       <TarjetasClient isGerencia={role === "GERENCIA"} />
     </div>
   );

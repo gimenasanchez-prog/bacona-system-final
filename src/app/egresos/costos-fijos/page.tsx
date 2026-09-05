@@ -17,7 +17,7 @@ export default async function CostosFijosPagoPage() {
           Costos fijos del mes — marcá cuáles ya se pagaron.
         </div>
       </div>
-      <EgresosNav />
+      <EgresosNav isGerencia={role === "GERENCIA"} />
       <CostosFijosPagoClient isGerencia={role === "GERENCIA"} />
     </div>
   );
