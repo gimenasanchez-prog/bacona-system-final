@@ -156,9 +156,9 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
         </div>
       )}
 
-      <div className="rounded-lg border bg-white shadow-sm">
+      <div className="rounded-lg border bg-white shadow-sm max-h-[70vh] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="border-b bg-neutral-50">
+          <thead className="sticky top-0 z-10 border-b bg-neutral-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium"></th>
               <th className="px-3 py-2 text-left font-medium">Costo fijo</th>

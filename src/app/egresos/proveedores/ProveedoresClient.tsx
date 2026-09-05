@@ -156,9 +156,9 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border px-3 py-2 text-sm" title="Deuda hasta" />
       </div>
 
-      <div className="rounded-lg border bg-white shadow-sm">
+      <div className="rounded-lg border bg-white shadow-sm max-h-[70vh] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-white">
             <tr className="border-b">
               <th className="px-3 py-2 text-left font-medium">Proveedor</th>
               <th className="px-3 py-2 text-left font-medium">Categoría</th>
