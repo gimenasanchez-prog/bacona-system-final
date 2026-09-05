@@ -11,6 +11,7 @@ type Item = {
     amountCents: number;
     isActive: boolean;
     isRecurring: boolean;
+    linkedToHoras: boolean;
   };
   period: string;
   paidAmountCents: number;
@@ -190,6 +191,14 @@ export function CostosFijosPagoClient({ isGerencia }: { isGerencia: boolean }) {
                 <td className="px-3 py-2">
                   {it.costoFijo.nombre}
                   {!it.costoFijo.isRecurring && <span className="ml-1 text-xs text-neutral-400">(único)</span>}
+                  {it.costoFijo.linkedToHoras && (
+                    <span
+                      className="ml-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700"
+                      title="El monto se calcula en vivo desde el módulo de Horas, no es editable a mano."
+                    >
+                      🔗 desde Horas
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-xs text-neutral-500">{it.costoFijo.categoria}</td>
                 <td className="px-3 py-2 text-right">{formatArsFromCents(it.costoFijo.amountCents)}</td>
@@ -292,6 +301,7 @@ function CostoFijoFormModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const isLinked = item?.linkedToHoras ?? false;
   const [nombre, setNombre] = useState(item?.nombre ?? "");
   const [categoria, setCategoria] = useState(item?.categoria ?? CATEGORIAS[0]);
   const [amountArs, setAmountArs] = useState(item ? (item.amountCents / 100).toFixed(2) : "");
@@ -305,7 +315,7 @@ function CostoFijoFormModal({
     setError(null);
     if (!nombre.trim()) return setError("Ingresá el nombre.");
     const amountCents = Math.round(Number(amountArs.replace(",", ".")) * 100);
-    if (!amountCents || amountCents <= 0) return setError("Ingresá un monto válido.");
+    if (!isLinked && (!amountCents || amountCents <= 0)) return setError("Ingresá un monto válido.");
 
     setLoading(true);
     try {
@@ -313,7 +323,15 @@ function CostoFijoFormModal({
         ? await fetch("/api/rentabilidad/costos-fijos", {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: item.id, action: "update", nombre, categoria, amountCents, notas: notas || undefined, isRecurring }),
+            body: JSON.stringify({
+              id: item.id,
+              action: "update",
+              nombre,
+              categoria,
+              amountCents: isLinked ? item.amountCents : amountCents,
+              notas: notas || undefined,
+              isRecurring,
+            }),
           })
         : await fetch("/api/rentabilidad/costos-fijos", {
             method: "POST",
@@ -358,7 +376,13 @@ function CostoFijoFormModal({
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Monto mensual ($)</label>
-            <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+            {isLinked ? (
+              <div className="rounded border bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
+                Se calcula en vivo desde Horas — no editable acá.
+              </div>
+            ) : (
+              <input type="number" min="0" step="0.01" value={amountArs} onChange={(e) => setAmountArs(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" />
+            )}
           </div>
           {!item && (
             <div>

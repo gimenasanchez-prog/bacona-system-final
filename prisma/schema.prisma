@@ -948,18 +948,24 @@ enum CostoFijoCategoria {
 }
 
 model CostoFijo {
-  id          String             @id @default(cuid())
-  nombre      String
-  categoria   CostoFijoCategoria
-  amountCents Int
-  isActive    Boolean            @default(true)
-  isRecurring Boolean            @default(true)
-  validFrom   DateTime
-  validTo     DateTime?
-  notas       String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  payments    CostoFijoPayment[]
+  id            String             @id @default(cuid())
+  nombre        String
+  categoria     CostoFijoCategoria
+  amountCents   Int
+  isActive      Boolean            @default(true)
+  isRecurring   Boolean            @default(true)
+  // Si es true, el monto mensual a pagar NO es `amountCents` (queda sin usar)
+  // sino que se calcula en vivo sumando lo que el módulo de Horas dice que se
+  // debe a los empleados de "Sueldos Operativos" (ASOCIADO/CAJA_LOCAL/
+  // ADMINISTRATIVO) de ese período. Ver
+  // HoursService.totalOwedForPeriod / CostosFijosService.computeArrears.
+  linkedToHoras Boolean            @default(false)
+  validFrom     DateTime
+  validTo       DateTime?
+  notas         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  payments      CostoFijoPayment[]
 
   @@index([isActive, validFrom])
 }

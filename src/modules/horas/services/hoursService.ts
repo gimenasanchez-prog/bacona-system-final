@@ -17,6 +17,10 @@ function combineDateAndTime(workDate: Date, time: string): Date {
   );
 }
 
+const MAX_SHIFT_HOURS = 14;
+
+type DbClient = Prisma.TransactionClient | typeof prisma;
+
 export class HoursService {
   static computeShiftHours(workDate: Date, checkInTime: string, checkOutTime: string) {
     if (checkInTime === checkOutTime) {
@@ -33,6 +37,13 @@ export class HoursService {
     const hoursWorked = new Prisma.Decimal(checkOut.getTime() - checkIn.getTime())
       .div(1000 * 60 * 60)
       .toDecimalPlaces(2);
+
+    if (hoursWorked.greaterThan(MAX_SHIFT_HOURS)) {
+      throw new Error(
+        `El turno calculado da ${hoursWorked.toFixed(2)} horas, que supera el máximo esperado. ` +
+          `Revisá la hora de salida (¿pusiste AM en vez de PM?).`
+      );
+    }
 
     return { checkIn, checkOut, hoursWorked };
   }
@@ -85,18 +96,21 @@ export class HoursService {
     return { entries, totalHours, period: start };
   }
 
-  static async monthlySummaryForAllEmployees(period: Date) {
+  static async monthlySummaryForAllEmployees(period: Date, db: DbClient = prisma) {
     const start = periodStart(period);
     const end = periodEnd(start);
 
-    const employees = await prisma.employee.findMany({
-      where: { isActive: true, role: { in: [EmployeeRole.ASOCIADO, EmployeeRole.CAJA_LOCAL] } },
+    const employees = await db.employee.findMany({
+      where: {
+        isActive: true,
+        role: { in: [EmployeeRole.ASOCIADO, EmployeeRole.CAJA_LOCAL, EmployeeRole.ADMINISTRATIVO] },
+      },
       select: { id: true, displayName: true, hourlyRateCents: true, paymentType: true, monthlySalaryCents: true },
       orderBy: { displayName: "asc" },
     });
     const employeeIds = employees.map((e) => e.id);
 
-    const entries = await prisma.employeeHoursEntry.findMany({
+    const entries = await db.employeeHoursEntry.findMany({
       where: { employeeId: { in: employeeIds }, workDate: { gte: start, lte: end } },
     });
     const hoursByEmployee = new Map<string, Prisma.Decimal>();
@@ -105,7 +119,7 @@ export class HoursService {
       hoursByEmployee.set(entry.employeeId, current.add(entry.hoursWorked));
     }
 
-    const payments = await prisma.employeeHoursPayment.findMany({
+    const payments = await db.employeeHoursPayment.findMany({
       where: { employeeId: { in: employeeIds }, period: start },
     });
     const paymentByEmployee = new Map(payments.map((p) => [p.employeeId, p]));
@@ -131,57 +145,55 @@ export class HoursService {
     });
   }
 
-  static async markPeriodPaid(input: { employeeId: string; period: Date; createdByEmployeeId: string }) {
-    const start = periodStart(input.period);
+  // Suma cuánto se debe a TODOS los empleados de "Sueldos Operativos"
+  // (ASOCIADO/CAJA_LOCAL/ADMINISTRATIVO) en un período — es lo que lee Costos
+  // Fijos como monto a pagar de "Sueldos Operativos" (ver CostoFijo.linkedToHoras).
+  // Excluye a los que ya están
+  // congelados/pagados para ese período (row.isPaid) — si no, un empleado ya
+  // saldado seguiría inflando el total a pagar del mes siguiente.
+  static async totalOwedForPeriod(period: Date, db: DbClient = prisma): Promise<number> {
+    const summary = await HoursService.monthlySummaryForAllEmployees(period, db);
+    return summary.reduce((sum, row) => sum + (row.isPaid ? 0 : row.amountCents ?? 0), 0);
+  }
 
-    const employee = await prisma.employee.findUnique({
-      where: { id: input.employeeId },
-      select: { hourlyRateCents: true, paymentType: true, monthlySalaryCents: true },
-    });
-    if (!employee) throw new Error("Empleado no encontrado.");
+  // Congela (crea el snapshot EmployeeHoursPayment) de cada empleado operativo
+  // que todavía no esté congelado para el período — igual que hacía antes el
+  // botón "Marcar pagado" por empleado, pero ahora se dispara automáticamente
+  // desde CostosFijosService.payPeriod cuando el total de "Sueldos Operativos"
+  // de ese mes queda completamente pagado. Empleados sin tarifa/sueldo
+  // definido (amountCents null) se saltean, no hay nada que congelar.
+  static async freezeAllForPeriod(period: Date, createdByEmployeeId: string, db: DbClient = prisma): Promise<void> {
+    const start = periodStart(period);
+    const summary = await HoursService.monthlySummaryForAllEmployees(start, db);
 
-    const existing = await prisma.employeeHoursPayment.findUnique({
-      where: { employeeId_period: { employeeId: input.employeeId, period: start } },
-    });
-    if (existing) {
-      throw new Error("Este período ya fue marcado como pagado.");
-    }
+    for (const row of summary) {
+      if (row.isPaid || row.amountCents == null) continue;
 
-    if (employee.paymentType === EmployeePaymentType.FIXED_MONTHLY) {
-      if (employee.monthlySalaryCents == null) {
-        throw new Error("Definí el sueldo fijo del empleado antes de marcar el mes como pagado.");
+      if (row.employee.paymentType === EmployeePaymentType.FIXED_MONTHLY) {
+        await db.employeeHoursPayment.create({
+          data: {
+            employeeId: row.employee.id,
+            period: start,
+            paymentType: EmployeePaymentType.FIXED_MONTHLY,
+            monthlySalaryCentsSnapshot: row.employee.monthlySalaryCents,
+            amountCents: row.amountCents,
+            createdByEmployeeId,
+          },
+        });
+      } else {
+        await db.employeeHoursPayment.create({
+          data: {
+            employeeId: row.employee.id,
+            period: start,
+            paymentType: EmployeePaymentType.HOURLY,
+            hoursSnapshot: row.totalHours,
+            hourlyRateCentsSnapshot: row.employee.hourlyRateCents,
+            amountCents: row.amountCents,
+            createdByEmployeeId,
+          },
+        });
       }
-
-      return prisma.employeeHoursPayment.create({
-        data: {
-          employeeId: input.employeeId,
-          period: start,
-          paymentType: EmployeePaymentType.FIXED_MONTHLY,
-          monthlySalaryCentsSnapshot: employee.monthlySalaryCents,
-          amountCents: employee.monthlySalaryCents,
-          createdByEmployeeId: input.createdByEmployeeId,
-        },
-      });
     }
-
-    if (employee.hourlyRateCents == null) {
-      throw new Error("Definí la tarifa por hora del empleado antes de marcar el mes como pagado.");
-    }
-
-    const { totalHours } = await HoursService.listMonthEntries(input.employeeId, start);
-    const amountCents = HoursService.calcAmountCents(totalHours, employee.hourlyRateCents);
-
-    return prisma.employeeHoursPayment.create({
-      data: {
-        employeeId: input.employeeId,
-        period: start,
-        paymentType: EmployeePaymentType.HOURLY,
-        hoursSnapshot: totalHours,
-        hourlyRateCentsSnapshot: employee.hourlyRateCents,
-        amountCents,
-        createdByEmployeeId: input.createdByEmployeeId,
-      },
-    });
   }
 
   static async listPaymentHistory(params: { employeeId?: string; from?: Date; to?: Date }) {

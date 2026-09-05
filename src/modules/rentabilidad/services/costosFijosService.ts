@@ -1,6 +1,7 @@
-import { CostoFijoCategoria } from "@prisma/client";
+import { CostoFijoCategoria, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assertIntCents } from "@/lib/money";
+import { HoursService } from "@/modules/horas/services/hoursService";
 
 function periodStart(period: Date) {
   return new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth(), 1));
@@ -12,27 +13,49 @@ function subtractOneMonth(period: Date) {
 
 const MAX_ARREARS_MONTHS = 36;
 
+// Monto "objetivo" del mes para un costo fijo: el `amountCents` fijo cargado,
+// salvo que el ítem esté `linkedToHoras` (hoy solo "Sueldos Operativos"), en
+// cuyo caso se ignora ese campo (queda sin usar) y se lee en vivo lo que el
+// módulo de Horas dice que se debe a los empleados operativos.
+//
+// Sueldos operativos se pagan mes VENCIDO: lo que Costos Fijos pide pagar en
+// el período X es lo que se acumuló en Horas durante el mes ANTERIOR (X - 1),
+// no en X. Ej.: lo trabajado en agosto se paga como costo fijo de septiembre.
+async function getTargetAmountCents(
+  item: { amountCents: number; linkedToHoras: boolean },
+  period: Date,
+  db: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<number> {
+  if (!item.linkedToHoras) return item.amountCents;
+  return HoursService.totalOwedForPeriod(subtractOneMonth(periodStart(period)), db);
+}
+
 // Calcula la racha CONSECUTIVA de meses impagos que termina en `referenceStart`
 // (el período elegido en el selector). Corta ni bien encuentra un mes saldado o
 // al llegar antes de `validFrom` — no "resucita" deuda vieja ya saldada antes de
-// una recaída posterior. Usa el `amountCents` ACTUAL del costo fijo para meses
-// pasados (no hay historial de montos), es una aproximación aceptada para
-// priorizar pagos, no para contabilidad exacta.
-function computeArrears(
-  item: { id: string; amountCents: number; validFrom: Date },
+// una recaída posterior. Para costos fijos normales usa el `amountCents` ACTUAL
+// del costo fijo para meses pasados (no hay historial de montos, aproximación
+// aceptada para priorizar pagos, no para contabilidad exacta); para ítems
+// `linkedToHoras` el monto de cada mes se recalcula en vivo desde Horas (ahí sí
+// es exacto, ya que Horas mantiene un valor real por mes).
+async function computeArrears(
+  item: { id: string; amountCents: number; validFrom: Date; linkedToHoras: boolean },
   referenceStart: Date,
   paidPeriods: Map<number, number> | undefined
-): { pendingSincePeriod: Date | null; periodsOwed: number; totalOwedCents: number } {
+): Promise<{ pendingSincePeriod: Date | null; periodsOwed: number; totalOwedCents: number; currentPeriodAmountCents: number }> {
   const validFromStart = periodStart(item.validFrom);
   let current = referenceStart;
   let pendingSincePeriod: Date | null = null;
   let periodsOwed = 0;
   let totalOwedCents = 0;
+  let currentPeriodAmountCents = 0;
 
   for (let i = 0; i < MAX_ARREARS_MONTHS; i++) {
     if (current.getTime() < validFromStart.getTime()) break;
+    const targetCents = await getTargetAmountCents(item, current);
+    if (current.getTime() === referenceStart.getTime()) currentPeriodAmountCents = targetCents;
     const paid = paidPeriods?.get(current.getTime()) ?? 0;
-    const owedCents = item.amountCents - paid;
+    const owedCents = targetCents - paid;
     if (owedCents <= 0) break;
 
     pendingSincePeriod = current;
@@ -41,7 +64,7 @@ function computeArrears(
     current = subtractOneMonth(current);
   }
 
-  return { pendingSincePeriod, periodsOwed, totalOwedCents };
+  return { pendingSincePeriod, periodsOwed, totalOwedCents, currentPeriodAmountCents };
 }
 
 export class CostosFijosService {
@@ -106,7 +129,11 @@ export class CostosFijosService {
         OR: [{ validTo: null }, { validTo: { gte: monthStart } }],
       },
     });
-    return items.reduce((sum, item) => sum + item.amountCents, 0);
+    let total = 0;
+    for (const item of items) {
+      total += await getTargetAmountCents(item, monthStart);
+    }
+    return total;
   }
 
   static async getPaymentStatusForMonth(period: Date, filters?: { categoria?: CostoFijoCategoria }) {
@@ -141,40 +168,42 @@ export class CostosFijosService {
       paidByCostoFijoId.set(p.costoFijoId, perPeriod);
     }
 
-    return items.map((item) => {
-      const paidPeriods = paidByCostoFijoId.get(item.id);
+    return Promise.all(
+      items.map(async (item) => {
+        const paidPeriods = paidByCostoFijoId.get(item.id);
 
-      if (!item.isRecurring) {
-        // Deuda puntual: vive en un único período fijo (el mes de validFrom),
-        // sin importar qué mes esté navegando el selector — nunca se multiplica
-        // por los meses transcurridos.
-        const fixedPeriod = periodStart(item.validFrom);
-        const paidAmountCents = paidPeriods?.get(fixedPeriod.getTime()) ?? 0;
-        const owedCents = item.amountCents - paidAmountCents;
-        const isPaid = owedCents <= 0;
+        if (!item.isRecurring) {
+          // Deuda puntual: vive en un único período fijo (el mes de validFrom),
+          // sin importar qué mes esté navegando el selector — nunca se multiplica
+          // por los meses transcurridos. (No aplica a ítems linkedToHoras.)
+          const fixedPeriod = periodStart(item.validFrom);
+          const paidAmountCents = paidPeriods?.get(fixedPeriod.getTime()) ?? 0;
+          const owedCents = item.amountCents - paidAmountCents;
+          const isPaid = owedCents <= 0;
+          return {
+            costoFijo: item,
+            period: fixedPeriod,
+            paidAmountCents,
+            isPaid,
+            pendingSincePeriod: isPaid ? null : fixedPeriod,
+            periodsOwed: isPaid ? 0 : 1,
+            totalOwedCents: isPaid ? 0 : owedCents,
+          };
+        }
+
+        const arrears = await computeArrears(item, start, paidPeriods);
+        const paidAmountCents = paidPeriods?.get(start.getTime()) ?? 0;
         return {
-          costoFijo: item,
-          period: fixedPeriod,
+          costoFijo: { ...item, amountCents: arrears.currentPeriodAmountCents },
+          period: start,
           paidAmountCents,
-          isPaid,
-          pendingSincePeriod: isPaid ? null : fixedPeriod,
-          periodsOwed: isPaid ? 0 : 1,
-          totalOwedCents: isPaid ? 0 : owedCents,
+          isPaid: arrears.pendingSincePeriod === null,
+          pendingSincePeriod: arrears.pendingSincePeriod,
+          periodsOwed: arrears.periodsOwed,
+          totalOwedCents: arrears.totalOwedCents,
         };
-      }
-
-      const arrears = computeArrears(item, start, paidPeriods);
-      const paidAmountCents = paidPeriods?.get(start.getTime()) ?? 0;
-      return {
-        costoFijo: item,
-        period: start,
-        paidAmountCents,
-        isPaid: arrears.pendingSincePeriod === null,
-        pendingSincePeriod: arrears.pendingSincePeriod,
-        periodsOwed: arrears.periodsOwed,
-        totalOwedCents: arrears.totalOwedCents,
-      };
-    });
+      })
+    );
   }
 
   static async payPeriod(params: {
@@ -194,11 +223,13 @@ export class CostosFijosService {
       const costoFijo = await tx.costoFijo.findUnique({ where: { id: params.costoFijoId } });
       if (!costoFijo) throw new Error("Costo fijo no encontrado.");
 
+      const targetCents = await getTargetAmountCents(costoFijo, start, tx);
+
       const existing = await tx.costoFijoPayment.findMany({
         where: { costoFijoId: params.costoFijoId, period: start },
       });
       const alreadyPaidCents = existing.reduce((sum, p) => sum + p.amountCents, 0);
-      if (alreadyPaidCents >= costoFijo.amountCents) {
+      if (alreadyPaidCents >= targetCents) {
         throw new Error("Este período ya está pagado.");
       }
 
@@ -240,6 +271,14 @@ export class CostosFijosService {
         });
       }
 
+      // Si este ítem lee su monto de Horas y con este pago quedó saldado el mes
+      // completo, congelar a todos los empleados operativos del mes de Horas
+      // que este pago está saldando (el ANTERIOR al período del costo fijo,
+      // ya que se paga mes vencido) — reemplaza al viejo botón "Marcar pagado".
+      if (costoFijo.linkedToHoras && alreadyPaidCents + params.amountCents >= targetCents) {
+        await HoursService.freezeAllForPeriod(subtractOneMonth(start), params.employeeId, tx);
+      }
+
       return payment;
     });
   }
@@ -255,12 +294,13 @@ export class CostosFijosService {
       }),
     ]);
     const paidAmountCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
+    const totalAmountCents = await getTargetAmountCents(costoFijo, start);
     return {
       costoFijo,
       payments,
-      totalAmountCents: costoFijo.amountCents,
+      totalAmountCents,
       paidAmountCents,
-      remainingCents: costoFijo.amountCents - paidAmountCents,
+      remainingCents: totalAmountCents - paidAmountCents,
     };
   }
 
@@ -295,7 +335,8 @@ export class CostosFijosService {
         where: { costoFijoId: existing.costoFijoId, period: existing.period, id: { not: paymentId } },
       });
       const othersPaidCents = others.reduce((sum, p) => sum + p.amountCents, 0);
-      if (othersPaidCents + amountCents > costoFijo.amountCents) {
+      const targetCents = await getTargetAmountCents(costoFijo, existing.period, tx);
+      if (othersPaidCents + amountCents > targetCents) {
         throw new Error("El monto supera lo pendiente de este período.");
       }
 
@@ -330,6 +371,10 @@ export class CostosFijosService {
             createdByEmployeeId: updatedByEmployeeId,
           },
         });
+      }
+
+      if (costoFijo.linkedToHoras && othersPaidCents + amountCents >= targetCents) {
+        await HoursService.freezeAllForPeriod(subtractOneMonth(existing.period), updatedByEmployeeId, tx);
       }
 
       return updated;

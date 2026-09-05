@@ -60,7 +60,6 @@ export function HorasTabClient({
   const [summary, setSummary] = useState<HoursRow[]>(initialSummary);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [dailyDetail, setDailyDetail] = useState<Record<string, DailyEntry[]>>({});
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
@@ -100,24 +99,12 @@ export function HorasTabClient({
     }
   }
 
-  async function markPaid(employeeId: string) {
-    setBusyId(employeeId);
-    setError(null);
-    try {
-      const res = await fetch("/api/gerencia/horas/pagar", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ employeeId, period }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error al marcar pagado");
-      await fetchSummary(period);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error desconocido");
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const totalAccruedCents = summary.reduce((sum, row) => sum + (row.amountCents ?? 0), 0);
+  const nextPeriodLabel = (() => {
+    const [year, month] = period.split("-").map(Number);
+    const next = new Date(Date.UTC(year, month, 1)); // month es 1-indexed en el input, así que ya apunta al mes siguiente
+    return `${MESES[next.getUTCMonth()]} de ${next.getUTCFullYear()}`;
+  })();
 
   return (
     <div className="space-y-4">
@@ -132,6 +119,18 @@ export function HorasTabClient({
         <span className="text-sm text-neutral-500">{periodLabel(period)}</span>
       </div>
 
+      <div className="rounded-lg border bg-white px-4 py-3 shadow-sm inline-block">
+        <div className="text-xs text-neutral-500">Acumulado de {periodLabel(period)} (todos los operativos)</div>
+        <div className="mt-1 text-lg font-bold text-neutral-800">{formatArsFromCents(totalAccruedCents)}</div>
+      </div>
+
+      <p className="text-xs text-neutral-500">
+        El pago de sueldos operativos se hace desde <span className="font-medium">Egresos → Costos fijos</span> ("Sueldos Operativos"),
+        no desde acá. Se paga mes vencido: lo acumulado de {periodLabel(period)} va a aparecer como el monto a pagar
+        del costo fijo de <span className="font-medium">{nextPeriodLabel}</span>. Al pagarse el total del mes en
+        Costos Fijos, este mes queda marcado como pagado acá automáticamente.
+      </p>
+
       {error && <p className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
       <div className="overflow-x-auto rounded-lg border bg-white">
@@ -143,25 +142,23 @@ export function HorasTabClient({
               <th className="px-4 py-2 text-left">Tarifa/Sueldo</th>
               <th className="px-4 py-2 text-left">Monto a pagar</th>
               <th className="px-4 py-2 text-left">Estado</th>
-              <th className="px-4 py-2 text-left">Acción</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-neutral-400">
                   Cargando...
                 </td>
               </tr>
             ) : summary.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-neutral-400">
                   Sin empleados asociados o de caja local.
                 </td>
               </tr>
             ) : (
               summary.map((row) => {
-                const busy = busyId === row.employee.id;
                 const isHourly = row.employee.paymentType === "HOURLY";
                 const currentAmountCents = isHourly
                   ? row.employee.hourlyRateCents
@@ -170,7 +167,7 @@ export function HorasTabClient({
                 const loadingDetail = loadingDetailId === row.employee.id;
 
                 return (
-                  <tr key={row.employee.id} className={busy ? "bg-neutral-50" : ""}>
+                  <tr key={row.employee.id}>
                     <td className="px-4 py-3 font-medium align-top">{row.employee.displayName}</td>
                     <td className="px-4 py-3 align-top">
                       {isHourly ? (
@@ -228,24 +225,6 @@ export function HorasTabClient({
                       >
                         {row.isPaid ? "Pagado" : "Pendiente"}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      {!row.isPaid && (
-                        <button
-                          onClick={() => markPaid(row.employee.id)}
-                          disabled={busy || row.amountCents == null}
-                          className="text-xs text-neutral-800 hover:underline disabled:opacity-40"
-                          title={
-                            row.amountCents == null
-                              ? isHourly
-                                ? "Definí la tarifa primero"
-                                : "Definí el sueldo fijo primero"
-                              : undefined
-                          }
-                        >
-                          {busy ? "Guardando..." : "Marcar pagado"}
-                        </button>
-                      )}
                     </td>
                   </tr>
                 );

@@ -36,11 +36,11 @@ Deuda técnica y pendientes que Gimena pidió guardar para retomar más adelante
 
 ---
 
-## 2026-09-05 — Descontar consumo de cuentas internas del sueldo fijo a pagar
+## 2026-09-05 — Descontar consumo de cuentas internas del sueldo operativo a pagar
 
-**Qué:** conectar el consumo de cuentas internas (pagos POS con método "cuenta interna", que impactan el sueldo del empleado) con el flujo de "Marcar pagado" de Horas/empleados con sueldo fijo (`HorasTabClient.tsx`). Hoy el monto a pagar por sueldo fijo no descuenta el consumo del empleado en cuentas internas. Se necesita: monto a pagar = sueldo fijo (u horas) **menos** el consumo en cuentas internas del período, aplicando un 20% de descuento sobre ese consumo (el empleado paga el 80% del precio del producto vía descuento de sueldo).
+**Qué:** ahora que el pago de sueldos operativos se hace desde Costos Fijos ("Sueldos Operativos", `linkedToHoras`) leyendo el total desde `HoursService.totalOwedForPeriod`/`monthlySummaryForAllEmployees`, falta conectar ahí el consumo de cuentas internas (pagos POS con método "cuenta interna", que impactan el sueldo del empleado). Hoy ese cálculo no descuenta el consumo del empleado en cuentas internas. Se necesita: monto a pagar por empleado = sueldo fijo (u horas) **menos** el consumo en cuentas internas del período, aplicando un 20% de descuento sobre ese consumo (el empleado paga el 80% del precio del producto vía descuento de sueldo) — esto bajaría tanto el "cuánto se debe" que ve Horas como el total agregado que lee Costos Fijos.
 
-**Por qué quedó pendiente:** requiere definir cómo se agrega el consumo de cuentas internas por empleado y período (¿mismo corte que el de horas/pago?) antes de poder mostrar el número final a pagar.
+**Por qué quedó pendiente:** requiere definir cómo se agrega el consumo de cuentas internas por empleado y período (¿mismo corte que el de horas/pago?) antes de poder restarlo en `monthlySummaryForAllEmployees`.
 
 ---
 
