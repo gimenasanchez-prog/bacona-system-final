@@ -146,7 +146,12 @@ export class ConsolidatedClosuresService {
         paymentDetails: { orderBy: { createdAt: "asc" } },
         localExpenses: { include: { supplier: true }, orderBy: { date: "desc" } },
         sales: {
-          include: { payments: true },
+          include: {
+            payments: true,
+            items: { include: { product: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+            customer: { select: { displayName: true } },
+            cuentaCorrienteAccount: { include: { customer: { select: { displayName: true } } } },
+          },
           orderBy: { createdAt: "asc" },
         },
       },

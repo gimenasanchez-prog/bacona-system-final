@@ -6,6 +6,7 @@ import { PosModifiersService } from "./posModifiersService";
 import { PosPaymentService } from "./posPaymentService";
 import { PosPricingService } from "./posPricingService";
 import { StockMovementService } from "@/modules/stock/services/stockMovementService";
+import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 
 type SaleUpdateInput = {
   saleType?: PosSaleType;
@@ -277,7 +278,7 @@ export class PosSaleService {
     return prisma.$transaction(async (tx) => {
       const sale = await tx.posSale.findUnique({
         where: { id: saleId },
-        select: { status: true },
+        select: { status: true, cashSessionId: true },
       });
       if (!sale) throw new Error("Venta no encontrada");
       if (sale.status === "CANCELLED") return tx.posSale.findUnique({ where: { id: saleId } });
@@ -286,10 +287,16 @@ export class PosSaleService {
         await StockMovementService.ensureReversalForSaleMovement(tx, saleId);
       }
 
-      return tx.posSale.update({
+      const updated = await tx.posSale.update({
         where: { id: saleId },
         data: { status: "CANCELLED", cancellationReason: reason.trim(), cancelledAt: new Date() },
       });
+
+      if (sale.cashSessionId) {
+        await CashSessionService.recomputeClosedSessionSnapshot(sale.cashSessionId, tx);
+      }
+
+      return updated;
     });
   }
 

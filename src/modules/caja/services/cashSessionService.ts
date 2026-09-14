@@ -54,6 +54,8 @@ function centsSum(values: number[]): number {
   return values.reduce((s, v) => s + v, 0);
 }
 
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
 export class CashSessionService {
   static async openCashSession(params: {
     employeeId: string;
@@ -86,14 +88,17 @@ export class CashSessionService {
     });
   }
 
-  static async getCashSessionSummary(cashSessionId: string): Promise<CashSessionSummary> {
-    const cashSession = await prisma.cashSession.findUnique({
+  static async getCashSessionSummary(
+    cashSessionId: string,
+    client: DbClient = prisma
+  ): Promise<CashSessionSummary> {
+    const cashSession = await client.cashSession.findUnique({
       where: { id: cashSessionId },
       include: { employee: { select: { id: true, displayName: true } } },
     });
     if (!cashSession) throw new Error("Cash session not found");
 
-    const payments = await prisma.posPayment.findMany({
+    const payments = await client.posPayment.findMany({
       where: { sale: { cashSessionId, status: { not: "CANCELLED" } } },
       include: {
         cuentaCorrienteAccount: { include: { customer: true } },
@@ -118,13 +123,13 @@ export class CashSessionService {
 
     const totalIncomeCents = centsSum(Object.values(totalsByMethod));
 
-    const shiftCashExpensesAgg = await prisma.localExpense.aggregate({
+    const shiftCashExpensesAgg = await client.localExpense.aggregate({
       where: { cashSessionId, paymentSource: "SHIFT_CASH" },
       _sum: { amountCents: true },
     });
     const totalShiftCashExpensesCents = shiftCashExpensesAgg._sum.amountCents ?? 0;
 
-    const localCashExpensesAgg = await prisma.localExpense.aggregate({
+    const localCashExpensesAgg = await client.localExpense.aggregate({
       where: { cashSessionId, paymentSource: "LOCAL_CASH" },
       _sum: { amountCents: true },
     });
@@ -157,7 +162,7 @@ export class CashSessionService {
       }
     }
 
-    const stockLines = await prisma.stockMovementLine.findMany({
+    const stockLines = await client.stockMovementLine.findMany({
       where: { movement: { posSale: { cashSessionId } } },
       include: {
         inventoryItem: { select: { id: true, name: true, unit: true } },
@@ -243,6 +248,54 @@ export class CashSessionService {
     };
   }
 
+  private static async persistSnapshot(
+    client: Prisma.TransactionClient,
+    cashSessionId: string,
+    summary: CashSessionSummary,
+    extraData: Prisma.CashSessionUpdateInput = {}
+  ) {
+    const detailsToCreate = [
+      ...summary.breakdownDetails.cuentaCorriente.map((d) => ({
+        cashSessionId,
+        type: "CUENTA_CORRIENTE" as const,
+        referenceId: d.referenceId,
+        referenceName: d.referenceName,
+        amountCents: d.amountCents,
+      })),
+      ...summary.breakdownDetails.cuentasInternas.map((d) => ({
+        cashSessionId,
+        type: "CUENTA_INTERNA" as const,
+        referenceId: d.referenceId,
+        referenceName: d.referenceName,
+        amountCents: d.amountCents,
+      })),
+    ];
+
+    await client.cashSessionPaymentBreakdownDetail.deleteMany({ where: { cashSessionId } });
+
+    if (detailsToCreate.length) {
+      await client.cashSessionPaymentBreakdownDetail.createMany({ data: detailsToCreate });
+    }
+
+    await client.cashSession.update({
+      where: { id: cashSessionId },
+      data: {
+        totalCashCents: summary.totals.EFECTIVO,
+        totalDebitCents: summary.totals.DEBITO,
+        totalCreditCents: summary.totals.CREDITO,
+        totalTransferCents: summary.totals.TRANSFERENCIA,
+        totalQrCents: summary.totals.QR,
+        totalChequeCents: summary.totals.CHEQUE,
+        totalCuentaCorrienteCents: summary.totals.CUENTA_CORRIENTE,
+        totalCuentasInternasCents: summary.totals.CUENTAS_INTERNAS,
+        totalIncomeCents: summary.totals.totalIncomeCents,
+        totalExpensesCents: summary.totals.totalExpensesCents,
+        totalNetCents: summary.totals.totalNetCents,
+        ...extraData,
+      },
+    });
+  }
+
   static async closeCashSession(params: { cashSessionId: string; notes?: string | null }) {
     const summary = await this.getCashSessionSummary(params.cashSessionId);
     if (summary.cashSession.status !== "OPEN") throw new Error("La caja ya está cerrada");
@@ -257,55 +310,33 @@ export class CashSessionService {
       }
     }
 
-    const detailsToCreate = [
-      ...summary.breakdownDetails.cuentaCorriente.map((d) => ({
-        cashSessionId: params.cashSessionId,
-        type: "CUENTA_CORRIENTE" as const,
-        referenceId: d.referenceId,
-        referenceName: d.referenceName,
-        amountCents: d.amountCents,
-      })),
-      ...summary.breakdownDetails.cuentasInternas.map((d) => ({
-        cashSessionId: params.cashSessionId,
-        type: "CUENTA_INTERNA" as const,
-        referenceId: d.referenceId,
-        referenceName: d.referenceName,
-        amountCents: d.amountCents,
-      })),
-    ];
-
     await prisma.$transaction(async (tx) => {
-      await tx.cashSessionPaymentBreakdownDetail.deleteMany({
-        where: { cashSessionId: params.cashSessionId },
-      });
-
-      if (detailsToCreate.length) {
-        await tx.cashSessionPaymentBreakdownDetail.createMany({ data: detailsToCreate });
-      }
-
-      await tx.cashSession.update({
-        where: { id: params.cashSessionId },
-        data: {
-          status: "CLOSED",
-          closedAt: new Date(),
-          openKey: null,
-          notes: params.notes ?? null,
-          totalCashCents: summary.totals.EFECTIVO,
-          totalDebitCents: summary.totals.DEBITO,
-          totalCreditCents: summary.totals.CREDITO,
-          totalTransferCents: summary.totals.TRANSFERENCIA,
-          totalQrCents: summary.totals.QR,
-          totalChequeCents: summary.totals.CHEQUE,
-          totalCuentaCorrienteCents: summary.totals.CUENTA_CORRIENTE,
-          totalCuentasInternasCents: summary.totals.CUENTAS_INTERNAS,
-          totalIncomeCents: summary.totals.totalIncomeCents,
-          totalExpensesCents: summary.totals.totalExpensesCents,
-          totalNetCents: summary.totals.totalNetCents,
-        },
+      await this.persistSnapshot(tx, params.cashSessionId, summary, {
+        status: "CLOSED",
+        closedAt: new Date(),
+        openKey: null,
+        notes: params.notes ?? null,
       });
     });
 
     return summary;
+  }
+
+  /**
+   * Recalcula y persiste el snapshot de un turno ya cerrado (totales por método +
+   * detalle por cuenta). Necesario porque el snapshot se fija al cerrar y no se
+   * actualiza solo — una anulación posterior (gerencia) debe llamar esto para que
+   * el consolidado no quede con montos viejos.
+   */
+  static async recomputeClosedSessionSnapshot(cashSessionId: string, client: Prisma.TransactionClient) {
+    const session = await client.cashSession.findUnique({
+      where: { id: cashSessionId },
+      select: { status: true },
+    });
+    if (!session || session.status !== "CLOSED") return;
+
+    const summary = await this.getCashSessionSummary(cashSessionId, client);
+    await this.persistSnapshot(client, cashSessionId, summary);
   }
 }
 

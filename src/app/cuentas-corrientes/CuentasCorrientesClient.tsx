@@ -443,22 +443,28 @@ function EditCargoDirectoModal({ charge, onClose, onSuccess }: {
   );
 }
 
-function ConsumosPreviewModal({ customerName, period, sales, directCharges, onClose, onRefresh }: {
+function ConsumosPreviewModal({ customerName, period, sales, directCharges, onClose, onRefresh, role }: {
   customerName: string;
   period: { from: Date | string; to: Date | string };
   sales: PeriodSummary["sales"];
   directCharges: DirectCharge[];
   onClose: () => void;
   onRefresh: () => void;
+  role: string;
 }) {
   const salesTotal = sales.reduce((s, x) => s + x.ccAmountCents, 0);
   const chargesTotal = directCharges.reduce((s, x) => s + x.netAmountCents, 0);
   const total = salesTotal + chargesTotal;
   const periodStr = formatPeriod(period.from, period.to);
   const isEmpty = sales.length === 0 && directCharges.length === 0;
+  const canVoidSales = role === "GERENCIA";
 
   const [editingCharge, setEditingCharge] = useState<DirectCharge | null>(null);
   const [creditNoteTarget, setCreditNoteTarget] = useState<{ target: NotaCreditoTarget; label: string } | null>(null);
+  const [voidTarget, setVoidTarget] = useState<PeriodSummary["sales"][number] | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidLoading, setVoidLoading] = useState(false);
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   async function handleDeleteCharge(id: string) {
     if (!window.confirm("¿Eliminar este cargo directo? Esta acción no se puede deshacer.")) return;
@@ -466,6 +472,28 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { alert(data.error || "Error al eliminar el cargo."); return; }
     onRefresh();
+  }
+
+  async function handleVoidSale() {
+    if (!voidTarget || !voidReason.trim()) return;
+    setVoidLoading(true);
+    setVoidError(null);
+    try {
+      const res = await fetch(`/api/pos/sales/${voidTarget.id}/cancel-gerencia`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: voidReason.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Error al anular la venta");
+      setVoidTarget(null);
+      setVoidReason("");
+      onRefresh();
+    } catch (e) {
+      setVoidError(e instanceof Error ? e.message : "Error al anular la venta");
+    } finally {
+      setVoidLoading(false);
+    }
   }
 
   return (
@@ -489,6 +517,7 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                   <th className="text-left pb-2 font-medium pr-4">Consumo</th>
                   <th className="text-left pb-2 font-medium pr-4">Comanda</th>
                   <th className="text-right pb-2 font-medium">Monto</th>
+                  {canVoidSales && <th className="text-right pb-2 font-medium pl-4">Acción</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -517,6 +546,16 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                         </span>
                       )}
                     </td>
+                    {canVoidSales && (
+                      <td className="py-2 pl-4 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => { setVoidTarget(sale); setVoidReason(""); setVoidError(null); }}
+                          className="text-xs underline text-red-600 hover:text-red-800"
+                        >
+                          Anular
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {directCharges.map((charge) => (
@@ -568,6 +607,7 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                       )}
                       {formatArsFromCents(charge.netAmountCents)}
                     </td>
+                    {canVoidSales && <td className="py-2 pl-4" />}
                   </tr>
                 ))}
               </tbody>
@@ -575,6 +615,7 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
                 <tr className="border-t-2 border-neutral-300">
                   <td colSpan={3} className="pt-3 font-bold text-neutral-800 pr-4">Total</td>
                   <td className="pt-3 text-right font-bold text-neutral-900">{formatArsFromCents(total)}</td>
+                  {canVoidSales && <td className="pt-3" />}
                 </tr>
               </tfoot>
             </table>
@@ -607,6 +648,62 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
           onClose={() => setCreditNoteTarget(null)}
           onSuccess={() => { setCreditNoteTarget(null); onRefresh(); }}
         />
+      )}
+      {voidTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <div className="text-base font-semibold">Anular venta</div>
+            <div className="mt-1 text-sm text-neutral-600">
+              {customerName}
+              {voidTarget.comandaNumber ? ` · #${voidTarget.comandaNumber}` : ""} ·{" "}
+              {formatArsFromCents(voidTarget.ccAmountCents)}
+            </div>
+
+            <div className="mt-3 max-h-24 overflow-y-auto rounded-md border bg-neutral-50 p-2 text-xs text-neutral-700">
+              {voidTarget.items.length > 0
+                ? voidTarget.items.map((i, idx) => (
+                    <div key={idx}>{i.qty}× {i.productName}</div>
+                  ))
+                : "Consumo"}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <label className="block text-xs font-medium">Motivo (obligatorio)</label>
+              <input
+                type="text"
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder="Ej: cargada por error"
+              />
+            </div>
+
+            {voidError ? (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {voidError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50"
+                disabled={voidLoading}
+                onClick={() => { setVoidTarget(null); setVoidError(null); }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:bg-neutral-200 disabled:text-neutral-500"
+                disabled={!voidReason.trim() || voidLoading}
+                onClick={handleVoidSale}
+              >
+                {voidLoading ? "Anulando..." : "Confirmar anulación"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1026,11 +1123,12 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
 
 // ─── Period Row ───────────────────────────────────────────────────────────────
 
-function PeriodRow({ ps, customerName, accountId, onRefresh }: {
+function PeriodRow({ ps, customerName, accountId, onRefresh, role }: {
   ps: PeriodSummary;
   customerName: string;
   accountId: string;
   onRefresh: () => void;
+  role: string;
 }) {
   const [consumosModal, setConsumosModal] = useState(false);
   const [ingresarModal, setIngresarModal] = useState(false);
@@ -1145,6 +1243,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
           directCharges={ps.directCharges}
           onClose={() => setConsumosModal(false)}
           onRefresh={onRefresh}
+          role={role}
         />
       )}
       {ingresarModal && (
@@ -1182,7 +1281,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh }: {
 
 // ─── Periods Table ────────────────────────────────────────────────────────────
 
-function PeriodsTable({ account, onRefresh }: { account: AccountWithBillingState; onRefresh: () => void }) {
+function PeriodsTable({ account, onRefresh, role }: { account: AccountWithBillingState; onRefresh: () => void; role: string }) {
   const [showPaid, setShowPaid] = useState(false);
 
   const activePeriods = account.periods.filter((p) => !p.invoice?.isPaid);
@@ -1194,7 +1293,7 @@ function PeriodsTable({ account, onRefresh }: { account: AccountWithBillingState
         <p className="px-6 py-4 text-xs text-neutral-400">Sin actividad en esta cuenta.</p>
       )}
       {activePeriods.map((ps) => (
-        <PeriodRow key={ps.period.from.toString()} ps={ps} customerName={account.customerName} accountId={account.id} onRefresh={onRefresh} />
+        <PeriodRow key={ps.period.from.toString()} ps={ps} customerName={account.customerName} accountId={account.id} onRefresh={onRefresh} role={role} />
       ))}
       {paidPeriods.length > 0 && (
         <>
@@ -1205,7 +1304,7 @@ function PeriodsTable({ account, onRefresh }: { account: AccountWithBillingState
             {showPaid ? "▲" : "▼"} {paidPeriods.length} período{paidPeriods.length !== 1 ? "s" : ""} pagado{paidPeriods.length !== 1 ? "s" : ""}
           </button>
           {showPaid && paidPeriods.map((ps) => (
-            <PeriodRow key={ps.period.from.toString()} ps={ps} customerName={account.customerName} accountId={account.id} onRefresh={onRefresh} />
+            <PeriodRow key={ps.period.from.toString()} ps={ps} customerName={account.customerName} accountId={account.id} onRefresh={onRefresh} role={role} />
           ))}
         </>
       )}
@@ -1636,12 +1735,13 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
 
 // ─── Account Row ──────────────────────────────────────────────────────────────
 
-function AccountRow({ account, expanded, onToggle, onRefresh, onArchiveChange }: {
+function AccountRow({ account, expanded, onToggle, onRefresh, onArchiveChange, role }: {
   account: AccountWithBillingState;
   expanded: boolean;
   onToggle: () => void;
   onRefresh: () => void;
   onArchiveChange: (accountId: string, isActive: boolean) => void;
+  role: string;
 }) {
   const hasActivity = account.periods.length > 0;
   const overdueTotal = account.overdueInvoicesTotalCents;
@@ -1725,7 +1825,7 @@ function AccountRow({ account, expanded, onToggle, onRefresh, onArchiveChange }:
           <td colSpan={8} className="p-0">
             {account.accountKind === "TRANSITORIA"
               ? <TransitoriaChargesTable account={account} onRefresh={onRefresh} />
-              : <PeriodsTable account={account} onRefresh={onRefresh} />}
+              : <PeriodsTable account={account} onRefresh={onRefresh} role={role} />}
           </td>
         </tr>
       )}
@@ -1887,6 +1987,7 @@ export default function CuentasCorrientesClient({
                 onToggle={() => setExpandedId(expandedId === acc.id ? null : acc.id)}
                 onRefresh={() => refresh()}
                 onArchiveChange={handleArchiveChange}
+                role={role}
               />
             ))}
           </tbody>

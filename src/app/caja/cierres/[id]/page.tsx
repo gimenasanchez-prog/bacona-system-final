@@ -157,6 +157,9 @@ export default async function CierreDetailPage(props: { params: Promise<{ id: st
             <table className="w-full text-sm">
               <thead className="bg-white">
                 <tr className="border-b">
+                  <th className="px-2 py-2 text-left font-medium">Hora</th>
+                  <th className="px-2 py-2 text-left font-medium">Cliente</th>
+                  <th className="px-2 py-2 text-left font-medium">Consumo</th>
                   <th className="px-2 py-2 text-left font-medium">Estado</th>
                   <th className="px-2 py-2 text-left font-medium">Métodos</th>
                   <th className="px-2 py-2 text-right font-medium">Total</th>
@@ -168,8 +171,19 @@ export default async function CierreDetailPage(props: { params: Promise<{ id: st
                   const total = sale.payments.reduce((s, p) => s + p.amountCents, 0);
                   const methods = [...new Set(sale.payments.map((p) => METHOD_LABELS[p.method] ?? p.method))].join(", ");
                   const isCancelled = sale.status === "CANCELLED";
+                  const customerLabel =
+                    sale.cuentaCorrienteAccount?.customer.displayName ??
+                    sale.customer?.displayName ??
+                    sale.customerNameFreeText ??
+                    "Mostrador";
+                  const itemsLabel = sale.items.map((it) => `${it.qty}× ${it.product.name}`).join(", ") || "—";
                   return (
                     <tr key={sale.id} className={`border-b last:border-b-0 ${isCancelled ? "opacity-50" : ""}`}>
+                      <td className="px-2 py-2 text-neutral-500 whitespace-nowrap">
+                        {new Date(sale.createdAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td className="px-2 py-2 text-neutral-700">{customerLabel}</td>
+                      <td className="px-2 py-2 text-neutral-600 max-w-xs truncate" title={itemsLabel}>{itemsLabel}</td>
                       <td className="px-2 py-2">
                         <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${isCancelled ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
                           {isCancelled ? "Anulada" : sale.status}
