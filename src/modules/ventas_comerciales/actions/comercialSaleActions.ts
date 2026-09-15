@@ -15,6 +15,9 @@ const lineSchema = z.object({
   formaDePagoPlanificada: z.string().optional(),
   viandasCobradasPlanned: z.number().int().min(0),
   detalleComanda: z.string().optional(),
+  facturacionRazonSocial: z.string().optional(),
+  facturacionCuit: z.string().optional(),
+  facturacionNotas: z.string().optional(),
 });
 
 const batchSchema = z.object({
@@ -47,6 +50,9 @@ function parseLines(linesJson: string) {
       formaDePagoPlanificada: l.formaDePagoPlanificada?.trim() || null,
       viandasCobradasPlanned: l.viandasCobradasPlanned,
       detalleComanda: l.detalleComanda?.trim() || null,
+      facturacionRazonSocial: l.facturacionRazonSocial?.trim() || null,
+      facturacionCuit: l.facturacionCuit?.trim() || null,
+      facturacionNotas: l.facturacionNotas?.trim() || null,
     };
   });
 }

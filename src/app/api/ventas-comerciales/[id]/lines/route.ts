@@ -14,6 +14,9 @@ const schema = z.object({
   formaDePagoPlanificada: z.string().optional(),
   viandasCobradasPlanned: z.number().int().min(0),
   detalleComanda: z.string().optional(),
+  facturacionRazonSocial: z.string().optional(),
+  facturacionCuit: z.string().optional(),
+  facturacionNotas: z.string().optional(),
 });
 
 export async function POST(
@@ -49,6 +52,9 @@ export async function POST(
       formaDePagoPlanificada: parsed.data.formaDePagoPlanificada?.trim() || null,
       viandasCobradasPlanned: parsed.data.viandasCobradasPlanned,
       detalleComanda: parsed.data.detalleComanda?.trim() || null,
+      facturacionRazonSocial: parsed.data.facturacionRazonSocial?.trim() || null,
+      facturacionCuit: parsed.data.facturacionCuit?.trim() || null,
+      facturacionNotas: parsed.data.facturacionNotas?.trim() || null,
     });
     return NextResponse.json({ line });
   } catch (err) {

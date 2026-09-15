@@ -14,6 +14,9 @@ const schema = z.object({
   formaDePagoPlanificada: z.string().optional(),
   viandasCobradasPlanned: z.number().int().min(0).optional(),
   detalleComanda: z.string().optional(),
+  facturacionRazonSocial: z.string().optional(),
+  facturacionCuit: z.string().optional(),
+  facturacionNotas: z.string().optional(),
 });
 
 function checkRole(role: string | undefined) {
@@ -36,7 +39,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
-  const { deliveryDate, formaDePagoPlanificada, detalleComanda, ...rest } = parsed.data;
+  const { deliveryDate, formaDePagoPlanificada, detalleComanda, facturacionRazonSocial, facturacionCuit, facturacionNotas, ...rest } = parsed.data;
   const patch: Record<string, unknown> = { ...rest };
   if (deliveryDate !== undefined) {
     const d = parseDateOnly(deliveryDate);
@@ -47,6 +50,9 @@ export async function PATCH(
   }
   if (formaDePagoPlanificada !== undefined) patch.formaDePagoPlanificada = formaDePagoPlanificada.trim() || null;
   if (detalleComanda !== undefined) patch.detalleComanda = detalleComanda.trim() || null;
+  if (facturacionRazonSocial !== undefined) patch.facturacionRazonSocial = facturacionRazonSocial.trim() || null;
+  if (facturacionCuit !== undefined) patch.facturacionCuit = facturacionCuit.trim() || null;
+  if (facturacionNotas !== undefined) patch.facturacionNotas = facturacionNotas.trim() || null;
 
   try {
     const line = await ComercialSaleService.updateLine(lineId, patch);

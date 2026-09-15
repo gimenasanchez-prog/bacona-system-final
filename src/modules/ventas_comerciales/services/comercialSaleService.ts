@@ -15,6 +15,9 @@ export type ComercialSaleLineInput = {
   formaDePagoPlanificada?: string | null;
   viandasCobradasPlanned: number;
   detalleComanda?: string | null;
+  facturacionRazonSocial?: string | null;
+  facturacionCuit?: string | null;
+  facturacionNotas?: string | null;
 };
 
 export type CreateBatchParams = {
@@ -35,7 +38,32 @@ function lineData(l: ComercialSaleLineInput) {
     formaDePagoPlanificada: l.formaDePagoPlanificada ?? null,
     viandasCobradasPlanned: l.viandasCobradasPlanned,
     detalleComanda: l.detalleComanda ?? null,
+    facturacionRazonSocial: l.facturacionRazonSocial ?? null,
+    facturacionCuit: l.facturacionCuit ?? null,
+    facturacionNotas: l.facturacionNotas ?? null,
   };
+}
+
+// Mantiene la tabla de "conocidos" para autocompletar razón social/CUIT al
+// cargar los datos de facturación de una línea. Best-effort: no forma parte
+// de la transacción de guardado de la línea. El CUIT solo se pisa si viene
+// no vacío, para no borrar un dato ya conocido con un guardado posterior que
+// lo dejó en blanco. Las notas de facturación no pasan por acá.
+async function upsertBillingClient(razonSocial: string | null | undefined, cuit: string | null | undefined) {
+  const name = razonSocial?.trim();
+  if (!name) return;
+
+  const existing = await prisma.comercialBillingClient.findFirst({
+    where: { razonSocial: { equals: name, mode: "insensitive" } },
+  });
+  const cuitTrimmed = cuit?.trim();
+  if (existing) {
+    if (cuitTrimmed) {
+      await prisma.comercialBillingClient.update({ where: { id: existing.id }, data: { cuit: cuitTrimmed } });
+    }
+  } else {
+    await prisma.comercialBillingClient.create({ data: { razonSocial: name, cuit: cuitTrimmed || null } });
+  }
 }
 
 export class ComercialSaleService {
@@ -70,7 +98,7 @@ export class ComercialSaleService {
   static async createBatch(params: CreateBatchParams) {
     if (params.lines.length === 0) throw new Error("Agregá al menos una línea de entrega");
 
-    return prisma.$transaction(async (tx) => {
+    const batch = await prisma.$transaction(async (tx) => {
       const batch = await tx.comercialSale.create({
         data: {
           cuentaCorrienteAccountId: params.cuentaCorrienteAccountId ?? null,
@@ -89,20 +117,36 @@ export class ComercialSaleService {
 
       return tx.comercialSale.findUniqueOrThrow({ where: { id: batch.id } });
     });
+
+    for (const l of params.lines) {
+      await upsertBillingClient(l.facturacionRazonSocial, l.facturacionCuit);
+    }
+
+    return batch;
   }
 
   static async addLine(batchId: string, line: ComercialSaleLineInput) {
     const count = await prisma.comercialSaleLine.count({ where: { comercialSaleId: batchId } });
-    return prisma.comercialSaleLine.create({
+    const created = await prisma.comercialSaleLine.create({
       data: { comercialSaleId: batchId, ...lineData(line), sortOrder: count },
     });
+    await upsertBillingClient(line.facturacionRazonSocial, line.facturacionCuit);
+    return created;
   }
 
   static async updateLine(lineId: string, patch: Partial<ComercialSaleLineInput>) {
     const line = await prisma.comercialSaleLine.findUnique({ where: { id: lineId }, select: { status: true } });
     if (!line) throw new Error("Línea no encontrada");
     if (line.status !== "PENDIENTE") throw new Error("Solo se puede editar una línea pendiente");
-    return prisma.comercialSaleLine.update({ where: { id: lineId }, data: patch });
+    const updated = await prisma.comercialSaleLine.update({ where: { id: lineId }, data: patch });
+    if (patch.facturacionRazonSocial !== undefined) {
+      await upsertBillingClient(patch.facturacionRazonSocial, patch.facturacionCuit);
+    }
+    return updated;
+  }
+
+  static async listBillingClients() {
+    return prisma.comercialBillingClient.findMany({ orderBy: { razonSocial: "asc" } });
   }
 
   static async removeLine(lineId: string) {

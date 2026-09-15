@@ -1,11 +1,56 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Eye, Pencil, Plus, Printer, Trash2 } from "lucide-react";
 import { formatArsFromCents } from "@/lib/money";
 import { formatBusinessDate } from "@/lib/dates";
 import { saveComercialBatchAction } from "@/modules/ventas_comerciales/actions/comercialSaleActions";
 import { NuevaCuentaModal } from "@/app/cuentas-corrientes/NuevaCuentaModal";
 import { printComercialBatchPreview } from "@/modules/ventas_comerciales/lib/printPreview";
+
+function LineField({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
+  return (
+    <div className="min-w-[70px]">
+      <div className="text-[10px] uppercase tracking-wide text-neutral-400">{label}</div>
+      <div className={emphasis ? "text-sm font-semibold text-neutral-800" : "text-sm text-neutral-700"}>{value}</div>
+    </div>
+  );
+}
+
+function FormField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1">
+      <span className="block text-[11px] font-medium text-neutral-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function IconButton({
+  title,
+  onClick,
+  children,
+  variant = "default",
+}: {
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+  variant?: "default" | "danger";
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={`rounded border p-1.5 ${
+        variant === "danger" ? "text-red-600 hover:bg-red-50" : "text-neutral-600 hover:bg-neutral-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
 type LineStatus = "PENDIENTE" | "ENTREGADA" | "CANCELADA";
 
@@ -21,8 +66,20 @@ type BatchLine = {
   formaDePagoPlanificada: string | null;
   viandasCobradasPlanned: number;
   detalleComanda: string | null;
+  facturacionRazonSocial: string | null;
+  facturacionCuit: string | null;
+  facturacionNotas: string | null;
   products: { id: string }[];
 };
+
+type BillingClient = { id: string; razonSocial: string; cuit: string | null };
+
+function findBillingClientCuit(razonSocial: string, billingClients: BillingClient[]): string | null {
+  const name = razonSocial.trim().toLowerCase();
+  if (!name) return null;
+  const match = billingClients.find((c) => c.razonSocial.trim().toLowerCase() === name);
+  return match?.cuit ?? null;
+}
 
 type Batch = {
   id: string;
@@ -71,6 +128,9 @@ type LineDraft = {
   formaDePagoPlanificada: string;
   viandasCobradasPlanned: string;
   detalleComanda: string;
+  facturacionRazonSocial: string;
+  facturacionCuit: string;
+  facturacionNotas: string;
 };
 
 function emptyLine(clienteLabel: string): LineDraft {
@@ -84,6 +144,9 @@ function emptyLine(clienteLabel: string): LineDraft {
     formaDePagoPlanificada: "",
     viandasCobradasPlanned: "1",
     detalleComanda: "",
+    facturacionRazonSocial: "",
+    facturacionCuit: "",
+    facturacionNotas: "",
   };
 }
 
@@ -102,6 +165,7 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
   const [accountId, setAccountId] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([emptyLine("")]);
+  const [billingClients, setBillingClients] = useState<BillingClient[]>([]);
 
   const refreshBatches = useCallback(async () => {
     const res = await fetch("/api/ventas-comerciales");
@@ -111,6 +175,11 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
   const refreshAccounts = useCallback(async () => {
     const res = await fetch("/api/ventas-comerciales/accounts");
     if (res.ok) setAccounts(await res.json());
+  }, []);
+
+  const refreshBillingClients = useCallback(async () => {
+    const res = await fetch("/api/ventas-comerciales/billing-clients");
+    if (res.ok) setBillingClients(await res.json());
   }, []);
 
   async function handleDeleteLine(lineId: string) {
@@ -136,7 +205,8 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
 
   useEffect(() => {
     refreshAccounts();
-  }, [refreshAccounts]);
+    refreshBillingClients();
+  }, [refreshAccounts, refreshBillingClients]);
 
   const selectedAccount = accounts.find((a) => a.id === accountId) ?? null;
 
@@ -180,6 +250,9 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
       formaDePagoPlanificada: l.formaDePagoPlanificada.trim(),
       viandasCobradasPlanned: parseInt(l.viandasCobradasPlanned, 10) || 0,
       detalleComanda: l.detalleComanda.trim(),
+      facturacionRazonSocial: l.facturacionRazonSocial.trim(),
+      facturacionCuit: l.facturacionCuit.trim(),
+      facturacionNotas: l.facturacionNotas.trim(),
     }));
   }
 
@@ -238,20 +311,26 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
       return;
     }
     await refreshBatches();
+    await refreshBillingClients();
     setView("list");
   }
 
   return (
     <div className="space-y-4">
+      <datalist id="billing-clients-datalist">
+        {billingClients.map((c) => (
+          <option key={c.id} value={c.razonSocial} />
+        ))}
+      </datalist>
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Ventas Comerciales</h1>
         {view === "list" && canEdit && (
           <button
             type="button"
             onClick={openNewForm}
-            className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+            className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
           >
-            + Nuevo cierre comercial
+            <Plus size={16} /> Nuevo cierre comercial
           </button>
         )}
       </div>
@@ -282,76 +361,68 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
                   {canEdit && (
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
+                      className="flex items-center gap-1 rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
                       onClick={() => setAddLineBatchId(b.id)}
                     >
-                      + Agregar línea
+                      <Plus size={13} /> Agregar línea
                     </button>
                   )}
                 </div>
               </div>
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs font-semibold text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2">Día</th>
-                    <th className="px-3 py-2">Cliente</th>
-                    <th className="px-3 py-2">Vianda</th>
-                    <th className="px-3 py-2 text-right">Cant.</th>
-                    <th className="px-3 py-2">Horario</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                    <th className="px-3 py-2">Estado</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {b.lines.map((l) => (
-                    <tr key={l.id} className="border-t border-neutral-100">
-                      <td className="px-3 py-2">{formatDate(l.deliveryDate)}</td>
-                      <td className="px-3 py-2">{l.clienteLabel}</td>
-                      <td className="px-3 py-2">{l.tipoVianda}</td>
-                      <td className="px-3 py-2 text-right">{l.cant}</td>
-                      <td className="px-3 py-2">{l.horarioRetiro}</td>
-                      <td className="px-3 py-2 text-right">
-                        {formatArsFromCents(l.unitPriceCents * l.viandasCobradasPlanned)}
-                      </td>
-                      <td className="px-3 py-2">
+              <div className="divide-y divide-neutral-100">
+                {b.lines.map((l) => (
+                  <div key={l.id} className="p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex flex-1 flex-wrap gap-x-4 gap-y-2">
+                        <LineField label="Día" value={formatDate(l.deliveryDate)} />
+                        <LineField label="Cliente" value={l.clienteLabel} />
+                        <LineField label="Vianda" value={l.tipoVianda} />
+                        <LineField label="Cant." value={String(l.cant)} />
+                        <LineField label="Horario" value={l.horarioRetiro} />
+                        <LineField label="Precio unit." value={formatArsFromCents(l.unitPriceCents)} />
+                        <LineField label="Forma de pago" value={l.formaDePagoPlanificada || "—"} />
+                        <LineField label="Cobradas" value={String(l.viandasCobradasPlanned)} />
+                        <LineField
+                          label="Total"
+                          value={formatArsFromCents(l.unitPriceCents * l.viandasCobradasPlanned)}
+                          emphasis
+                        />
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[l.status]}`}>
                           {STATUS_LABELS[l.status]}
                         </span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
-                            onClick={() => setDetailTarget({ batchId: b.id, lineId: l.id })}
-                          >
-                            Ver detalle
-                          </button>
-                          {canEdit && l.status === "PENDIENTE" && (
-                            <>
-                              <button
-                                type="button"
-                                className="rounded border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
-                                onClick={() => setEditTarget({ batchId: b.id, lineId: l.id })}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
-                                onClick={() => handleDeleteLine(l.id)}
-                              >
-                                Eliminar
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <IconButton title="Ver detalle" onClick={() => setDetailTarget({ batchId: b.id, lineId: l.id })}>
+                          <Eye size={14} />
+                        </IconButton>
+                        {canEdit && l.status === "PENDIENTE" && (
+                          <>
+                            <IconButton title="Editar" onClick={() => setEditTarget({ batchId: b.id, lineId: l.id })}>
+                              <Pencil size={14} />
+                            </IconButton>
+                            <IconButton title="Eliminar" variant="danger" onClick={() => handleDeleteLine(l.id)}>
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {l.detalleComanda && (
+                      <div className="mt-2 text-xs text-neutral-500">
+                        <span className="text-neutral-400">Detalle: </span>
+                        {l.detalleComanda}
+                      </div>
+                    )}
+                    {(l.facturacionRazonSocial || l.facturacionCuit || l.facturacionNotas) && (
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded bg-neutral-50 px-2 py-1.5">
+                        <LineField label="Facturar a" value={l.facturacionRazonSocial || "—"} />
+                        <LineField label="CUIT" value={l.facturacionCuit || "—"} />
+                        {l.facturacionNotas && <LineField label="Notas fact." value={l.facturacionNotas} />}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -410,122 +481,134 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
               <button
                 type="button"
                 onClick={addLine}
-                className="rounded-md border px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
               >
-                + Agregar línea
+                <Plus size={13} /> Agregar línea
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-xs">
-                <thead className="text-left text-[11px] font-semibold text-neutral-500">
-                  <tr>
-                    <th className="px-1 py-1">Día</th>
-                    <th className="px-1 py-1">Cliente</th>
-                    <th className="px-1 py-1">Tipo vianda</th>
-                    <th className="px-1 py-1">Cant.</th>
-                    <th className="px-1 py-1">Horario</th>
-                    <th className="px-1 py-1">Precio $</th>
-                    <th className="px-1 py-1">Forma de pago</th>
-                    <th className="px-1 py-1">Cobradas</th>
-                    <th className="px-1 py-1">Detalle</th>
-                    <th className="px-1 py-1" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l, i) => (
-                    <tr key={i}>
-                      <td className="px-1 py-1">
+            <div className="space-y-2">
+              {lines.map((l, i) => (
+                <div key={i} className="rounded-md border border-neutral-200 p-2">
+                  <div className="flex items-start gap-2">
+                    <div className="grid flex-1 grid-cols-2 gap-2 text-xs sm:grid-cols-3 md:grid-cols-4">
+                      <FormField label="Día">
                         <input
                           type="date"
                           value={l.deliveryDate}
                           onChange={(ev) => updateLine(i, { deliveryDate: ev.target.value })}
-                          className="w-32 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Cliente">
                         <input
                           type="text"
                           value={l.clienteLabel}
                           onChange={(ev) => updateLine(i, { clienteLabel: ev.target.value })}
-                          className="w-36 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Tipo vianda">
                         <input
                           type="text"
                           value={l.tipoVianda}
                           onChange={(ev) => updateLine(i, { tipoVianda: ev.target.value })}
-                          className="w-28 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                           placeholder="ALMUERZO"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Cant.">
                         <input
                           type="number"
                           min={1}
                           value={l.cant}
                           onChange={(ev) => updateLine(i, { cant: ev.target.value })}
-                          className="w-16 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Horario">
                         <input
                           type="text"
                           value={l.horarioRetiro}
                           onChange={(ev) => updateLine(i, { horarioRetiro: ev.target.value })}
-                          className="w-20 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                           placeholder="12:00"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Precio $">
                         <input
                           type="number"
                           min={0}
                           value={l.unitPriceArs}
                           onChange={(ev) => updateLine(i, { unitPriceArs: ev.target.value })}
-                          className="w-24 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Forma de pago">
                         <input
                           type="text"
                           value={l.formaDePagoPlanificada}
                           onChange={(ev) => updateLine(i, { formaDePagoPlanificada: ev.target.value })}
-                          className="w-28 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                           placeholder="transferencia"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Cobradas">
                         <input
                           type="number"
                           min={0}
                           value={l.viandasCobradasPlanned}
                           onChange={(ev) => updateLine(i, { viandasCobradasPlanned: ev.target.value })}
-                          className="w-16 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                         />
-                      </td>
-                      <td className="px-1 py-1">
+                      </FormField>
+                      <FormField label="Detalle">
                         <input
                           type="text"
                           value={l.detalleComanda}
                           onChange={(ev) => updateLine(i, { detalleComanda: ev.target.value })}
-                          className="w-32 rounded border px-1.5 py-1"
+                          className="w-full rounded border px-1.5 py-1"
                         />
-                      </td>
-                      <td className="px-1 py-1">
-                        <button
-                          type="button"
-                          onClick={() => removeLine(i)}
-                          className="rounded border px-1.5 py-1 text-neutral-400 hover:bg-neutral-50"
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </FormField>
+                      <FormField label="Facturar a">
+                        <input
+                          type="text"
+                          list="billing-clients-datalist"
+                          value={l.facturacionRazonSocial}
+                          onChange={(ev) => updateLine(i, { facturacionRazonSocial: ev.target.value })}
+                          onBlur={() => {
+                            if (l.facturacionCuit.trim()) return;
+                            const cuit = findBillingClientCuit(l.facturacionRazonSocial, billingClients);
+                            if (cuit) updateLine(i, { facturacionCuit: cuit });
+                          }}
+                          className="w-full rounded border px-1.5 py-1"
+                          placeholder="Razón social"
+                        />
+                      </FormField>
+                      <FormField label="CUIT">
+                        <input
+                          type="text"
+                          value={l.facturacionCuit}
+                          onChange={(ev) => updateLine(i, { facturacionCuit: ev.target.value })}
+                          className="w-full rounded border px-1.5 py-1"
+                          placeholder="20-12345678-9"
+                        />
+                      </FormField>
+                      <FormField label="Notas facturación">
+                        <input
+                          type="text"
+                          value={l.facturacionNotas}
+                          onChange={(ev) => updateLine(i, { facturacionNotas: ev.target.value })}
+                          className="w-full rounded border px-1.5 py-1"
+                        />
+                      </FormField>
+                    </div>
+                    <IconButton title="Eliminar línea" variant="danger" onClick={() => removeLine(i)}>
+                      <Trash2 size={14} />
+                    </IconButton>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="flex justify-end pt-1 text-sm font-semibold">Total estimado: {formatArsFromCents(totalCents)}</div>
@@ -539,9 +622,9 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
             <button
               type="button"
               onClick={handlePreview}
-              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
             >
-              Vista previa / Imprimir
+              <Printer size={15} /> Vista previa / Imprimir
             </button>
             <button
               type="button"
@@ -566,8 +649,9 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
       {editTarget && (
         <LineEditModal
           line={batches.find((b) => b.id === editTarget.batchId)!.lines.find((l) => l.id === editTarget.lineId)!}
+          billingClients={billingClients}
           onClose={() => setEditTarget(null)}
-          onSaved={refreshBatches}
+          onSaved={() => { refreshBatches(); refreshBillingClients(); }}
         />
       )}
 
@@ -577,8 +661,9 @@ export default function VentasComercialesClient({ initialBatches, role }: { init
           defaultClienteLabel={
             batches.find((b) => b.id === addLineBatchId)?.cuentaCorrienteAccount?.customer.displayName ?? ""
           }
+          billingClients={billingClients}
           onClose={() => setAddLineBatchId(null)}
-          onSaved={refreshBatches}
+          onSaved={() => { refreshBatches(); refreshBillingClients(); }}
         />
       )}
     </div>
@@ -638,21 +723,8 @@ function LineDetailModal({
 
         {line && (
           <div className="space-y-4 text-sm">
-            <div className="rounded-md border border-neutral-200 p-3">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Planificado</div>
-              <div className="grid grid-cols-2 gap-2">
-                <div><span className="text-neutral-400">Día:</span> {formatDate(line.deliveryDate)}</div>
-                <div><span className="text-neutral-400">Horario:</span> {line.horarioRetiro}</div>
-                <div><span className="text-neutral-400">Cliente:</span> {line.clienteLabel}</div>
-                <div><span className="text-neutral-400">Tipo de vianda:</span> {line.tipoVianda}</div>
-                <div><span className="text-neutral-400">Cantidad:</span> {line.cant}</div>
-                <div><span className="text-neutral-400">Precio unitario:</span> {formatArsFromCents(line.unitPriceCents)}</div>
-                <div><span className="text-neutral-400">Forma de pago planificada:</span> {line.formaDePagoPlanificada || "—"}</div>
-                <div><span className="text-neutral-400">Cobradas planificadas:</span> {line.viandasCobradasPlanned}</div>
-              </div>
-              {line.detalleComanda && (
-                <div className="mt-2"><span className="text-neutral-400">Detalle:</span> {line.detalleComanda}</div>
-              )}
+            <div className="text-xs text-neutral-400">
+              {line.clienteLabel} · {line.tipoVianda} · {formatDate(line.deliveryDate)}
             </div>
 
             <div className="rounded-md border border-neutral-200 p-3">
@@ -703,10 +775,12 @@ function LineDetailModal({
 
 function LineEditModal({
   line,
+  billingClients,
   onClose,
   onSaved,
 }: {
   line: BatchLine;
+  billingClients: BillingClient[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -719,6 +793,9 @@ function LineEditModal({
   const [formaDePagoPlanificada, setFormaDePagoPlanificada] = useState(line.formaDePagoPlanificada ?? "");
   const [viandasCobradasPlanned, setViandasCobradasPlanned] = useState(String(line.viandasCobradasPlanned));
   const [detalleComanda, setDetalleComanda] = useState(line.detalleComanda ?? "");
+  const [facturacionRazonSocial, setFacturacionRazonSocial] = useState(line.facturacionRazonSocial ?? "");
+  const [facturacionCuit, setFacturacionCuit] = useState(line.facturacionCuit ?? "");
+  const [facturacionNotas, setFacturacionNotas] = useState(line.facturacionNotas ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -750,6 +827,9 @@ function LineEditModal({
           formaDePagoPlanificada,
           viandasCobradasPlanned: cobradasNum,
           detalleComanda,
+          facturacionRazonSocial,
+          facturacionCuit,
+          facturacionNotas,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -866,6 +946,48 @@ function LineEditModal({
             />
           </label>
 
+          <div className="space-y-3 rounded-md border border-neutral-200 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+              Datos de facturación <span className="normal-case font-normal">(opcional)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="block text-xs font-medium">Facturar a (razón social)</span>
+                <input
+                  type="text"
+                  list="billing-clients-datalist"
+                  value={facturacionRazonSocial}
+                  onChange={(e) => setFacturacionRazonSocial(e.target.value)}
+                  onBlur={() => {
+                    if (facturacionCuit.trim()) return;
+                    const cuit = findBillingClientCuit(facturacionRazonSocial, billingClients);
+                    if (cuit) setFacturacionCuit(cuit);
+                  }}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="block text-xs font-medium">CUIT</span>
+                <input
+                  type="text"
+                  value={facturacionCuit}
+                  onChange={(e) => setFacturacionCuit(e.target.value)}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="20-12345678-9"
+                />
+              </label>
+            </div>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Notas de facturación</span>
+              <input
+                type="text"
+                value={facturacionNotas}
+                onChange={(e) => setFacturacionNotas(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
           )}
@@ -892,11 +1014,13 @@ function LineEditModal({
 function AddLineModal({
   batchId,
   defaultClienteLabel,
+  billingClients,
   onClose,
   onSaved,
 }: {
   batchId: string;
   defaultClienteLabel: string;
+  billingClients: BillingClient[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -909,6 +1033,9 @@ function AddLineModal({
   const [formaDePagoPlanificada, setFormaDePagoPlanificada] = useState("");
   const [viandasCobradasPlanned, setViandasCobradasPlanned] = useState("1");
   const [detalleComanda, setDetalleComanda] = useState("");
+  const [facturacionRazonSocial, setFacturacionRazonSocial] = useState("");
+  const [facturacionCuit, setFacturacionCuit] = useState("");
+  const [facturacionNotas, setFacturacionNotas] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -940,6 +1067,9 @@ function AddLineModal({
           formaDePagoPlanificada,
           viandasCobradasPlanned: cobradasNum,
           detalleComanda,
+          facturacionRazonSocial,
+          facturacionCuit,
+          facturacionNotas,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1057,6 +1187,48 @@ function AddLineModal({
               className="w-full rounded-md border px-3 py-2 text-sm"
             />
           </label>
+
+          <div className="space-y-3 rounded-md border border-neutral-200 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+              Datos de facturación <span className="normal-case font-normal">(opcional)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="block text-xs font-medium">Facturar a (razón social)</span>
+                <input
+                  type="text"
+                  list="billing-clients-datalist"
+                  value={facturacionRazonSocial}
+                  onChange={(e) => setFacturacionRazonSocial(e.target.value)}
+                  onBlur={() => {
+                    if (facturacionCuit.trim()) return;
+                    const cuit = findBillingClientCuit(facturacionRazonSocial, billingClients);
+                    if (cuit) setFacturacionCuit(cuit);
+                  }}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="block text-xs font-medium">CUIT</span>
+                <input
+                  type="text"
+                  value={facturacionCuit}
+                  onChange={(e) => setFacturacionCuit(e.target.value)}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="20-12345678-9"
+                />
+              </label>
+            </div>
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium">Notas de facturación</span>
+              <input
+                type="text"
+                value={facturacionNotas}
+                onChange={(e) => setFacturacionNotas(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
 
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>

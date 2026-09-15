@@ -1276,6 +1276,10 @@ model ComercialSaleLine {
   detalleComanda         String?
   sortOrder              Int      @default(0)
 
+  facturacionRazonSocial String?
+  facturacionCuit        String?
+  facturacionNotas       String?
+
   products ComercialSaleLineProduct[]
 
   actualQty             Int?
@@ -1309,6 +1313,20 @@ model ComercialSaleLineProduct {
   sortOrder           Int               @default(0)
 
   @@index([comercialSaleLineId, sortOrder])
+}
+
+// Fuente de sugerencias para autocompletar razón social/CUIT al cargar los
+// datos de facturación de una línea de Ventas Comerciales. No tiene relación
+// FK con ComercialSaleLine — cada línea guarda su propia copia de los valores
+// (igual que ya hace con clienteLabel), esto solo alimenta el autocompletado.
+model ComercialBillingClient {
+  id          String   @id @default(cuid())
+  razonSocial String
+  cuit        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([razonSocial])
 }
 
 enum ChequeStatus {
