@@ -89,6 +89,106 @@ function printConsumosWindow(customerName: string, period: string, sales: Period
   win.print();
 }
 
+function downloadWorkbook(workbook: import("exceljs").Workbook, filename: string) {
+  return workbook.xlsx.writeBuffer().then((buffer) => {
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
+function slugForFilename(s: string) {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+async function exportConsumosExcel(customerName: string, periodStr: string, sales: PeriodSummary["sales"], directCharges: DirectCharge[]) {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet("Consumos");
+  sheet.columns = [
+    { header: "Fecha", key: "fecha", width: 12 },
+    { header: "Consumo", key: "consumo", width: 45 },
+    { header: "Comanda", key: "comanda", width: 12 },
+    { header: "Monto", key: "monto", width: 14, style: { numFmt: "#,##0.00" } },
+  ];
+  sheet.getRow(1).font = { bold: true };
+
+  for (const s of sales) {
+    const items = s.items.map((i) => {
+      const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
+      return `${i.qty}× ${i.productName}${mods}`;
+    }).join(", ") || "Consumo";
+    sheet.addRow({
+      fecha: formatDate(s.createdAt),
+      consumo: items,
+      comanda: s.comandaNumber ?? "",
+      monto: s.ccAmountCents / 100,
+    });
+  }
+  for (const c of directCharges) {
+    sheet.addRow({
+      fecha: formatDate(c.date),
+      consumo: `${CHARGE_CATEGORY_LABELS[c.category] ?? c.category} — ${c.description}`,
+      comanda: c.comandaNumber ?? "",
+      monto: c.netAmountCents / 100,
+    });
+  }
+
+  const total = sales.reduce((s, x) => s + x.ccAmountCents, 0) + directCharges.reduce((s, x) => s + x.netAmountCents, 0);
+  const totalRow = sheet.addRow({ fecha: "", consumo: "", comanda: "Total", monto: total / 100 });
+  totalRow.font = { bold: true };
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  await downloadWorkbook(workbook, `consumos_${slugForFilename(customerName)}_${slugForFilename(periodStr)}.xlsx`);
+}
+
+async function exportInvoiceDetailExcel(detail: InvoiceDetail) {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  workbook.created = new Date();
+  const inv = detail.invoice;
+  const sheet = workbook.addWorksheet("Factura");
+  sheet.columns = [
+    { header: "Fecha", key: "fecha", width: 12 },
+    { header: "Consumo", key: "consumo", width: 45 },
+    { header: "Monto", key: "monto", width: 14, style: { numFmt: "#,##0.00" } },
+  ];
+  sheet.getRow(1).font = { bold: true };
+
+  for (const s of detail.sales) {
+    const items = s.items.map((i) => {
+      const mods = i.modifiers.length > 0 ? ` (${i.modifiers.join(", ")})` : "";
+      return `${i.qty}× ${i.productName}${mods}`;
+    }).join(", ") || "Consumo";
+    sheet.addRow({ fecha: formatDate(s.createdAt), consumo: items, monto: s.ccAmountCents / 100 });
+  }
+
+  sheet.addRow({});
+  const addTotalRow = (label: string, cents: number) => {
+    const row = sheet.addRow({ consumo: label, monto: cents / 100 });
+    row.font = { bold: true };
+  };
+  addTotalRow("Subtotal", inv.subtotalCents);
+  if (inv.ivaAmountCents > 0) addTotalRow("del cual IVA discriminado", inv.ivaAmountCents);
+  if (inv.bankWithholdingCents > 0) addTotalRow("Ret. bancaria", -inv.bankWithholdingCents);
+  if (inv.bankFeesCents > 0) addTotalRow("Comisión bancaria", -inv.bankFeesCents);
+  if (inv.ivaRetentionCents > 0) addTotalRow("Ret. IVA", -inv.ivaRetentionCents);
+  if (inv.gananciasRetentionCents > 0) addTotalRow("Ret. Ganancias", -inv.gananciasRetentionCents);
+  if (inv.rentasRetentionCents > 0) addTotalRow("Ret. Rentas", -inv.rentasRetentionCents);
+  if (inv.creditNotesTotalCents > 0) addTotalRow("Notas de crédito", -inv.creditNotesTotalCents);
+  addTotalRow(inv.creditNotesTotalCents > 0 ? "Saldo pendiente" : "Neto a cobrar", inv.outstandingCents);
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  await downloadWorkbook(workbook, `factura_${slugForFilename(detail.account.customerName)}_${slugForFilename(formatPeriod(inv.periodFrom, inv.periodTo))}.xlsx`);
+}
+
 function printInvoiceDetailWindow(detail: InvoiceDetail) {
   const win = window.open("", "_blank");
   if (!win) return;
@@ -293,9 +393,14 @@ function InvoiceDetailModal({ invoiceId, onClose }: { invoiceId: string; onClose
           )}
         </div>
         <div className="border-t px-6 py-3 flex justify-between">
-          <button onClick={() => detail && printInvoiceDetailWindow(detail)} disabled={!detail} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-40">
-            Imprimir / PDF
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => detail && exportInvoiceDetailExcel(detail)} disabled={!detail} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-40">
+              Excel
+            </button>
+            <button onClick={() => detail && printInvoiceDetailWindow(detail)} disabled={!detail} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:opacity-40">
+              Imprimir / PDF
+            </button>
+          </div>
           <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cerrar</button>
         </div>
       </div>
@@ -628,6 +733,9 @@ function ConsumosPreviewModal({ customerName, period, sales, directCharges, onCl
           </p>
           <div className="flex gap-3">
             <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cerrar</button>
+            <button onClick={() => exportConsumosExcel(customerName, periodStr, sales, directCharges)} className="rounded border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+              Excel
+            </button>
             <button onClick={() => printConsumosWindow(customerName, periodStr, sales, directCharges)} className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900">
               Imprimir / PDF
             </button>

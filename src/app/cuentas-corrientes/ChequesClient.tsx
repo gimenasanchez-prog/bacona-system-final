@@ -18,6 +18,7 @@ export type ChequeRow = {
   rechazoMotivo: string | null;
   createdByEmployee: { displayName: string };
   cuentaBancaria: { id: string; name: string } | null;
+  cuentaCorrienteInvoice: { id: string; arcaFacturaNumber: string | null } | null;
   posPayment: {
     sale: {
       comercialSaleLine: { clienteLabel: string; tipoVianda: string } | null;
@@ -141,6 +142,7 @@ export default function ChequesClient({ initialCheques }: { initialCheques: Cheq
               <th className="px-3 py-2">Cliente / entrega</th>
               <th className="px-3 py-2 text-right">Monto</th>
               <th className="px-3 py-2">Banco / N°</th>
+              <th className="px-3 py-2">N° Factura</th>
               <th className="px-3 py-2">Depósito</th>
               <th className="px-3 py-2">Acreditación est.</th>
               <th className="px-3 py-2">Estado</th>
@@ -150,7 +152,7 @@ export default function ChequesClient({ initialCheques }: { initialCheques: Cheq
           <tbody>
             {cheques.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
+                <td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
                   Todavía no hay cheques cargados.
                 </td>
               </tr>
@@ -235,6 +237,11 @@ function ChequeTableRow({
             }}
           />
         </div>
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {cheque.cuentaCorrienteInvoice?.arcaFacturaNumber ?? (
+          <span className="text-neutral-400">Sin facturar</span>
+        )}
       </td>
       <td className="px-3 py-2 whitespace-nowrap">{formatDate(cheque.fechaDeposito)}</td>
       <td className="px-3 py-2 whitespace-nowrap">{formatDate(cheque.fechaAcreditacionEstimada)}</td>

@@ -14,6 +14,7 @@ export class ChequeService {
         },
         createdByEmployee: { select: { id: true, displayName: true } },
         cuentaBancaria: { select: { id: true, name: true } },
+        cuentaCorrienteInvoice: { select: { id: true, arcaFacturaNumber: true } },
       },
       orderBy: [{ status: "asc" }, { fechaRecepcion: "desc" }],
     });
