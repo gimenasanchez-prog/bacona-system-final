@@ -239,7 +239,11 @@ function ChequeTableRow({
         </div>
       </td>
       <td className="px-3 py-2 whitespace-nowrap">
-        {cheque.cuentaCorrienteInvoice?.arcaFacturaNumber ?? (
+        {cheque.cuentaCorrienteInvoice ? (
+          cheque.cuentaCorrienteInvoice.arcaFacturaNumber ?? (
+            <span className="text-amber-600">Facturado, falta N°</span>
+          )
+        ) : (
           <span className="text-neutral-400">Sin facturar</span>
         )}
       </td>
