@@ -323,14 +323,39 @@ function OpeningBalanceModal({ account, onClose, onSuccess }: { account: Account
   );
 }
 
+const MOVEMENTS_PAGE_SIZE = 50;
+
 function MovementsModal({ account, onClose }: { account: Account; onClose: () => void }) {
   const [movements, setMovements] = useState<Movement[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/egresos/cuentas/${account.id}/movimientos`)
+    fetch(`/api/egresos/cuentas/${account.id}/movimientos?page=1&pageSize=${MOVEMENTS_PAGE_SIZE}`)
       .then((r) => r.json())
-      .then((d) => setMovements(d.movements ?? []));
+      .then((d) => {
+        setMovements(d.movements ?? []);
+        setTotal(d.total ?? 0);
+        setPage(1);
+      });
   }, [account.id]);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const res = await fetch(
+        `/api/egresos/cuentas/${account.id}/movimientos?page=${nextPage}&pageSize=${MOVEMENTS_PAGE_SIZE}`
+      );
+      const d = await res.json();
+      setMovements((prev) => [...prev, ...(d.movements ?? [])]);
+      setTotal(d.total ?? total);
+      setPage(nextPage);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -380,6 +405,20 @@ function MovementsModal({ account, onClose }: { account: Account; onClose: () =>
               )}
             </tbody>
           </table>
+        </div>
+        <div className="border-t px-6 py-3 flex items-center justify-between text-sm text-neutral-500">
+          <span>
+            Mostrando {movements.length} de {total} movimientos
+          </span>
+          {movements.length < total && (
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="rounded border px-3 py-1.5 font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {loadingMore ? "Cargando..." : "Cargar más"}
+            </button>
+          )}
         </div>
       </div>
     </div>
