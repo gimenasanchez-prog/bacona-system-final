@@ -1158,14 +1158,63 @@ function EditUrlModal({ invoiceId, currentUrl, onClose, onSuccess }: { invoiceId
   );
 }
 
+function EditFacturaNumberModal({ invoiceId, currentNumber, onClose, onSuccess }: { invoiceId: string; currentNumber: string | null; onClose: () => void; onSuccess: () => void }) {
+  const [arcaFacturaNumber, setArcaFacturaNumber] = useState(currentNumber ?? "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cuentas-corrientes/invoices/${invoiceId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "update", arcaFacturaNumber: arcaFacturaNumber.trim() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl p-6 space-y-4">
+        <div className="font-semibold text-neutral-800">N° de factura ARCA</div>
+        <input
+          type="text"
+          value={arcaFacturaNumber}
+          onChange={(e) => setArcaFacturaNumber(e.target.value)}
+          placeholder="Ej: 00001-000083"
+          className="w-full rounded border px-3 py-2 text-sm"
+          autoFocus
+        />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
+          <button onClick={handleSave} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Invoice Action Menu ──────────────────────────────────────────────────────
 
-function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid, onEditUrl, onVoid, onOpenCreditNote }: {
+function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid, onEditUrl, onEditArcaFacturaNumber, onVoid, onOpenCreditNote }: {
   invoice: InvoiceSummary;
   onOpenPayment: (inv: InvoiceSummary) => void;
   onOpenDetail: (id: string) => void;
   onTogglePaid: (id: string) => Promise<void>;
   onEditUrl: (id: string, url: string | null) => void;
+  onEditArcaFacturaNumber: (id: string, arcaFacturaNumber: string | null) => void;
   onVoid: (id: string) => Promise<void>;
   onOpenCreditNote: (invoiceId: string) => void;
 }) {
@@ -1217,6 +1266,9 @@ function InvoiceActionMenu({ invoice, onOpenPayment, onOpenDetail, onTogglePaid,
           <button onClick={() => { setOpen(false); onEditUrl(invoice.id, invoice.digitalInvoiceUrl); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
             {invoice.digitalInvoiceUrl ? "📎 Ver/editar URL" : "+ URL factura"}
           </button>
+          <button onClick={() => { setOpen(false); onEditArcaFacturaNumber(invoice.id, invoice.arcaFacturaNumber); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50">
+            {invoice.arcaFacturaNumber ? "🧾 Editar N° factura" : "+ N° factura"}
+          </button>
           <button onClick={() => { setOpen(false); onOpenCreditNote(invoice.id); }} className="w-full text-left px-4 py-2 hover:bg-neutral-50 text-green-700">
             + Nota de crédito
           </button>
@@ -1243,6 +1295,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh, role }: {
   const [paymentModal, setPaymentModal] = useState<InvoiceSummary | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editUrlState, setEditUrlState] = useState<{ id: string; url: string | null } | null>(null);
+  const [editArcaState, setEditArcaState] = useState<{ id: string; arcaFacturaNumber: string | null } | null>(null);
   const [creditNoteInvoiceId, setCreditNoteInvoiceId] = useState<string | null>(null);
 
   const inv = ps.invoice;
@@ -1335,6 +1388,7 @@ function PeriodRow({ ps, customerName, accountId, onRefresh, role }: {
                 onOpenDetail={setDetailId}
                 onTogglePaid={handleTogglePaid}
                 onEditUrl={(id, url) => setEditUrlState({ id, url })}
+                onEditArcaFacturaNumber={(id, arcaFacturaNumber) => setEditArcaState({ id, arcaFacturaNumber })}
                 onVoid={handleVoid}
                 onOpenCreditNote={setCreditNoteInvoiceId}
               />
@@ -1373,6 +1427,12 @@ function PeriodRow({ ps, customerName, accountId, onRefresh, role }: {
         <EditUrlModal invoiceId={editUrlState.id} currentUrl={editUrlState.url}
           onClose={() => setEditUrlState(null)}
           onSuccess={() => { setEditUrlState(null); onRefresh(); }}
+        />
+      )}
+      {editArcaState && (
+        <EditFacturaNumberModal invoiceId={editArcaState.id} currentNumber={editArcaState.arcaFacturaNumber}
+          onClose={() => setEditArcaState(null)}
+          onSuccess={() => { setEditArcaState(null); onRefresh(); }}
         />
       )}
       {creditNoteInvoiceId && (
@@ -1639,6 +1699,7 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
   const [partialPaymentTarget, setPartialPaymentTarget] = useState<TransitoriaInvoiceSummary | null>(null);
   const [showPaidInvoices, setShowPaidInvoices] = useState(false);
   const [creditNoteTarget, setCreditNoteTarget] = useState<{ target: NotaCreditoTarget; label: string } | null>(null);
+  const [editArcaState, setEditArcaState] = useState<{ id: string; arcaFacturaNumber: string | null } | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/cuentas-corrientes/${account.id}/pending-charges`)
@@ -1754,6 +1815,14 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
                 <div className="text-neutral-700">
                   {formatDate(inv.billingDate)} · {inv.itemsCount} cargo{inv.itemsCount !== 1 ? "s" : ""}
                   {inv.arcaFacturaNumber && ` · ARCA ${inv.arcaFacturaNumber}`}
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => setEditArcaState({ id: inv.id, arcaFacturaNumber: inv.arcaFacturaNumber })}
+                    className="text-xs underline text-blue-600 hover:text-blue-800"
+                  >
+                    {inv.arcaFacturaNumber ? "editar N°" : "+ N° factura"}
+                  </button>
                 </div>
                 <div className="text-xs text-neutral-400">
                   Vence {formatDate(inv.estimatedPaymentDate)}
@@ -1795,6 +1864,14 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
                     <div className="text-neutral-700">
                       {formatDate(inv.billingDate)} · {inv.itemsCount} cargo{inv.itemsCount !== 1 ? "s" : ""}
                       {inv.arcaFacturaNumber && ` · ARCA ${inv.arcaFacturaNumber}`}
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => setEditArcaState({ id: inv.id, arcaFacturaNumber: inv.arcaFacturaNumber })}
+                        className="text-xs underline text-blue-600 hover:text-blue-800"
+                      >
+                        {inv.arcaFacturaNumber ? "editar N°" : "+ N° factura"}
+                      </button>
                     </div>
                     <div className="text-xs text-green-600">Pagada ✓</div>
                   </div>
@@ -1835,6 +1912,12 @@ function TransitoriaChargesTable({ account, onRefresh }: { account: AccountWithB
           label={creditNoteTarget.label}
           onClose={() => setCreditNoteTarget(null)}
           onSuccess={() => { setCreditNoteTarget(null); handleRefreshAll(); }}
+        />
+      )}
+      {editArcaState && (
+        <EditFacturaNumberModal invoiceId={editArcaState.id} currentNumber={editArcaState.arcaFacturaNumber}
+          onClose={() => setEditArcaState(null)}
+          onSuccess={() => { setEditArcaState(null); handleRefreshAll(); }}
         />
       )}
     </div>
