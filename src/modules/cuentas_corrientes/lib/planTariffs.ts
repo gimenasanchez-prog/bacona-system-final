@@ -7,7 +7,7 @@
  * dentro de un useMemo en pos/page.tsx.
  */
 
-export type CorpoFilter = "all" | "corpo1" | "corpo1_snack" | "corpo2" | "corpo2_basic" | "corpo3";
+export type CorpoFilter = "all" | "corpo1" | "corpo1_snack" | "corpo2" | "corpo2_basic" | "corpo3" | "slx";
 
 export type PlanTariffConfig = {
   showSnacks: boolean;
@@ -32,6 +32,7 @@ export const PLAN_TARIFF_CONFIG: Record<string, PlanTariffConfig> = {
   CORPO2_SNACKS: { showSnacks: true, showBebidas: true, corpoFilter: "corpo2", cartaLibre: false, capCentsPerPerson: null },
   CORPO2_CARTA_LIBRE: { showSnacks: true, showBebidas: true, corpoFilter: "corpo2", cartaLibre: true, capCentsPerPerson: null },
   CORPO_BRUNCH: { showSnacks: false, showBebidas: false, corpoFilter: "corpo3", cartaLibre: false, capCentsPerPerson: null },
+  SLX1: { showSnacks: false, showBebidas: false, corpoFilter: "slx", cartaLibre: false, capCentsPerPerson: null },
 };
 
 /** Todas las tarifas ofrecidas en el alta de cuentas corrientes, incluida CARTA_LIBRE. */
@@ -44,6 +45,7 @@ export const PLAN_CODES = [
   "CORPO2_SNACKS",
   "CORPO2_CARTA_LIBRE",
   "CORPO_BRUNCH",
+  "SLX1",
   "CARTA_LIBRE",
 ] as const;
 
@@ -58,6 +60,7 @@ export const PLAN_LABELS: Record<PlanCode, string> = {
   CORPO2_SNACKS: "Corpo 2 + snacks y bebidas",
   CORPO2_CARTA_LIBRE: "Corpo 2 carta libre",
   CORPO_BRUNCH: "Corpo 3 / Brunch",
+  SLX1: "SLX 1 (básico)",
   CARTA_LIBRE: "Carta libre (sin restricción de menú)",
 };
 
@@ -80,6 +83,7 @@ export function matchesCorpoFilter(productNameLower: string, corpoFilter: CorpoF
     );
   }
   if (corpoFilter === "corpo3") return productNameLower.includes("corpo 3");
+  if (corpoFilter === "slx") return productNameLower.includes("slx");
   return true;
 }
 

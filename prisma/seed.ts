@@ -132,6 +132,9 @@ const MODIFIER_GROUPS: Array<{
       "Corpo 2 - Appetite c/ bebida y postre",
       "Corpo 3 - Brunch c/ bebida",
       "Corpo 3 - Brunch Supervisor c/ bebida",
+      "SLX - Snack c/ bebida",
+      "SLX - Brunch c/ bebida",
+      "SLX - Almuerzo c/ bebida",
     ],
   },
   {
@@ -159,7 +162,7 @@ const MODIFIER_GROUPS: Array<{
       { name: "Sándwich de miga jamón y queso",               priceDeltaCents: 0 },
       { name: "Sándwich de miga huevo, jamón y queso",        priceDeltaCents: 0 },
     ],
-    appliedTo: ["Corpo 1 - Snack c/ bebida"],
+    appliedTo: ["Corpo 1 - Snack c/ bebida", "SLX - Snack c/ bebida"],
   },
   {
     name: "Plato - Snack C2",
@@ -187,7 +190,7 @@ const MODIFIER_GROUPS: Array<{
       { name: "Huevos duros x2 con salsa tereyaki",        priceDeltaCents: 0 },
       { name: "Sopa c/ focaccia",                           priceDeltaCents: 0 },
     ],
-    appliedTo: ["Corpo 1 - Brunch c/ bebida"],
+    appliedTo: ["Corpo 1 - Brunch c/ bebida", "SLX - Brunch c/ bebida"],
   },
   {
     name: "Plato - Brunch C2",
@@ -216,7 +219,7 @@ const MODIFIER_GROUPS: Array<{
       { name: "Milanesa c/ guarnición",                  priceDeltaCents: 0 },
       { name: "Wok de ternera",                          priceDeltaCents: 0 },
     ],
-    appliedTo: ["Corpo 1 - Almuerzo c/ bebida"],
+    appliedTo: ["Corpo 1 - Almuerzo c/ bebida", "SLX - Almuerzo c/ bebida"],
   },
   {
     name: "Plato - Appetite C2",
@@ -314,6 +317,7 @@ const MODIFIER_GROUPS: Array<{
     appliedTo: [
       "Corpo 1 - Almuerzo c/ bebida",
       "Corpo 2 - Appetite c/ bebida y postre",
+      "SLX - Almuerzo c/ bebida",
     ],
   },
 ];
@@ -459,6 +463,9 @@ const CATALOGO: Array<{
       { name: "Corpo 2 - Appetite c/ bebida y postre", priceCents: 1550000 },
       { name: "Corpo 3 - Brunch c/ bebida",            priceCents: 820000  },
       { name: "Corpo 3 - Brunch Supervisor c/ bebida", priceCents: 820000  },
+      { name: "SLX - Snack c/ bebida",                 priceCents: 690000  },
+      { name: "SLX - Brunch c/ bebida",                priceCents: 820000  },
+      { name: "SLX - Almuerzo c/ bebida",              priceCents: 1550000 },
     ],
   },
 ];
