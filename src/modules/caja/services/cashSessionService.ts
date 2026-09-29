@@ -453,9 +453,12 @@ export class CashSessionService {
     return withActivity;
   }
 
-  /** Mesas del turno sin cobrar del todo: borradores con productos o confirmadas. */
+  /**
+   * Mesas del turno sin cobrar del todo: borradores con productos o confirmadas. Una mesa ya
+   * cobrada completa (aunque no se haya marcado como pagada) no cuenta: la plata ya está en el turno.
+   */
   static async listOpenTableSales(cashSessionId: string, client: DbClient = prisma) {
-    return client.posSale.findMany({
+    const sales = await client.posSale.findMany({
       where: {
         cashSessionId,
         saleType: "MESA",
@@ -464,6 +467,7 @@ export class CashSessionService {
       include: { table: { select: { label: true } }, payments: { select: { amountCents: true } } },
       orderBy: { createdAt: "asc" },
     });
+    return sales.filter((s) => s.payments.reduce((a, p) => a + p.amountCents, 0) < s.totalCents);
   }
 
   /**
