@@ -306,10 +306,11 @@ export default async function ConsolidadoCierresPage(props: {
             </div>
           )}
           {differenceBreakdown.length > 0 && (
-            <details className="mt-2 border-t pt-2 text-sm">
+            <details open className="mt-3 rounded-md border border-red-200 bg-red-50/40 p-3 text-sm">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
-                <span className="text-neutral-500">
-                  Diferencias de sobres <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
+                <span className="font-semibold text-red-800">
+                  ⚠ Diferencias de sobres ({differenceBreakdown.length}){" "}
+                  <span className="text-xs font-normal text-neutral-500">(ocultar ▴)</span>
                 </span>
                 <span className="flex flex-col items-end gap-0.5 text-xs font-medium sm:flex-row sm:gap-3 sm:text-sm">
                   <span>
