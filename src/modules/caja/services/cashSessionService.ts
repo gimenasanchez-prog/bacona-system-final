@@ -480,7 +480,14 @@ export class CashSessionService {
     return prisma.$transaction(async (tx) => {
       const sale = await tx.posSale.findUnique({
         where: { id: params.saleId },
-        select: { id: true, saleType: true, status: true, cashSessionId: true, _count: { select: { payments: true } } },
+        select: {
+          id: true,
+          saleType: true,
+          status: true,
+          cashSessionId: true,
+          table: { select: { label: true } },
+          _count: { select: { payments: true } },
+        },
       });
       if (!sale || sale.cashSessionId !== params.fromCashSessionId) throw new Error("La mesa no es de este turno.");
       if (sale.saleType !== "MESA" || (sale.status !== "DRAFT" && sale.status !== "CONFIRMED")) {
@@ -492,7 +499,7 @@ export class CashSessionService {
 
       const candidates = await tx.cashSession.findMany({
         where: { status: "OPEN", id: { not: params.fromCashSessionId } },
-        select: { id: true, openedAt: true },
+        select: { id: true, openedAt: true, employee: { select: { displayName: true } } },
         orderBy: { openedAt: "desc" },
       });
       const next = candidates.find((c) => !this.isStale(c.openedAt));
@@ -501,6 +508,7 @@ export class CashSessionService {
         where: { id: sale.id },
         data: { cashSessionId: next?.id ?? null, transferredFromCashSessionId: params.fromCashSessionId },
       });
+      return { tableLabel: sale.table?.label ?? null, toEmployeeName: next?.employee.displayName ?? null };
     });
   }
 

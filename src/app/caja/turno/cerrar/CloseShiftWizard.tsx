@@ -64,6 +64,7 @@ export function CloseShiftWizard(props: {
 
   // Si quedan mesas, siempre se vuelve al paso 1 (el servidor también lo valida).
   const current: Step = hasTables ? "mesas" : step;
+  const tablesDone = current === "mesas" && !hasTables;
   const currentIndex = STEPS.findIndex((s) => s.key === current);
 
   return (
@@ -85,7 +86,23 @@ export function CloseShiftWizard(props: {
         ))}
       </ol>
 
-      {current === "mesas" && (
+      {tablesDone && (
+        <div className="rounded-lg border bg-white p-4 shadow-sm">
+          <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800">
+            ✓ No quedan mesas abiertas.
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => setStep("gastos")}
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+            >
+              Seguir
+            </button>
+          </div>
+        </div>
+      )}
+
+      {current === "mesas" && hasTables && (
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <div className="text-base font-semibold">Quedan mesas abiertas</div>
           <div className="mt-1 text-sm text-neutral-600">

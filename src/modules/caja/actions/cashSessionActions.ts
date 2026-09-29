@@ -129,13 +129,21 @@ export async function transferOpenTableAction(formData: FormData) {
   const cashSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
 
   let errorMsg: string | null = null;
+  let okMsg = "";
   try {
     if (!saleId || !cashSessionId) throw new Error("Datos inválidos.");
-    await CashSessionService.transferOpenTable({ saleId, fromCashSessionId: cashSessionId });
+    const r = await CashSessionService.transferOpenTable({ saleId, fromCashSessionId: cashSessionId });
+    okMsg =
+      `Mesa ${r.tableLabel ?? ""} pasada al turno siguiente: ` +
+      (r.toEmployeeName ? `ya la tiene el turno de ${r.toEmployeeName}.` : "la toma el próximo turno que se abra.");
   } catch (e) {
     errorMsg = e instanceof Error ? e.message : "Error al pasar la mesa.";
   }
-  redirect(errorMsg ? `${returnTo}?error=${encodeURIComponent(errorMsg)}` : returnTo);
+  redirect(
+    errorMsg
+      ? `${returnTo}?error=${encodeURIComponent(errorMsg)}`
+      : `${returnTo}?ok=${encodeURIComponent(okMsg)}`
+  );
 }
 
 export async function getCurrentCashSessionIdFromCookies(): Promise<string | null> {

@@ -10,7 +10,7 @@ import { CloseShiftWizard } from "./CloseShiftWizard";
 export default async function CerrarTurnoPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { error } = await props.searchParams;
+  const { error, ok } = await props.searchParams;
   const cashSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
   if (!cashSessionId) redirect("/caja/abrir");
 
@@ -46,6 +46,9 @@ export default async function CerrarTurnoPage(props: {
           Volver a mi turno
         </Link>
       </div>
+      {typeof ok === "string" ? (
+        <div className="mt-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">✓ {ok}</div>
+      ) : null}
       {typeof error === "string" ? (
         <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       ) : null}

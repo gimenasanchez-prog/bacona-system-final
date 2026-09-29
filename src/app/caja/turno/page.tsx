@@ -35,7 +35,7 @@ function SummaryCard(props: { title: string; amountCents: number; subtle?: boole
 export default async function CajaTurnoPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { aviso, error } = await props.searchParams;
+  const { aviso, error, ok } = await props.searchParams;
   const errorMsg = typeof error === "string" ? error : null;
   const cashSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
   if (!cashSessionId) redirect("/caja/abrir");
@@ -86,6 +86,9 @@ export default async function CajaTurnoPage(props: {
           <b>Este turno es del {turnoLabel} y sigue abierto.</b> No se pueden cargar ventas nuevas en un turno viejo.
           Cerralo y abrí el turno de hoy.
         </div>
+      ) : null}
+      {typeof ok === "string" ? (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">✓ {ok}</div>
       ) : null}
       {errorMsg ? (
         <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">{errorMsg}</div>
