@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { formatArsFromCents } from "@/lib/money";
+import { formatBusinessDate } from "@/lib/dates";
 import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxService";
 import { createLocalCashManualMovementAction } from "@/modules/caja_local/actions/localCashBoxActions";
 import { PesosInput } from "@/components/PesosInput";
@@ -28,6 +29,60 @@ function TypeBadge(props: { type: string }) {
   );
 }
 
+const SHIFT_LABEL: Record<string, string> = { MANIANA: "Mañana", TARDE: "Tarde", NOCHE: "Noche" };
+
+function EnvelopeGroupRow(props: {
+  label: string;
+  hint?: string;
+  group: {
+    cents: number;
+    envelopes: {
+      id: string;
+      envelopeCode: string;
+      amountCents: number;
+      holderName: string;
+      cashierName: string;
+      businessDate: Date;
+      shift: string;
+    }[];
+  };
+}) {
+  const { group } = props;
+  return (
+    <details className="py-2">
+      <summary className="flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
+        <div>
+          <span className="text-sm text-neutral-700">{props.label}</span>
+          {props.hint ? <span className="ml-1 text-xs text-neutral-500">({props.hint})</span> : null}
+          <span className="ml-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+            {group.envelopes.length}
+          </span>
+          {group.envelopes.length > 0 && <span className="ml-1 text-xs text-neutral-400">ver ▾</span>}
+        </div>
+        <span className="font-semibold">{formatArsFromCents(group.cents)}</span>
+      </summary>
+      {group.envelopes.length > 0 && (
+        <div className="mt-2 divide-y rounded-md border text-sm">
+          {group.envelopes.map((e) => (
+            <div key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
+              <span>
+                <Link className="font-mono text-xs underline" href={`/caja/sobres/${e.id}`}>
+                  {e.envelopeCode}
+                </Link>{" "}
+                <span className="text-neutral-600">
+                  · {e.cashierName} · {formatBusinessDate(e.businessDate)} {SHIFT_LABEL[e.shift] ?? e.shift} · lo tiene{" "}
+                  {e.holderName}
+                </span>
+              </span>
+              <span className="font-medium">{formatArsFromCents(e.amountCents)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </details>
+  );
+}
+
 export default async function CajaGerenciaPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
@@ -40,11 +95,10 @@ export default async function CajaGerenciaPage(props: {
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
   const box = await LocalCashBoxService.getCajaByName("Caja Gerencia");
-  const [balanceCents, envelopeSummary, movementsPage, envelopes] = await Promise.all([
+  const [balanceCents, envelopeSummary, movementsPage] = await Promise.all([
     LocalCashBoxService.getLocalCashBalance(box.id),
     LocalCashBoxService.getEnvelopeCashSummary(),
     LocalCashBoxService.listMovements(box.id, { page, pageSize: PAGE_SIZE }),
-    LocalCashBoxService.listAvailableEnvelopes(),
   ]);
   const { movements, total } = movementsPage;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -97,24 +151,22 @@ export default async function CajaGerenciaPage(props: {
       <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
         <div className="text-sm font-semibold">Efectivo real disponible</div>
         <div className="mt-1 text-xs text-neutral-500">
-          Plata física entre la caja y los sobres cerrados todavía no abiertos.
+          Plata física entre la caja y los sobres sin abrir (monto declarado por el cajero al sellar).
         </div>
         <div className="mt-3 divide-y">
           <div className="flex items-center justify-between py-2">
             <span className="text-sm text-neutral-700">Caja Gerencia (efectivo en caja)</span>
             <span className="font-semibold">{formatArsFromCents(balanceCents)}</span>
           </div>
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <span className="text-sm text-neutral-700">Sobres cerrados sin abrir</span>
-              {envelopes.length > 0 && (
-                <span className="ml-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
-                  {envelopes.length}
-                </span>
-              )}
-            </div>
-            <span className="font-semibold">{formatArsFromCents(envelopeSummary.closedCents)}</span>
-          </div>
+          <EnvelopeGroupRow
+            label="Sobres que todavía tienen los cajeros"
+            hint="sellados, sin entregar a la encargada"
+            group={envelopeSummary.withCashiers}
+          />
+          <EnvelopeGroupRow
+            label="Sobres recibidos por la encargada, sin abrir"
+            group={envelopeSummary.withCustodian}
+          />
           {envelopeSummary.openedPendingCents > 0 && (
             <div className="flex items-center justify-between py-2">
               <span className="text-sm text-orange-700">
@@ -129,7 +181,9 @@ export default async function CajaGerenciaPage(props: {
           <div className="flex items-center justify-between py-2">
             <span className="text-sm font-semibold">Total efectivo real</span>
             <span className="text-lg font-bold">
-              {formatArsFromCents(balanceCents + envelopeSummary.closedCents)}
+              {formatArsFromCents(
+                balanceCents + envelopeSummary.withCashiers.cents + envelopeSummary.withCustodian.cents
+              )}
             </span>
           </div>
         </div>

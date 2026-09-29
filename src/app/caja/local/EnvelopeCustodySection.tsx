@@ -97,7 +97,14 @@ export async function EnvelopeCustodySection(props: { employeeId: string | null;
       )}
 
       <div className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="text-sm font-semibold">Sobres por recibir ({toReceive.length})</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Sobres por recibir ({toReceive.length})</div>
+          {toReceive.length > 0 && (
+            <div className="text-sm font-semibold">
+              {formatArsFromCents(toReceive.reduce((a, e) => a + (e.declaredAmountCents ?? e.expectedAmountCents), 0))}
+            </div>
+          )}
+        </div>
         <div className="mt-1 text-sm text-neutral-600">
           Sobres sellados que todavía tiene cada cajero.{" "}
           {isCustodian
@@ -122,7 +129,10 @@ export async function EnvelopeCustodySection(props: { employeeId: string | null;
                       {formatBusinessDate(env.cashSession.businessDate)}{" "}
                       {SHIFT_LABEL[env.cashSession.shift] ?? env.cashSession.shift}
                     </span>
-                    <span className={`ml-auto text-xs font-medium ${overdue ? "text-red-700" : "text-neutral-500"}`}>
+                    <span className="ml-auto font-medium">
+                      {formatArsFromCents(env.declaredAmountCents ?? env.expectedAmountCents)}
+                    </span>
+                    <span className={`w-36 text-right text-xs font-medium ${overdue ? "text-red-700" : "text-neutral-500"}`}>
                       {days === 0 ? "hoy" : `hace ${days} día${days === 1 ? "" : "s"}`}
                       {overdue ? " · sin entregar" : ""}
                     </span>

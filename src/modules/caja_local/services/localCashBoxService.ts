@@ -217,18 +217,44 @@ export class LocalCashBoxService {
     });
   }
 
+  /**
+   * Plata en sobres sin abrir, por quién los tiene. El monto es lo que declaró el cajero al
+   * sellar (sobres viejos: lo que decía el sistema).
+   */
   static async getEnvelopeCashSummary() {
-    const grouped = await prisma.envelope.groupBy({
-      by: ["status"],
+    const envelopes = await prisma.envelope.findMany({
       where: { status: { in: ["CLOSED", "RECEIVED", "OPENED"] } },
-      _sum: { expectedAmountCents: true },
+      select: {
+        id: true,
+        envelopeCode: true,
+        status: true,
+        expectedAmountCents: true,
+        declaredAmountCents: true,
+        custodianEmployee: { select: { displayName: true } },
+        cashSession: { select: { businessDate: true, shift: true, employee: { select: { displayName: true } } } },
+      },
+      orderBy: { depositedAt: "asc" },
     });
-    const closedCents =
-      (grouped.find((g) => g.status === "CLOSED")?._sum.expectedAmountCents ?? 0) +
-      (grouped.find((g) => g.status === "RECEIVED")?._sum.expectedAmountCents ?? 0);
-    const openedPendingCents =
-      grouped.find((g) => g.status === "OPENED")?._sum.expectedAmountCents ?? 0;
-    return { closedCents, openedPendingCents };
+    const rows = envelopes.map((e) => ({
+      id: e.id,
+      envelopeCode: e.envelopeCode,
+      status: e.status,
+      amountCents: e.declaredAmountCents ?? e.expectedAmountCents,
+      holderName:
+        e.status === "CLOSED" ? e.cashSession.employee.displayName : e.custodianEmployee?.displayName ?? "—",
+      cashierName: e.cashSession.employee.displayName,
+      businessDate: e.cashSession.businessDate,
+      shift: e.cashSession.shift,
+    }));
+    const group = (status: string) => {
+      const list = rows.filter((r) => r.status === status);
+      return { envelopes: list, cents: list.reduce((a, r) => a + r.amountCents, 0) };
+    };
+    return {
+      withCashiers: group("CLOSED"),
+      withCustodian: group("RECEIVED"),
+      openedPendingCents: group("OPENED").cents,
+    };
   }
 
   /**
@@ -287,16 +313,6 @@ export class LocalCashBoxService {
         results.push({ envelopeCode: env.envelopeCode, differenceCents });
       }
       return results;
-    });
-  }
-
-  /** Sobres que todavía no se abrieron (sellados o recibidos). */
-  static async listAvailableEnvelopes() {
-    return prisma.envelope.findMany({
-      where: { status: { in: ["CLOSED", "RECEIVED"] } },
-      include: { cashSession: { include: { employee: true } } },
-      orderBy: { depositedAt: "desc" },
-      take: 200,
     });
   }
 
