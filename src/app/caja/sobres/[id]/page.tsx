@@ -5,18 +5,57 @@ import { formatBusinessDate } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import {
   ENVELOPE_STATUS_LABEL,
-  envelopeDifferenceCents,
+  envelopeCashierDifferenceCents,
+  envelopeCustodyDifferenceCents,
 } from "@/modules/sobres/lib/envelopeStatus";
 import { EnvelopeStatusBadge } from "../EnvelopeStatusBadge";
+
+function DiffBox(props: { title: string; cents: number | null; empty: string }) {
+  const { cents } = props;
+  const cls =
+    cents == null
+      ? "bg-neutral-50 text-neutral-600"
+      : cents === 0
+        ? "border-green-200 bg-green-50 text-green-800"
+        : cents < 0
+          ? "border-red-200 bg-red-50 text-red-800"
+          : "border-blue-200 bg-blue-50 text-blue-800";
+  return (
+    <div className={`rounded-lg border p-4 text-sm ${cls}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{props.title}</div>
+      <div className="mt-1">
+        {cents == null
+          ? props.empty
+          : cents === 0
+            ? "Coincide ✓"
+            : cents < 0
+              ? `Faltan ${formatArsFromCents(-cents)}`
+              : `Sobran ${formatArsFromCents(cents)}`}
+      </div>
+    </div>
+  );
+}
 
 export default async function SobreDetailPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const envelope = await prisma.envelope.findUnique({
     where: { id },
-    include: { cashSession: { include: { employee: true } } },
+    include: {
+      cashSession: { include: { employee: true } },
+      receivedByEmployee: { select: { displayName: true } },
+      custodianEmployee: { select: { displayName: true } },
+      openedByEmployee: { select: { displayName: true } },
+    },
   });
   if (!envelope) throw new Error("Envelope not found");
-  const diff = envelopeDifferenceCents(envelope);
+  const cashierDiff = envelopeCashierDifferenceCents(envelope);
+  const custodyDiff = envelopeCustodyDifferenceCents(envelope);
+  const holder =
+    envelope.status === "CLOSED"
+      ? envelope.cashSession.employee.displayName
+      : envelope.status === "RECEIVED"
+        ? envelope.custodianEmployee?.displayName ?? "—"
+        : "Abierto";
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4">
@@ -47,32 +86,59 @@ export default async function SobreDetailPage(props: { params: Promise<{ id: str
             <div className="font-semibold">{envelope.cashSession.shift}</div>
           </div>
           <div className="flex items-center justify-between">
-            <div>Esperado</div>
+            <div>Según el sistema</div>
             <div className="font-semibold">{formatArsFromCents(envelope.expectedAmountCents)}</div>
           </div>
           <div className="flex items-center justify-between">
-            <div>Contado</div>
-            <div className="font-semibold">{envelope.actualAmountCents == null ? "—" : formatArsFromCents(envelope.actualAmountCents)}</div>
+            <div>Declarado por el cajero</div>
+            <div className="font-semibold">
+              {envelope.declaredAmountCents == null ? "—" : formatArsFromCents(envelope.declaredAmountCents)}
+            </div>
           </div>
+          {envelope.firstCountCents != null && envelope.firstCountCents !== envelope.declaredAmountCents ? (
+            <div className="flex items-center justify-between">
+              <div>Primer conteo</div>
+              <div className="font-semibold">{formatArsFromCents(envelope.firstCountCents)}</div>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between">
+            <div>Contado al abrir</div>
+            <div className="font-semibold">
+              {envelope.actualAmountCents == null ? "—" : formatArsFromCents(envelope.actualAmountCents)}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>Lo tiene</div>
+            <div className="font-semibold">{holder}</div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>Recibido por</div>
+            <div className="font-semibold">
+              {envelope.receivedByEmployee
+                ? `${envelope.receivedByEmployee.displayName}${envelope.selfReceived ? " (propio)" : ""}`
+                : "—"}
+            </div>
+          </div>
+          {envelope.openedByEmployee ? (
+            <div className="flex items-center justify-between">
+              <div>Abierto por</div>
+              <div className="font-semibold">{envelope.openedByEmployee.displayName}</div>
+            </div>
+          ) : null}
         </div>
+        {envelope.countNote ? (
+          <div className="mt-3 text-sm text-neutral-600">Motivo del cajero: {envelope.countNote}</div>
+        ) : null}
       </div>
 
-      {diff != null ? (
-        <div
-          className={`mt-4 rounded-lg border p-4 text-sm ${diff === 0 ? "border-green-200 bg-green-50 text-green-800" : diff < 0 ? "border-red-200 bg-red-50 text-red-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}
-        >
-          {diff === 0
-            ? "El monto contado coincide con el esperado."
-            : diff < 0
-              ? `Faltan ${formatArsFromCents(-diff)} respecto de lo esperado.`
-              : `Sobran ${formatArsFromCents(diff)} respecto de lo esperado.`}
-        </div>
-      ) : (
-        <div className="mt-4 rounded-lg border bg-neutral-50 p-4 text-sm text-neutral-600">
-          {ENVELOPE_STATUS_LABEL[envelope.status]}. El sobre se controla al abrirlo y contarlo desde Caja BCÑ o Caja
-          Gerencia.
-        </div>
-      )}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <DiffBox title="Diferencia de cajero" cents={cashierDiff} empty="Sobre sin conteo al cierre (anterior al cambio)." />
+        <DiffBox
+          title="Diferencia de custodia"
+          cents={custodyDiff}
+          empty={`${ENVELOPE_STATUS_LABEL[envelope.status]}. Se ve al abrirlo y contarlo en Caja BCÑ.`}
+        />
+      </div>
 
       <div className="mt-4">
         <Link

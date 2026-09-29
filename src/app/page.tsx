@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { EnvelopeCustodyService } from "@/modules/sobres/services/envelopeCustodyService";
 
 import { IdentifyForm } from "./IdentifyForm";
 import { clearIdentityAction } from "@/modules/caja/actions/identifyAction";
@@ -35,6 +36,9 @@ export default async function HomePage() {
   const jar = await cookies();
   const role = jar.get("bcn_role")?.value;
   const hasSession = !!jar.get("bcn_cashSessionId")?.value;
+  // Quien cubre a la encargada de sobres (ej. Noelia con rol Asociado) ve Caja BCÑ mientras la cubre.
+  const isEnvelopeCustodian =
+    role === "ASOCIADO" && (await EnvelopeCustodyService.isActiveCustodian(jar.get("bcn_employeeId")?.value));
 
   if (!role) {
     const employees = await prisma.employee.findMany({
@@ -146,6 +150,7 @@ export default async function HomePage() {
               <NavRow href="/caja/abrir" label="Abrir turno" primary />
             )}
             {hasSession && <NavRow href="/caja/turno" label="Mi turno" />}
+            {isEnvelopeCustodian && <NavRow href="/caja/local" label="Caja BCÑ (encargada de sobres)" />}
             <NavRow href="/horas" label="Mi Horario" />
           </NavCard>
           <NavCard title="Operación">

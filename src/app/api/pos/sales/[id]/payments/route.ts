@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { cookies } from "next/headers";
 
 import { PosSaleService } from "@/modules/ventas_pos/services/posSaleService";
 
@@ -38,6 +39,7 @@ export async function POST(
       cuentaCorrienteAccountId: parsed.data.cuentaCorrienteAccountId ?? null,
       employeeId: parsed.data.employeeId ?? null,
       comandaNumber: parsed.data.comandaNumber,
+      currentCashSessionId: (await cookies()).get("bcn_cashSessionId")?.value ?? null,
     });
     return NextResponse.json(details);
   } catch (e) {

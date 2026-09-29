@@ -1,3 +1,8 @@
+import {
+  envelopeCashierDifferenceCents,
+  envelopeCustodyDifferenceCents,
+  type EnvelopeStatus,
+} from "@/modules/sobres/lib/envelopeStatus";
 import { prisma } from "@/lib/prisma";
 import { STALE_SESSION_HOURS } from "@/modules/caja/services/cashSessionService";
 
@@ -8,7 +13,7 @@ export class ConsolidatedClosuresService {
     shift?: "MANIANA" | "TARDE" | "NOCHE";
     employeeId?: string;
     cashSessionStatus?: "OPEN" | "CLOSED";
-    envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+    envelopeStatus?: EnvelopeStatus;
     take?: number;
   }) {
     return prisma.cashSession.findMany({
@@ -37,7 +42,7 @@ export class ConsolidatedClosuresService {
     shift?: "MANIANA" | "TARDE" | "NOCHE";
     employeeId?: string;
     cashSessionStatus?: "OPEN" | "CLOSED";
-    envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+    envelopeStatus?: EnvelopeStatus;
   }) {
     const grouped = await prisma.cashSessionPaymentBreakdownDetail.groupBy({
       by: ["referenceId", "referenceName"],
@@ -63,18 +68,22 @@ export class ConsolidatedClosuresService {
       .sort((a, b) => b.amountCents - a.amountCents);
   }
 
-  /** Sobres contados cuyo monto no coincide con el esperado (faltantes y sobrantes). */
+  /**
+   * Sobres con diferencia, separada por dónde se produjo:
+   * - cajero: lo que declaró meter en el sobre al cerrar − lo que dice el sistema.
+   * - custodia: lo contado al abrir − lo que declaró el cajero (sobres viejos: − el esperado).
+   */
   static async getEnvelopeDifferenceBreakdown(params: {
     from?: Date;
     to?: Date;
     shift?: "MANIANA" | "TARDE" | "NOCHE";
     employeeId?: string;
     cashSessionStatus?: "OPEN" | "CLOSED";
-    envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+    envelopeStatus?: EnvelopeStatus;
   }) {
     const envelopes = await prisma.envelope.findMany({
       where: {
-        actualAmountCents: { not: null },
+        OR: [{ actualAmountCents: { not: null } }, { declaredAmountCents: { not: null } }],
         status: params.envelopeStatus,
         cashSession: {
           businessDate: { gte: params.from, lte: params.to },
@@ -83,12 +92,15 @@ export class ConsolidatedClosuresService {
           status: params.cashSessionStatus,
         },
       },
-      include: { cashSession: { include: { employee: { select: { id: true, displayName: true } } } } },
+      include: {
+        cashSession: { include: { employee: { select: { id: true, displayName: true } } } },
+        receivedByEmployee: { select: { displayName: true } },
+        openedByEmployee: { select: { displayName: true } },
+      },
       orderBy: { cashSession: { businessDate: "desc" } },
     });
 
     return envelopes
-      .filter((e) => e.actualAmountCents! !== e.expectedAmountCents)
       .map((e) => ({
         envelopeId: e.id,
         envelopeCode: e.envelopeCode,
@@ -96,10 +108,17 @@ export class ConsolidatedClosuresService {
         businessDate: e.cashSession.businessDate,
         shift: e.cashSession.shift,
         expectedAmountCents: e.expectedAmountCents,
-        actualAmountCents: e.actualAmountCents!,
-        // contado − esperado: negativo = faltante, positivo = sobrante
-        differenceCents: e.actualAmountCents! - e.expectedAmountCents,
-      }));
+        declaredAmountCents: e.declaredAmountCents,
+        firstCountCents: e.firstCountCents,
+        countNote: e.countNote,
+        actualAmountCents: e.actualAmountCents,
+        receivedByName: e.receivedByEmployee?.displayName ?? null,
+        openedByName: e.openedByEmployee?.displayName ?? null,
+        // negativo = faltante, positivo = sobrante
+        cashierDifferenceCents: envelopeCashierDifferenceCents(e),
+        custodyDifferenceCents: envelopeCustodyDifferenceCents(e),
+      }))
+      .filter((e) => !!e.cashierDifferenceCents || !!e.custodyDifferenceCents);
   }
 
   /**
@@ -143,10 +162,9 @@ export class ConsolidatedClosuresService {
       );
     }
 
-    if (session.envelope && session.envelope.status !== "CLOSED") {
-      throw new Error(
-        `No se puede eliminar: el sobre está en estado ${session.envelope.status}. Solo se puede eliminar si el sobre está CLOSED.`
-      );
+    // El sobre existe físicamente: borrar el cierre lo haría desaparecer del sistema.
+    if (session.envelope) {
+      throw new Error("No se puede eliminar: el turno tiene un sobre sellado. Los sobres no se borran.");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -154,15 +172,7 @@ export class ConsolidatedClosuresService {
       await tx.posSale.updateMany({ where: { cashSessionId }, data: { cashSessionId: null } });
       await tx.localExpense.deleteMany({ where: { cashSessionId } });
 
-      // Desvinculá LocalCashMovements que apunten al sobre (FK nullable sin cascade)
-      if (session.envelope) {
-        await tx.localCashMovement.updateMany({
-          where: { relatedEnvelopeId: session.envelope.id },
-          data: { relatedEnvelopeId: null },
-        });
-      }
-
-      // Eliminá la sesión — Envelope y CashSessionPaymentBreakdownDetail se cascade-deletean
+      // Eliminá la sesión — CashSessionPaymentBreakdownDetail se cascade-deletea
       await tx.cashSession.delete({ where: { id: cashSessionId } });
     });
   }

@@ -5,8 +5,6 @@ import { redirect } from "next/navigation";
 import { formatArsFromCents } from "@/lib/money";
 import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxService";
 import { createLocalCashManualMovementAction } from "@/modules/caja_local/actions/localCashBoxActions";
-import { OpenEnvelopeModal } from "../local/OpenEnvelopeModal";
-import { BulkOpenEnvelopesPanel } from "../local/BulkOpenEnvelopesPanel";
 import { PesosInput } from "@/components/PesosInput";
 
 const PAGE_SIZE = 20;
@@ -54,17 +52,6 @@ export default async function CajaGerenciaPage(props: {
   const today = new Date().toISOString().slice(0, 10);
   const returnTo = "/caja/gerencia";
 
-  const envelopeProps = envelopes.map((e) => ({
-    id: e.id,
-    envelopeCode: e.envelopeCode,
-    expectedAmountCents: e.expectedAmountCents,
-    cashSession: {
-      businessDate: e.cashSession.businessDate.toISOString(),
-      shift: e.cashSession.shift,
-      employee: { displayName: e.cashSession.employee.displayName },
-    },
-  }));
-
   return (
     <div className="mx-auto w-full max-w-6xl p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -96,21 +83,13 @@ export default async function CajaGerenciaPage(props: {
         </div>
 
         <div className="rounded-lg border bg-white p-4 shadow-sm sm:col-span-2">
-          <div className="text-sm font-semibold">Apertura de sobres</div>
+          <div className="text-sm font-semibold">Sobres</div>
           <div className="mt-1 text-sm text-neutral-600">
-            Abrí sobres uno por uno o todos juntos. El efectivo va a Caja Gerencia.
-          </div>
-          <div className="mt-4 flex gap-2">
-            <OpenEnvelopeModal
-              envelopes={envelopeProps}
-              localCashBoxId={box.id}
-              returnTo={returnTo}
-            />
-            <BulkOpenEnvelopesPanel
-              envelopes={envelopeProps}
-              localCashBoxId={box.id}
-              returnTo={returnTo}
-            />
+            Los sobres se abren y se cuentan en{" "}
+            <Link href="/caja/local" className="underline">
+              Caja BCÑ
+            </Link>
+            . La plata llega a Caja Gerencia cuando Caja BCÑ hace &quot;Entregar a gerencia&quot;.
           </div>
         </div>
       </div>

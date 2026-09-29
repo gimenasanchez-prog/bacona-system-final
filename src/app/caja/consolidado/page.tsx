@@ -17,6 +17,16 @@ const SHIFT_LABEL: Record<string, string> = {
   NOCHE: "Noche",
 };
 
+function DiffCell({ cents }: { cents: number | null }) {
+  if (cents == null) return <span className="text-neutral-300">—</span>;
+  if (cents === 0) return <span className="text-green-700">✓</span>;
+  return (
+    <span className={`font-medium ${cents < 0 ? "text-red-700" : "text-blue-700"}`}>
+      {cents < 0 ? `Faltan ${formatArsFromCents(-cents)}` : `Sobran ${formatArsFromCents(cents)}`}
+    </span>
+  );
+}
+
 export default async function ConsolidadoCierresPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
@@ -34,6 +44,7 @@ export default async function ConsolidadoCierresPage(props: {
   const cashSessionStatus = sp.status === "OPEN" || sp.status === "CLOSED" ? (sp.status as any) : "CLOSED";
   const envelopeStatus =
     sp.envelopeStatus === "CLOSED" ||
+    sp.envelopeStatus === "RECEIVED" ||
     sp.envelopeStatus === "OPENED" ||
     sp.envelopeStatus === "CONTROLLED" ||
     sp.envelopeStatus === "NOT_CONTROLLED"
@@ -93,12 +104,10 @@ export default async function ConsolidadoCierresPage(props: {
             (s, r) => s + (r.envelope?.actualAmountCents ?? r.envelope?.expectedAmountCents ?? 0),
             0
           ),
-          envelopeShortfall: differenceBreakdown
-            .filter((b) => b.differenceCents < 0)
-            .reduce((s, b) => s - b.differenceCents, 0),
-          envelopeSurplus: differenceBreakdown
-            .filter((b) => b.differenceCents > 0)
-            .reduce((s, b) => s + b.differenceCents, 0),
+          cashierShortfall: differenceBreakdown.reduce((s, b) => s + Math.max(0, -(b.cashierDifferenceCents ?? 0)), 0),
+          cashierSurplus: differenceBreakdown.reduce((s, b) => s + Math.max(0, b.cashierDifferenceCents ?? 0), 0),
+          custodyShortfall: differenceBreakdown.reduce((s, b) => s + Math.max(0, -(b.custodyDifferenceCents ?? 0)), 0),
+          custodySurplus: differenceBreakdown.reduce((s, b) => s + Math.max(0, b.custodyDifferenceCents ?? 0), 0),
         }
       : null;
 
@@ -202,6 +211,7 @@ export default async function ConsolidadoCierresPage(props: {
             <select name="envelopeStatus" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={envelopeStatus ?? ""}>
               <option value="">—</option>
               <option value="CLOSED">{ENVELOPE_STATUS_LABEL.CLOSED}</option>
+              <option value="RECEIVED">{ENVELOPE_STATUS_LABEL.RECEIVED}</option>
               <option value="OPENED">{ENVELOPE_STATUS_LABEL.OPENED}</option>
               <option value="CONTROLLED">{ENVELOPE_STATUS_LABEL.CONTROLLED}</option>
               <option value="NOT_CONTROLLED">{ENVELOPE_STATUS_LABEL.NOT_CONTROLLED}</option>
@@ -301,40 +311,63 @@ export default async function ConsolidadoCierresPage(props: {
                 <span className="text-neutral-500">
                   Diferencias de sobres <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
                 </span>
-                <span className="flex gap-3 font-medium">
-                  <span className="text-red-700">Faltan {formatArsFromCents(totals.envelopeShortfall)}</span>
-                  <span className="text-blue-700">Sobran {formatArsFromCents(totals.envelopeSurplus)}</span>
+                <span className="flex flex-col items-end gap-0.5 text-xs font-medium sm:flex-row sm:gap-3 sm:text-sm">
+                  <span>
+                    Cajeros: <span className="text-red-700">faltan {formatArsFromCents(totals.cashierShortfall)}</span> ·{" "}
+                    <span className="text-blue-700">sobran {formatArsFromCents(totals.cashierSurplus)}</span>
+                  </span>
+                  <span>
+                    Custodia: <span className="text-red-700">faltan {formatArsFromCents(totals.custodyShortfall)}</span> ·{" "}
+                    <span className="text-blue-700">sobran {formatArsFromCents(totals.custodySurplus)}</span>
+                  </span>
                 </span>
               </summary>
+              <div className="mt-1 text-xs text-neutral-500">
+                Cajero: lo que declaró meter en el sobre al cerrar vs. lo que dice el sistema. Custodia: lo contado al
+                abrir vs. lo que declaró el cajero.
+              </div>
               <div className="mt-2 overflow-auto rounded-md border">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-xs text-neutral-500">
                       <th className="px-3 py-1.5 text-left font-medium">Fecha</th>
                       <th className="px-3 py-1.5 text-left font-medium">Turno</th>
-                      <th className="px-3 py-1.5 text-left font-medium">Asociada/o</th>
+                      <th className="px-3 py-1.5 text-left font-medium">Cajero/a</th>
                       <th className="px-3 py-1.5 text-left font-medium">Sobre</th>
-                      <th className="px-3 py-1.5 text-right font-medium">Esperado</th>
-                      <th className="px-3 py-1.5 text-right font-medium">Contado</th>
-                      <th className="px-3 py-1.5 text-right font-medium">Diferencia</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Sistema</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Declarado</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Dif. cajero</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Contado al abrir</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Dif. custodia</th>
                     </tr>
                   </thead>
                   <tbody>
                     {differenceBreakdown.map((b) => (
-                      <tr key={b.envelopeId} className="border-b last:border-b-0">
+                      <tr key={b.envelopeId} className="border-b align-top last:border-b-0">
                         <td className="px-3 py-1.5 whitespace-nowrap">{formatBusinessDate(b.businessDate)}</td>
                         <td className="px-3 py-1.5">{SHIFT_LABEL[b.shift] ?? b.shift}</td>
-                        <td className="px-3 py-1.5">{b.employeeName}</td>
+                        <td className="px-3 py-1.5">
+                          {b.employeeName}
+                          {b.countNote ? <div className="text-xs text-neutral-500">Motivo: {b.countNote}</div> : null}
+                          {b.firstCountCents != null &&
+                          b.declaredAmountCents != null &&
+                          b.firstCountCents !== b.declaredAmountCents ? (
+                            <div className="text-xs text-amber-700">
+                              Primer conteo {formatArsFromCents(b.firstCountCents)}
+                            </div>
+                          ) : null}
+                        </td>
                         <td className="px-3 py-1.5 font-mono text-xs">{b.envelopeCode}</td>
                         <td className="px-3 py-1.5 text-right">{formatArsFromCents(b.expectedAmountCents)}</td>
-                        <td className="px-3 py-1.5 text-right">{formatArsFromCents(b.actualAmountCents)}</td>
-                        <td
-                          className={`px-3 py-1.5 text-right font-medium ${b.differenceCents < 0 ? "text-red-700" : "text-blue-700"}`}
-                        >
-                          {b.differenceCents < 0
-                            ? `Faltan ${formatArsFromCents(-b.differenceCents)}`
-                            : `Sobran ${formatArsFromCents(b.differenceCents)}`}
+                        <td className="px-3 py-1.5 text-right">
+                          {b.declaredAmountCents == null ? "—" : formatArsFromCents(b.declaredAmountCents)}
                         </td>
+                        <td className="px-3 py-1.5 text-right"><DiffCell cents={b.cashierDifferenceCents} /></td>
+                        <td className="px-3 py-1.5 text-right">
+                          {b.actualAmountCents == null ? "—" : formatArsFromCents(b.actualAmountCents)}
+                          {b.openedByName ? <div className="text-xs text-neutral-500">{b.openedByName}</div> : null}
+                        </td>
+                        <td className="px-3 py-1.5 text-right"><DiffCell cents={b.custodyDifferenceCents} /></td>
                       </tr>
                     ))}
                   </tbody>

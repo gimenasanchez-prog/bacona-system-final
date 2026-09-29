@@ -4,6 +4,7 @@ import { z } from "zod";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { formatArsFromCents } from "@/lib/money";
 import { LocalCashBoxService } from "@/modules/caja_local/services/localCashBoxService";
 
 export async function getLocalCashBalanceAction() {
@@ -12,78 +13,45 @@ export async function getLocalCashBalanceAction() {
   return { box, balanceCents };
 }
 
-const TransferEnvelopeSchema = z.object({
+const OpenEnvelopeItemSchema = z.object({
   envelopeId: z.string().min(1),
-  amountCents: z.coerce.number().int().positive(),
-});
-
-export async function transferEnvelopeToLocalCashAction(formData: FormData) {
-  let errorMsg: string | null = null;
-
-  try {
-    const parsed = TransferEnvelopeSchema.safeParse({
-      envelopeId: String(formData.get("envelopeId") ?? ""),
-      amountCents: formData.get("amountCents"),
-    });
-    if (!parsed.success) throw new Error("Datos inválidos: completá los dos campos.");
-
-    const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
-    if (!employeeId) throw new Error("No hay sesión activa. Cerrá y volvé a abrir la caja.");
-
-    const box = await LocalCashBoxService.getActiveLocalCashBox();
-    await LocalCashBoxService.transferEnvelopeToLocalCash({
-      envelopeId: parsed.data.envelopeId,
-      localCashBoxId: box.id,
-      amountCents: parsed.data.amountCents,
-      openedByEmployeeId: employeeId,
-    });
-  } catch (err) {
-    errorMsg = err instanceof Error ? err.message : "Error desconocido al guardar el sobre.";
-  }
-
-  if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);
-  redirect("/caja/local");
-}
-
-const OpenAndControlSchema = z.object({
-  envelopeId: z.string().min(1),
-  actualAmountCents: z.coerce.number().int().min(0),
+  actualAmountCents: z.number().int().min(0),
   notes: z.string().optional(),
 });
 
-export async function openAndControlEnvelopeAction(formData: FormData) {
+/** Abre uno o varios sobres en Caja BCÑ. Recibe `batch` como JSON: [{ envelopeId, actualAmountCents, notes? }]. */
+export async function openEnvelopesAction(formData: FormData) {
   let errorMsg: string | null = null;
-  const returnTo = String(formData.get("returnTo") ?? "/caja/local");
+  let okMsg = "";
 
   try {
-    const parsed = OpenAndControlSchema.safeParse({
-      envelopeId: String(formData.get("envelopeId") ?? ""),
-      actualAmountCents: formData.get("actualAmountCents"),
-      notes: String(formData.get("notes") ?? "") || undefined,
-    });
-    if (!parsed.success) throw new Error("Datos inválidos: completá todos los campos.");
+    const parsed = z.array(OpenEnvelopeItemSchema).safeParse(JSON.parse(String(formData.get("batch") ?? "[]")));
+    if (!parsed.success || !parsed.data.length) throw new Error("Cargá el monto contado de cada sobre.");
 
     const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
     if (!employeeId) throw new Error("No hay sesión activa.");
 
-    const localCashBoxIdOverride = String(formData.get("localCashBoxId") ?? "");
-    const box = localCashBoxIdOverride
-      ? { id: localCashBoxIdOverride }
-      : await LocalCashBoxService.getActiveLocalCashBox();
-
-    await LocalCashBoxService.openAndControlEnvelope({
-      envelopeId: parsed.data.envelopeId,
-      localCashBoxId: box.id,
-      actualAmountCents: parsed.data.actualAmountCents,
-      notes: parsed.data.notes ?? null,
+    const results = await LocalCashBoxService.openAndControlEnvelopes({
+      items: parsed.data.map((i) => ({ ...i, notes: i.notes?.trim() || null })),
       employeeId,
     });
+    const withDiff = results.filter((r) => r.differenceCents !== 0);
+    okMsg =
+      `${results.length === 1 ? "Sobre abierto" : `${results.length} sobres abiertos`}. ` +
+      (withDiff.length
+        ? "Con diferencia: " +
+          withDiff
+            .map((r) =>
+              `${r.envelopeCode} ${r.differenceCents < 0 ? "faltan" : "sobran"} ${formatArsFromCents(Math.abs(r.differenceCents))}`
+            )
+            .join(" · ")
+        : "Todos coinciden con lo que declaró el cajero ✓");
   } catch (err) {
-    errorMsg = err instanceof Error ? err.message : "Error al registrar el sobre.";
+    errorMsg = err instanceof Error ? err.message : "Error al abrir los sobres.";
   }
 
-  if (errorMsg) redirect(`${returnTo}?error=${encodeURIComponent(errorMsg)}`);
-  redirect(returnTo);
+  if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);
+  redirect(`/caja/local?ok=${encodeURIComponent(okMsg)}`);
 }
 
 const ControlOpenedSchema = z.object({
@@ -118,37 +86,6 @@ export async function controlOpenedEnvelopeAction(formData: FormData) {
 
   if (errorMsg) redirect(`/caja/local?error=${encodeURIComponent(errorMsg)}`);
   redirect("/caja/local");
-}
-
-const BatchItemSchema = z.object({
-  envelopeId: z.string().min(1),
-  actualAmountCents: z.number().int().min(0),
-});
-
-export async function openAndControlEnvelopeBatchAction(formData: FormData) {
-  let errorMsg: string | null = null;
-  const returnTo = String(formData.get("returnTo") ?? "/caja/local");
-
-  try {
-    const raw = String(formData.get("batch") ?? "[]");
-    const parsed = z.array(BatchItemSchema).safeParse(JSON.parse(raw));
-    if (!parsed.success) throw new Error("Datos inválidos en el lote.");
-
-    const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
-    if (!employeeId) throw new Error("No hay sesión activa.");
-
-    const localCashBoxIdOverride = String(formData.get("localCashBoxId") ?? "");
-    const box = localCashBoxIdOverride
-      ? { id: localCashBoxIdOverride }
-      : await LocalCashBoxService.getActiveLocalCashBox();
-
-    await LocalCashBoxService.openAndControlEnvelopeBatch(parsed.data, box.id, employeeId);
-  } catch (err) {
-    errorMsg = err instanceof Error ? err.message : "Error al procesar el lote.";
-  }
-
-  if (errorMsg) redirect(`${returnTo}?error=${encodeURIComponent(errorMsg)}`);
-  redirect(returnTo);
 }
 
 const ManualMovementSchema = z.object({

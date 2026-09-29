@@ -217,6 +217,7 @@ export class PosSaleService {
     cuentaCorrienteAccountId?: string | null;
     employeeId?: string | null;
     comandaNumber?: string;
+    currentCashSessionId?: string | null;
   }) {
     await PosPaymentService.addPayment(params);
     if (params.method === "CUENTA_CORRIENTE" && params.comandaNumber) {

@@ -194,6 +194,11 @@ model Employee {
   cashSessions                       CashSession[]
   envelopesControlled                Envelope[]                   @relation("EmployeeEnvelopesControlled")
   envelopesOpened                    Envelope[]                   @relation("EmployeeEnvelopesOpened")
+  envelopesReceived                  Envelope[]                   @relation("EmployeeEnvelopesReceived")
+  envelopesInCustody                 Envelope[]                   @relation("EmployeeEnvelopesInCustody")
+  custodyHandoversFrom               EnvelopeCustodyHandover[]    @relation("EnvelopeCustodyHandoverFrom")
+  custodyHandoversTo                 EnvelopeCustodyHandover[]    @relation("EnvelopeCustodyHandoverTo")
+  custodyHandoversCreated            EnvelopeCustodyHandover[]    @relation("EnvelopeCustodyHandoverCreatedBy")
   localCashMovementsCreated          LocalCashMovement[]          @relation("EmployeeLocalCashMovementsCreated")
   localExpensesCreated               LocalExpense[]               @relation("EmployeeLocalExpensesCreated")
   payments                           PosPayment[]
@@ -225,33 +230,37 @@ model Employee {
 }
 
 model CashSession {
-  id                        String                              @id @default(cuid())
-  businessDate              DateTime
-  shift                     Shift
-  employeeId                String
-  status                    CashSessionStatus                   @default(OPEN)
-  openedAt                  DateTime                            @default(now())
-  closedAt                  DateTime?
-  openKey                   String?                             @unique
-  notes                     String?
-  totalCashCents            Int                                 @default(0)
-  totalDebitCents           Int                                 @default(0)
-  totalCreditCents          Int                                 @default(0)
-  totalTransferCents        Int                                 @default(0)
-  totalQrCents              Int                                 @default(0)
-  totalChequeCents          Int                                 @default(0)
-  totalCuentaCorrienteCents Int                                 @default(0)
-  totalCuentasInternasCents Int                                 @default(0)
-  totalIncomeCents          Int                                 @default(0)
-  totalExpensesCents        Int                                 @default(0)
-  totalNetCents             Int                                 @default(0)
-  createdAt                 DateTime                            @default(now())
-  updatedAt                 DateTime                            @updatedAt
-  employee                  Employee                            @relation(fields: [employeeId], references: [id])
-  paymentDetails            CashSessionPaymentBreakdownDetail[]
-  envelope                  Envelope?
-  localExpenses             LocalExpense[]
-  sales                     PosSale[]
+  id                              String                              @id @default(cuid())
+  businessDate                    DateTime
+  shift                           Shift
+  employeeId                      String
+  status                          CashSessionStatus                   @default(OPEN)
+  openedAt                        DateTime                            @default(now())
+  closedAt                        DateTime?
+  openKey                         String?                             @unique
+  notes                           String?
+  totalCashCents                  Int                                 @default(0)
+  totalDebitCents                 Int                                 @default(0)
+  totalCreditCents                Int                                 @default(0)
+  totalTransferCents              Int                                 @default(0)
+  totalQrCents                    Int                                 @default(0)
+  totalChequeCents                Int                                 @default(0)
+  totalCuentaCorrienteCents       Int                                 @default(0)
+  totalCuentasInternasCents       Int                                 @default(0)
+  totalIncomeCents                Int                                 @default(0)
+  totalExpensesCents              Int                                 @default(0)
+  totalNetCents                   Int                                 @default(0)
+  /// Primer conteo del efectivo al cerrar (antes de ver el esperado) y el esperado en ese momento.
+  envelopeFirstCountCents         Int?
+  envelopeFirstCountExpectedCents Int?
+  envelopeFirstCountAt            DateTime?
+  createdAt                       DateTime                            @default(now())
+  updatedAt                       DateTime                            @updatedAt
+  employee                        Employee                            @relation(fields: [employeeId], references: [id])
+  paymentDetails                  CashSessionPaymentBreakdownDetail[]
+  envelope                        Envelope?
+  localExpenses                   LocalExpense[]
+  sales                           PosSale[]
 
   @@index([businessDate, shift, status])
   @@index([employeeId, businessDate, shift])
@@ -311,26 +320,73 @@ model LocalExpense {
 }
 
 model Envelope {
-  id                     String              @id @default(cuid())
-  envelopeCode           String              @unique
-  cashSessionId          String              @unique
+  id                     String                        @id @default(cuid())
+  envelopeCode           String                        @unique
+  cashSessionId          String                        @unique
   expectedAmountCents    Int
   actualAmountCents      Int?
-  status                 EnvelopeStatus      @default(CLOSED)
-  depositedAt            DateTime            @default(now())
+  status                 EnvelopeStatus                @default(CLOSED)
+  depositedAt            DateTime                      @default(now())
   openedAt               DateTime?
   controlledAt           DateTime?
   openedByEmployeeId     String?
   controlledByEmployeeId String?
   notes                  String?
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
-  cashSession            CashSession         @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
-  controlledByEmployee   Employee?           @relation("EmployeeEnvelopesControlled", fields: [controlledByEmployeeId], references: [id])
-  openedByEmployee       Employee?           @relation("EmployeeEnvelopesOpened", fields: [openedByEmployeeId], references: [id])
+  /// Lo que el cajero declaró meter en el sobre al sellarlo (conteo final).
+  declaredAmountCents    Int?
+  /// Primer conteo del cajero, antes de ver si coincidía con el sistema.
+  firstCountCents        Int?
+  /// Motivo cargado por el cajero si el sobre se selló con diferencia.
+  countNote              String?
+  receivedAt             DateTime?
+  receivedByEmployeeId   String?
+  /// Sobre de la propia encargada de sobres: queda recibido al sellarlo.
+  selfReceived           Boolean                       @default(false)
+  /// Quién tiene el sobre ahora (una vez recibido). Antes de recibirlo lo tiene quien cerró el turno.
+  custodianEmployeeId    String?
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
+  cashSession            CashSession                   @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+  controlledByEmployee   Employee?                     @relation("EmployeeEnvelopesControlled", fields: [controlledByEmployeeId], references: [id])
+  openedByEmployee       Employee?                     @relation("EmployeeEnvelopesOpened", fields: [openedByEmployeeId], references: [id])
+  receivedByEmployee     Employee?                     @relation("EmployeeEnvelopesReceived", fields: [receivedByEmployeeId], references: [id])
+  custodianEmployee      Employee?                     @relation("EmployeeEnvelopesInCustody", fields: [custodianEmployeeId], references: [id])
   localCashMovements     LocalCashMovement[]
+  custodyHandoverItems   EnvelopeCustodyHandoverItem[]
 
   @@index([status, depositedAt])
+  @@index([custodianEmployeeId, status])
+}
+
+/// Cambio de encargada de sobres (ej. Yanet → Noelia por vacaciones). La última define quién
+/// es la encargada activa. Los sobres recibidos sin abrir pasan a la nueva encargada, que confirma
+/// cuáles tiene físicamente.
+model EnvelopeCustodyHandover {
+  id                  String                        @id @default(cuid())
+  fromEmployeeId      String?
+  toEmployeeId        String
+  createdByEmployeeId String
+  createdAt           DateTime                      @default(now())
+  confirmedAt         DateTime?
+  fromEmployee        Employee?                     @relation("EnvelopeCustodyHandoverFrom", fields: [fromEmployeeId], references: [id])
+  toEmployee          Employee                      @relation("EnvelopeCustodyHandoverTo", fields: [toEmployeeId], references: [id])
+  createdByEmployee   Employee                      @relation("EnvelopeCustodyHandoverCreatedBy", fields: [createdByEmployeeId], references: [id])
+  items               EnvelopeCustodyHandoverItem[]
+
+  @@index([createdAt])
+}
+
+model EnvelopeCustodyHandoverItem {
+  id         String                  @id @default(cuid())
+  handoverId String
+  envelopeId String
+  /// null = pendiente de confirmar, true = la nueva encargada lo tiene, false = no lo tiene (vuelve a la anterior).
+  accepted   Boolean?
+  handover   EnvelopeCustodyHandover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  envelope   Envelope                @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
+
+  @@unique([handoverId, envelopeId])
+  @@index([envelopeId])
 }
 
 model LocalCashBox {
@@ -424,33 +480,35 @@ model PosTable {
 }
 
 model PosSale {
-  id                       String                  @id @default(cuid())
-  saleType                 PosSaleType
-  status                   PosSaleStatus           @default(DRAFT)
-  customerId               String?
-  cuentaCorrienteAccountId String?
-  cuentaCorrienteInvoiceId String?
-  customerNameFreeText     String?
-  tableId                  String?
-  reservationAt            DateTime?
-  subtotalCents            Int                     @default(0)
-  totalCents               Int                     @default(0)
-  externalRefs             Json?
-  comandaNumber            String?
-  cancellationReason       String?
-  cancelledAt              DateTime?
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
-  cashSessionId            String?
-  payments                 PosPayment[]
-  cashSession              CashSession?            @relation(fields: [cashSessionId], references: [id])
-  cuentaCorrienteAccount   CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
-  cuentaCorrienteInvoice   CuentaCorrienteInvoice? @relation("InvoicedSales", fields: [cuentaCorrienteInvoiceId], references: [id])
-  customer                 Customer?               @relation(fields: [customerId], references: [id])
-  table                    PosTable?               @relation(fields: [tableId], references: [id])
-  items                    PosSaleItem[]
-  stockMovement            StockMovement?          @relation("SaleStockMovement")
-  comercialSaleLine        ComercialSaleLine?
+  id                           String                  @id @default(cuid())
+  saleType                     PosSaleType
+  status                       PosSaleStatus           @default(DRAFT)
+  customerId                   String?
+  cuentaCorrienteAccountId     String?
+  cuentaCorrienteInvoiceId     String?
+  customerNameFreeText         String?
+  tableId                      String?
+  reservationAt                DateTime?
+  subtotalCents                Int                     @default(0)
+  totalCents                   Int                     @default(0)
+  externalRefs                 Json?
+  comandaNumber                String?
+  cancellationReason           String?
+  cancelledAt                  DateTime?
+  createdAt                    DateTime                @default(now())
+  updatedAt                    DateTime                @updatedAt
+  cashSessionId                String?
+  /// Turno que abrió la venta, si después pasó a otro turno (mesa pasada al turno siguiente, reserva cobrada otro día).
+  transferredFromCashSessionId String?
+  payments                     PosPayment[]
+  cashSession                  CashSession?            @relation(fields: [cashSessionId], references: [id])
+  cuentaCorrienteAccount       CuentaCorrienteAccount? @relation("SaleCuentaCorriente", fields: [cuentaCorrienteAccountId], references: [id])
+  cuentaCorrienteInvoice       CuentaCorrienteInvoice? @relation("InvoicedSales", fields: [cuentaCorrienteInvoiceId], references: [id])
+  customer                     Customer?               @relation(fields: [customerId], references: [id])
+  table                        PosTable?               @relation(fields: [tableId], references: [id])
+  items                        PosSaleItem[]
+  stockMovement                StockMovement?          @relation("SaleStockMovement")
+  comercialSaleLine            ComercialSaleLine?
 
   @@index([saleType, status, createdAt])
   @@index([cashSessionId, createdAt])
@@ -885,6 +943,7 @@ enum LocalExpensePaymentSource {
 
 enum EnvelopeStatus {
   CLOSED
+  RECEIVED
   OPENED
   CONTROLLED
   NOT_CONTROLLED

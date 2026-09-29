@@ -1,5 +1,6 @@
 "use server";
 
+import type { EnvelopeStatus } from "@/modules/sobres/lib/envelopeStatus";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -13,7 +14,7 @@ export async function listCashClosuresAction(params: {
   shift?: "MANIANA" | "TARDE" | "NOCHE";
   employeeId?: string;
   cashSessionStatus?: "OPEN" | "CLOSED";
-  envelopeStatus?: "CLOSED" | "OPENED" | "CONTROLLED" | "NOT_CONTROLLED";
+  envelopeStatus?: EnvelopeStatus;
 }) {
   return ConsolidatedClosuresService.listCashClosures(params);
 }
@@ -74,6 +75,7 @@ export async function closeStaleSessionAction(
     await CashSessionService.closeCashSession({
       cashSessionId,
       notes: "Cerrado por gerencia desde el consolidado (turno quedó abierto)",
+      autoTransferOpenTables: true,
     });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error al cerrar" };

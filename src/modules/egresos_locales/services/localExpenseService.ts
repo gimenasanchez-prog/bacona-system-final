@@ -28,7 +28,7 @@ function assertPositiveIntCents(value: number) {
 
 async function getDefaultLocalCashBoxId(tx: Prisma.TransactionClient) {
   const box = await tx.localCashBox.findFirst({
-    where: { active: true },
+    where: { active: true, kind: "EFECTIVO", NOT: { name: "Caja Gerencia" } },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
@@ -54,10 +54,13 @@ export class LocalExpenseService {
     return prisma.$transaction(async (tx) => {
       const cashSession = await tx.cashSession.findUnique({
         where: { id: input.cashSessionId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, envelope: { select: { id: true } } },
       });
       if (!cashSession) throw new Error("Cash session not found");
       if (cashSession.status !== "OPEN") throw new Error("No se puede registrar egresos en una caja cerrada");
+      if (input.paymentSource === "SHIFT_CASH" && cashSession.envelope) {
+        throw new Error("El sobre de este turno ya está sellado: el egreso no puede salir del efectivo del turno.");
+      }
 
       const supplier = await tx.supplier.findUnique({
         where: { id: input.supplierId },

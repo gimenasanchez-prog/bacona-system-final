@@ -299,9 +299,33 @@ export class CashSessionService {
     });
   }
 
-  static async closeCashSession(params: { cashSessionId: string; notes?: string | null }) {
+  /**
+   * @param autoTransferOpenTables  cierres automáticos o de gerencia: las mesas abiertas sin cobros
+   *   pasan solas al turno siguiente en vez de bloquear el cierre.
+   */
+  static async closeCashSession(params: {
+    cashSessionId: string;
+    notes?: string | null;
+    autoTransferOpenTables?: boolean;
+  }) {
     const summary = await this.getCashSessionSummary(params.cashSessionId);
     if (summary.cashSession.status !== "OPEN") throw new Error("La caja ya está cerrada");
+
+    const openTables = await this.listOpenTableSales(params.cashSessionId);
+    if (openTables.length) {
+      if (!params.autoTransferOpenTables) {
+        throw new Error(
+          `Tenés ${openTables.length} mesa${openTables.length === 1 ? "" : "s"} abierta${openTables.length === 1 ? "" : "s"}. ` +
+            "Cobralas o pasalas al turno siguiente antes de cerrar."
+        );
+      }
+      for (const t of openTables) {
+        if (t.payments.length) {
+          throw new Error(`La mesa ${t.table?.label ?? ""} tiene un cobro parcial: hay que terminar de cobrarla antes de cerrar.`);
+        }
+        await this.transferOpenTable({ saleId: t.id, fromCashSessionId: params.cashSessionId });
+      }
+    }
 
     if (summary.totals.expectedEnvelopeAmountCents > 0) {
       const envelope = await prisma.envelope.findUnique({
@@ -309,7 +333,7 @@ export class CashSessionService {
         select: { id: true },
       });
       if (!envelope) {
-        throw new Error("Generá el sobre antes de cerrar el turno. Hay efectivo pendiente de depositar.");
+        throw new Error("Contá el efectivo y sellá el sobre antes de cerrar el turno.");
       }
     }
 
@@ -353,7 +377,7 @@ export class CashSessionService {
   static async syncEnvelopeExpectedAmount(cashSessionId: string, client: DbClient = prisma) {
     const envelope = await client.envelope.findUnique({
       where: { cashSessionId },
-      select: { id: true, status: true, expectedAmountCents: true, actualAmountCents: true },
+      select: { id: true, status: true, expectedAmountCents: true, actualAmountCents: true, declaredAmountCents: true },
     });
     if (!envelope) return null;
 
@@ -370,7 +394,11 @@ export class CashSessionService {
       data: {
         expectedAmountCents: expected,
         ...(counted
-          ? { status: envelope.actualAmountCents === expected ? "CONTROLLED" : "NOT_CONTROLLED" }
+          ? {
+              // Con monto declarado, el control de la apertura es contra lo declarado (no cambia con el esperado).
+              status:
+                envelope.actualAmountCents === (envelope.declaredAmountCents ?? expected) ? "CONTROLLED" : "NOT_CONTROLLED",
+            }
           : {}),
       },
     });
@@ -415,10 +443,74 @@ export class CashSessionService {
       if (await this.hasActivity(s.id)) {
         withActivity.push(s);
       } else {
-        await this.closeCashSession({ cashSessionId: s.id, notes: "Cerrado automáticamente: turno sin actividad" });
+        await this.closeCashSession({
+          cashSessionId: s.id,
+          notes: "Cerrado automáticamente: turno sin actividad",
+          autoTransferOpenTables: true,
+        });
       }
     }
     return withActivity;
+  }
+
+  /** Mesas del turno sin cobrar del todo: borradores con productos o confirmadas. */
+  static async listOpenTableSales(cashSessionId: string, client: DbClient = prisma) {
+    return client.posSale.findMany({
+      where: {
+        cashSessionId,
+        saleType: "MESA",
+        OR: [{ status: "CONFIRMED" }, { status: "DRAFT", items: { some: {} } }],
+      },
+      include: { table: { select: { label: true } }, payments: { select: { amountCents: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  /**
+   * Pasa una mesa sin cobrar al turno siguiente: la plata la cobra y la pone en su sobre quien
+   * esté en ese turno. Si el turno siguiente ya está abierto la toma directo; si no, queda
+   * pendiente y la toma el próximo turno que se abra. Con cobros parciales no se puede pasar:
+   * un mismo cobro no puede quedar repartido entre dos sobres.
+   */
+  static async transferOpenTable(params: { saleId: string; fromCashSessionId: string }) {
+    return prisma.$transaction(async (tx) => {
+      const sale = await tx.posSale.findUnique({
+        where: { id: params.saleId },
+        select: { id: true, saleType: true, status: true, cashSessionId: true, _count: { select: { payments: true } } },
+      });
+      if (!sale || sale.cashSessionId !== params.fromCashSessionId) throw new Error("La mesa no es de este turno.");
+      if (sale.saleType !== "MESA" || (sale.status !== "DRAFT" && sale.status !== "CONFIRMED")) {
+        throw new Error("Solo se pueden pasar mesas abiertas.");
+      }
+      if (sale._count.payments) {
+        throw new Error("La mesa tiene un cobro parcial: terminá de cobrarla en este turno.");
+      }
+
+      const candidates = await tx.cashSession.findMany({
+        where: { status: "OPEN", id: { not: params.fromCashSessionId } },
+        select: { id: true, openedAt: true },
+        orderBy: { openedAt: "desc" },
+      });
+      const next = candidates.find((c) => !this.isStale(c.openedAt));
+
+      await tx.posSale.update({
+        where: { id: sale.id },
+        data: { cashSessionId: next?.id ?? null, transferredFromCashSessionId: params.fromCashSessionId },
+      });
+    });
+  }
+
+  /** Al abrir un turno nuevo, toma las mesas que el turno anterior dejó pendientes. */
+  static async adoptTransferredTables(cashSessionId: string) {
+    return prisma.posSale.updateMany({
+      where: {
+        cashSessionId: null,
+        transferredFromCashSessionId: { not: null },
+        saleType: "MESA",
+        status: { in: ["DRAFT", "CONFIRMED"] },
+      },
+      data: { cashSessionId },
+    });
   }
 
   /** Recalcula todo lo derivado de un turno (snapshot del consolidado + sobre). */

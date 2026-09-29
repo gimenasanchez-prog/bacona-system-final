@@ -9,7 +9,8 @@ import {
   createLocalCashManualMovementAction,
   controlOpenedEnvelopeAction,
 } from "@/modules/caja_local/actions/localCashBoxActions";
-import { OpenEnvelopeModal } from "./OpenEnvelopeModal";
+import { EnvelopeCustodySection } from "./EnvelopeCustodySection";
+import { EnvelopeCustodyService } from "@/modules/sobres/services/envelopeCustodyService";
 import { EntregarGerenciaButton } from "./EntregarGerenciaButton";
 import { PesosInput } from "@/components/PesosInput";
 
@@ -34,20 +35,25 @@ function TypeBadge(props: { type: string }) {
 export default async function CajaLocalPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const role = (await cookies()).get("bcn_role")?.value;
-  if (role !== "CAJA_LOCAL" && role !== "GERENCIA") redirect("/");
+  const jar = await cookies();
+  const role = jar.get("bcn_role")?.value;
+  const employeeId = jar.get("bcn_employeeId")?.value ?? null;
+  // La encargada de sobres entra aunque su rol sea Asociado (ej. Noelia cubriendo a Yanet).
+  if (role !== "CAJA_LOCAL" && role !== "GERENCIA" && !(await EnvelopeCustodyService.isActiveCustodian(employeeId))) {
+    redirect("/");
+  }
   const isGerencia = role === "GERENCIA";
 
   const sp = await props.searchParams;
   const errorMsg = typeof sp.error === "string" ? decodeURIComponent(sp.error) : null;
+  const okMsg = typeof sp.ok === "string" ? decodeURIComponent(sp.ok) : null;
   const pageParam = typeof sp.page === "string" ? parseInt(sp.page, 10) : 1;
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
   const box = await LocalCashBoxService.getActiveLocalCashBox();
-  const [balanceCents, movementsPage, envelopes, openedEnvelopes] = await Promise.all([
+  const [balanceCents, movementsPage, openedEnvelopes] = await Promise.all([
     LocalCashBoxService.getLocalCashBalance(box.id),
     LocalCashBoxService.listMovements(box.id, { page, pageSize: PAGE_SIZE }),
-    LocalCashBoxService.listAvailableEnvelopes(),
     LocalCashBoxService.listOpenedEnvelopes(),
   ]);
   const { movements, total } = movementsPage;
@@ -82,6 +88,11 @@ export default async function CajaLocalPage(props: {
           {errorMsg}
         </div>
       )}
+      {okMsg && (
+        <div className="mt-3 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {okMsg}
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border bg-white p-4 shadow-sm sm:col-span-1">
@@ -90,27 +101,10 @@ export default async function CajaLocalPage(props: {
           <div className="mt-3 text-xs text-neutral-500">Plata disponible ahora</div>
           <div className="mt-1 text-2xl font-bold">{formatArsFromCents(balanceCents)}</div>
         </div>
+      </div>
 
-        <div className="rounded-lg border bg-white p-4 shadow-sm sm:col-span-2">
-          <div className="text-sm font-semibold">Vaciar el sobre en la caja</div>
-          <div className="mt-1 text-sm text-neutral-600">
-            Seleccioná el sobre, contá el dinero y confirmá el ingreso paso a paso.
-          </div>
-          <div className="mt-4">
-            <OpenEnvelopeModal
-              envelopes={envelopes.map((e) => ({
-                id: e.id,
-                envelopeCode: e.envelopeCode,
-                expectedAmountCents: e.expectedAmountCents,
-                cashSession: {
-                  businessDate: e.cashSession.businessDate.toISOString(),
-                  shift: e.cashSession.shift,
-                  employee: { displayName: e.cashSession.employee.displayName },
-                },
-              }))}
-            />
-          </div>
-        </div>
+      <div className="mt-4">
+        <EnvelopeCustodySection employeeId={employeeId} isGerencia={isGerencia} />
       </div>
 
       {openedEnvelopes.length > 0 && (

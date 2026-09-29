@@ -49,6 +49,8 @@ export async function openCashSessionAction(
         businessDate,
       }));
     pendingPrevious = !!previous;
+    // Turno nuevo: toma las mesas que el turno anterior le pasó sin cobrar.
+    if (!previous) await CashSessionService.adoptTransferredTables(cashSession.id);
 
     const employee = await prisma.employee.findUnique({
       where: { id: parsed.data.employeeId },
@@ -79,7 +81,13 @@ export async function closeCashSessionAction(formData: FormData) {
   });
   if (!parsed.success) throw new Error(parsed.error.message);
 
-  await CashSessionService.closeCashSession({ cashSessionId: parsed.data.cashSessionId });
+  let errorMsg: string | null = null;
+  try {
+    await CashSessionService.closeCashSession({ cashSessionId: parsed.data.cashSessionId });
+  } catch (e) {
+    errorMsg = e instanceof Error ? e.message : "Error al cerrar el turno.";
+  }
+  if (errorMsg) redirect(`/caja/turno?error=${encodeURIComponent(errorMsg)}`);
 
   const jar = await cookies();
   jar.set("bcn_cashSessionId", "", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 0 });
@@ -88,6 +96,20 @@ export async function closeCashSessionAction(formData: FormData) {
   jar.set("bcn_role", "", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 0 });
 
   redirect("/caja/abrir");
+}
+
+export async function transferOpenTableAction(formData: FormData) {
+  const saleId = String(formData.get("saleId") ?? "");
+  const cashSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
+
+  let errorMsg: string | null = null;
+  try {
+    if (!saleId || !cashSessionId) throw new Error("Datos inválidos.");
+    await CashSessionService.transferOpenTable({ saleId, fromCashSessionId: cashSessionId });
+  } catch (e) {
+    errorMsg = e instanceof Error ? e.message : "Error al pasar la mesa.";
+  }
+  redirect(errorMsg ? `/caja/turno?error=${encodeURIComponent(errorMsg)}` : "/caja/turno");
 }
 
 export async function getCurrentCashSessionIdFromCookies(): Promise<string | null> {
