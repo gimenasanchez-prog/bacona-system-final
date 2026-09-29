@@ -1,4 +1,5 @@
 import { formatBusinessDate } from "@/lib/dates";
+import { formatArsFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { ENVELOPE_OVERDUE_DAYS } from "@/modules/sobres/lib/envelopeStatus";
 import { EnvelopeCustodyService } from "@/modules/sobres/services/envelopeCustodyService";
@@ -146,7 +147,7 @@ export async function EnvelopeCustodySection(props: { employeeId: string | null;
         <div className="text-sm font-semibold">Vaciar sobres en la caja</div>
         <div className="mt-1 mb-3 text-sm text-neutral-600">
           {isCustodian
-            ? `Tenés ${readyToOpen.length} sobre${readyToOpen.length === 1 ? "" : "s"} recibido${readyToOpen.length === 1 ? "" : "s"} para abrir. Abrí uno o todos juntos.`
+            ? `Tenés ${readyToOpen.length} sobre${readyToOpen.length === 1 ? "" : "s"} recibido${readyToOpen.length === 1 ? "" : "s"} para abrir, por ${formatArsFromCents(readyToOpen.reduce((a, e) => a + (e.declaredAmountCents ?? e.expectedAmountCents), 0))} en total. Abrí uno o todos juntos.`
             : `Los sobres recibidos los abre ${custodian?.displayName ?? "la encargada de sobres"}.`}
         </div>
         {isCustodian ? (
@@ -154,6 +155,7 @@ export async function EnvelopeCustodySection(props: { employeeId: string | null;
             envelopes={readyToOpen.map((e) => ({
               id: e.id,
               envelopeCode: e.envelopeCode,
+              declaredCents: e.declaredAmountCents ?? e.expectedAmountCents,
               cashSession: {
                 businessDate: e.cashSession.businessDate.toISOString(),
                 shift: e.cashSession.shift,

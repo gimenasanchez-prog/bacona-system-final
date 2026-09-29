@@ -8,6 +8,8 @@ import { openEnvelopesAction } from "@/modules/caja_local/actions/localCashBoxAc
 type Envelope = {
   id: string;
   envelopeCode: string;
+  /** Lo que declaró el cajero al sellar (sobres viejos: lo que decía el sistema). */
+  declaredCents: number;
   cashSession: {
     businessDate: string | Date;
     shift: string;
@@ -28,8 +30,8 @@ function pesosToCents(raw: string): number | null {
 }
 
 /**
- * Apertura de sobres en Caja BCÑ, uno o todos juntos. Conteo a ciegas: no se muestra cuánto
- * debería haber; la comparación contra lo que declaró el cajero se ve después de confirmar.
+ * Apertura de sobres en Caja BCÑ, uno o todos juntos. Muestra cuánto declaró el cajero (para
+ * elegir qué sobre abrir según lo que hace falta pagar) y la diferencia con lo contado.
  */
 export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
@@ -75,6 +77,7 @@ export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
   const counted = selectedRows.map((e) => pesosToCents(amounts[e.id] ?? ""));
   const allFilled = selectedRows.length > 0 && counted.every((c) => c !== null);
   const totalCounted = counted.reduce<number>((s, c) => s + (c ?? 0), 0);
+  const totalDeclared = selectedRows.reduce((s, e) => s + e.declaredCents, 0);
 
   const batchPayload = selectedRows.map((e, i) => ({
     envelopeId: e.id,
@@ -88,8 +91,8 @@ export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
         <div>
           <div className="text-sm font-semibold">Abrir y contar sobres</div>
           <div className="text-xs text-neutral-500">
-            Marcá los sobres que abrís, contá la plata de cada uno y cargá lo que contaste. Después de confirmar
-            te mostramos si coincide con lo que declaró el cajero.
+            Marcá los sobres que abrís, contá la plata de cada uno y cargá lo que contaste. Si no coincide con
+            lo que declaró el cajero, anotá una nota.
           </div>
         </div>
         <button onClick={() => setSelectedIds(null)} className="text-xs text-neutral-400 hover:text-neutral-600">
@@ -115,13 +118,17 @@ export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
               <th className="px-3 py-2 text-left font-medium text-neutral-600">Cajero/a</th>
               <th className="px-3 py-2 text-left font-medium text-neutral-600">Fecha</th>
               <th className="px-3 py-2 text-left font-medium text-neutral-600">Turno</th>
+              <th className="px-3 py-2 text-right font-medium text-neutral-600">Declarado</th>
               <th className="px-3 py-2 text-right font-medium text-neutral-600">Contado ($)</th>
+              <th className="px-3 py-2 text-right font-medium text-neutral-600">Dif.</th>
               <th className="px-3 py-2 text-left font-medium text-neutral-600">Nota (opcional)</th>
             </tr>
           </thead>
           <tbody>
             {envelopes.map((row) => {
               const selected = selectedIds.has(row.id);
+              const countedCents = pesosToCents(amounts[row.id] ?? "");
+              const diff = countedCents == null ? null : countedCents - row.declaredCents;
               return (
                 <tr key={row.id} className={`border-b last:border-b-0 ${!selected ? "opacity-50" : ""}`}>
                   <td className="px-3 py-2">
@@ -131,6 +138,7 @@ export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
                   <td className="px-3 py-2">{row.cashSession.employee.displayName}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatBusinessDate(row.cashSession.businessDate)}</td>
                   <td className="px-3 py-2">{SHIFT_LABEL[row.cashSession.shift] ?? row.cashSession.shift}</td>
+                  <td className="px-3 py-2 text-right font-medium">{formatArsFromCents(row.declaredCents)}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
                       <span className="text-neutral-400">$</span>
@@ -145,6 +153,17 @@ export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
                         className="w-28 rounded border px-2 py-1 text-right text-sm font-semibold disabled:bg-neutral-100"
                       />
                     </div>
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs font-medium whitespace-nowrap">
+                    {!selected || diff === null ? (
+                      <span className="text-neutral-300">—</span>
+                    ) : diff === 0 ? (
+                      <span className="text-green-700">✓</span>
+                    ) : (
+                      <span className={diff < 0 ? "text-red-700" : "text-blue-700"}>
+                        {diff < 0 ? `Faltan ${formatArsFromCents(-diff)}` : `Sobran ${formatArsFromCents(diff)}`}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -162,10 +181,11 @@ export function OpenEnvelopesPanel({ envelopes }: { envelopes: Envelope[] }) {
           <tfoot className="bg-neutral-50">
             <tr className="border-t">
               <td colSpan={5} className="px-3 py-2 text-xs font-semibold text-neutral-600">
-                Total contado ({selectedIds.size} sobre{selectedIds.size === 1 ? "" : "s"})
+                Total ({selectedIds.size} sobre{selectedIds.size === 1 ? "" : "s"})
               </td>
+              <td className="px-3 py-2 text-right text-sm font-semibold">{formatArsFromCents(totalDeclared)}</td>
               <td className="px-3 py-2 text-right text-sm font-bold">{formatArsFromCents(totalCounted)}</td>
-              <td />
+              <td colSpan={2} />
             </tr>
           </tfoot>
         </table>
