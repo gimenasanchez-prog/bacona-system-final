@@ -18,6 +18,10 @@ export function LocalExpenseModal(props: {
   suppliers: Supplier[];
   inventoryItems: InventoryItem[];
   onCreated?: () => void;
+  buttonLabel?: string;
+  variant?: "primary" | "secondary";
+  /** Solo gastos pagados con la plata del turno (cierre guiado). */
+  shiftCashOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -39,10 +43,14 @@ export function LocalExpenseModal(props: {
     <>
       <button
         type="button"
-        className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+        className={
+          props.variant === "secondary"
+            ? "rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-50"
+            : "rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+        }
         onClick={() => setOpen(true)}
       >
-        Registrar egreso local
+        {props.buttonLabel ?? "Registrar egreso local"}
       </button>
 
       {open ? (
@@ -118,13 +126,17 @@ export function LocalExpenseModal(props: {
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Método de pago</label>
-                <select name="paymentSource" className="w-full rounded-md border px-3 py-2 text-sm" defaultValue="SHIFT_CASH">
-                  <option value="SHIFT_CASH">Efectivo del turno</option>
-                  <option value="LOCAL_CASH">Caja BCN</option>
-                </select>
-              </div>
+              {props.shiftCashOnly ? (
+                <input type="hidden" name="paymentSource" value="SHIFT_CASH" />
+              ) : (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium">Método de pago</label>
+                  <select name="paymentSource" className="w-full rounded-md border px-3 py-2 text-sm" defaultValue="SHIFT_CASH">
+                    <option value="SHIFT_CASH">Efectivo del turno</option>
+                    <option value="LOCAL_CASH">Caja BCN</option>
+                  </select>
+                </div>
+              )}
 
               <div className="rounded-md border p-3">
                 <label className="flex items-center gap-2 text-sm">

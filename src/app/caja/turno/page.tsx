@@ -5,12 +5,9 @@ import { cookies } from "next/headers";
 import { formatArsFromCents } from "@/lib/money";
 import { formatBusinessDate } from "@/lib/dates";
 import { CashSessionService } from "@/modules/caja/services/cashSessionService";
-import { closeCashSessionAction, transferOpenTableAction } from "@/modules/caja/actions/cashSessionActions";
-import { EnvelopeCustodyService } from "@/modules/sobres/services/envelopeCustodyService";
-import { CloseCashSessionButton } from "./CloseCashSessionButton";
+
 import { prisma } from "@/lib/prisma";
 import { LocalExpenseModal } from "./LocalExpenseModal";
-import { EnvelopeDepositCard } from "./EnvelopeDepositCard";
 import { SessionSalesCard } from "./SessionSalesCard";
 
 const SHIFT_LABEL: Record<string, string> = { MANIANA: "Mañana", TARDE: "Tarde", NOCHE: "Noche" };
@@ -64,29 +61,9 @@ export default async function CajaTurnoPage(props: {
       take: 200,
     }),
   ]);
-  const [envelope, countState, custodian, openTables] = await Promise.all([
-    prisma.envelope.findUnique({
-      where: { cashSessionId },
-      select: {
-        envelopeCode: true,
-        status: true,
-        declaredAmountCents: true,
-        expectedAmountCents: true,
-        firstCountCents: true,
-        countNote: true,
-        selfReceived: true,
-      },
-    }),
-    prisma.cashSession.findUnique({ where: { id: cashSessionId }, select: { envelopeFirstCountCents: true } }),
-    EnvelopeCustodyService.getActiveCustodian(),
-    CashSessionService.listOpenTableSales(cashSessionId),
-  ]);
-  const firstCountDone = countState?.envelopeFirstCountCents != null;
+  const openTables = await CashSessionService.listOpenTableSales(cashSessionId);
 
   const isOpen = summary.cashSession.status === "OPEN";
-  // "Primero contar, después ver": el efectivo esperado se muestra recién después del primer conteo.
-  const revealCash = !isOpen || !!envelope || firstCountDone;
-  const hidden = <span className="text-neutral-400">Se ve después de contar el sobre</span>;
   const stale = isOpen && CashSessionService.isStale(summary.cashSession.openedAt);
   const turnoLabel = `${formatBusinessDate(summary.cashSession.businessDate)} (${SHIFT_LABEL[summary.cashSession.shift] ?? summary.cashSession.shift})`;
 
@@ -95,7 +72,7 @@ export default async function CajaTurnoPage(props: {
       {isOpen && aviso === "cerrar-antes-de-salir" ? (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <b>Cerrá tu turno antes de salir.</b> Este turno tiene ventas o egresos cargados: si salís sin cerrarlo, no
-          aparece en el consolidado. Bajá hasta &quot;Cerrar turno&quot;.
+          aparece en el consolidado. Tocá &quot;Cerrar turno&quot;.
         </div>
       ) : null}
       {isOpen && aviso === "turno-pendiente" ? (
@@ -149,57 +126,45 @@ export default async function CajaTurnoPage(props: {
         </div>
       </div>
 
-      {revealCash ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          <SummaryCard title="Total ingreso del turno" amountCents={summary.totals.totalIncomeCents} />
-          <SummaryCard title="Egresos (total)" amountCents={summary.totals.totalExpensesCents} subtle />
-          <SummaryCard title="Total neto del cierre" amountCents={summary.totals.totalNetCents} />
-          <SummaryCard title="Efectivo esperado en sobre" amountCents={summary.totals.expectedEnvelopeAmountCents} />
+      {isOpen ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border-2 border-red-600 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-base font-semibold">¿Terminaste el turno?</div>
+            <div className="text-sm text-neutral-600">
+              Te guiamos paso a paso: mesas abiertas, gastos, sobre y cierre.
+              {openTables.length ? (
+                <span className="font-medium text-amber-700">
+                  {" "}
+                  Tenés {openTables.length} mesa{openTables.length === 1 ? "" : "s"} abierta{openTables.length === 1 ? "" : "s"}.
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <Link
+            href="/caja/turno/cerrar"
+            className="rounded-md bg-red-600 px-6 py-3 text-center text-base font-semibold text-white hover:bg-red-700"
+          >
+            Cerrar turno
+          </Link>
         </div>
       ) : null}
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <SummaryCard title="Total ingreso del turno" amountCents={summary.totals.totalIncomeCents} />
+        <SummaryCard title="Egresos (total)" amountCents={summary.totals.totalExpensesCents} subtle />
+        <SummaryCard title="Total neto del cierre" amountCents={summary.totals.totalNetCents} />
+        <SummaryCard title="Efectivo para el sobre" amountCents={summary.totals.expectedEnvelopeAmountCents} />
+      </div>
 
       <div className="mt-4">
         <SessionSalesCard />
       </div>
 
-      {isOpen && openTables.length > 0 ? (
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 shadow-sm">
-          <div className="text-sm font-semibold text-amber-900">
-            Mesas abiertas ({openTables.length})
-          </div>
-          <div className="mt-1 text-sm text-amber-800">
-            Antes de cerrar, cobrá cada mesa desde Ventas o pasala al turno siguiente: la cobra y la pone en su
-            sobre quien esté en ese turno.
-          </div>
-          <div className="mt-3 divide-y rounded-md border border-amber-200 bg-white">
-            {openTables.map((t) => (
-              <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                <div>
-                  <span className="font-medium">Mesa {t.table?.label ?? "—"}</span>{" "}
-                  <span className="text-neutral-600">· {formatArsFromCents(t.totalCents)}</span>
-                  {t.payments.length ? (
-                    <span className="ml-2 text-xs text-red-700">Tiene un cobro parcial: terminá de cobrarla</span>
-                  ) : null}
-                </div>
-                {t.payments.length ? null : (
-                  <form action={transferOpenTableAction}>
-                    <input type="hidden" name="saleId" value={t.id} />
-                    <button className="rounded-md border border-amber-400 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100">
-                      Pasar al turno siguiente
-                    </button>
-                  </form>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold">Resumen monetario por método</div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <LabelValue label="Efectivo" value={revealCash ? formatArsFromCents(summary.totals.EFECTIVO) : hidden} />
+            <LabelValue label="Efectivo" value={formatArsFromCents(summary.totals.EFECTIVO)} />
             <LabelValue label="Débito" value={formatArsFromCents(summary.totals.DEBITO)} />
             <LabelValue label="Crédito" value={formatArsFromCents(summary.totals.CREDITO)} />
             <LabelValue label="Transferencia" value={formatArsFromCents(summary.totals.TRANSFERENCIA)} />
@@ -302,16 +267,6 @@ export default async function CajaTurnoPage(props: {
         </div>
       </div>
 
-      <div className="mt-4">
-        <EnvelopeDepositCard
-          cashSessionId={summary.cashSession.id}
-          cashCents={summary.totals.EFECTIVO}
-          shiftCashExpensesCents={summary.totals.totalShiftCashExpensesCents}
-          firstCountDone={firstCountDone}
-          envelope={envelope}
-          custodianName={custodian?.displayName ?? null}
-        />
-      </div>
 
       <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -358,21 +313,6 @@ export default async function CajaTurnoPage(props: {
             Sin egresos registrados todavía.
           </div>
         )}
-      </div>
-
-      <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-sm font-semibold">Acciones</div>
-            <div className="mt-1 text-sm text-neutral-600">
-              Cuando terminás el turno, apretás acá. Antes, contá el efectivo, sellá el sobre y resolvé las mesas abiertas.
-            </div>
-          </div>
-          <form action={closeCashSessionAction} className="flex items-center gap-2">
-            <input type="hidden" name="cashSessionId" value={summary.cashSession.id} />
-            <CloseCashSessionButton />
-          </form>
-        </div>
       </div>
     </div>
   );

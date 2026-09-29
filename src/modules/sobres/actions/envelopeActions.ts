@@ -1,47 +1,9 @@
 "use server";
 
-import { z } from "zod";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { EnvelopeService, type EnvelopeCountResult } from "@/modules/sobres/services/envelopeService";
 import { EnvelopeCustodyService } from "@/modules/sobres/services/envelopeCustodyService";
-
-const SubmitCountSchema = z.object({
-  cashSessionId: z.string().min(1),
-  countedPesos: z.string().trim().min(1).transform(Number).pipe(z.number().min(0)),
-  note: z.string().optional(),
-});
-
-export type EnvelopeCountState = { error: string | null; result: EnvelopeCountResult | null };
-
-export async function submitEnvelopeCountAction(
-  _prev: EnvelopeCountState,
-  formData: FormData
-): Promise<EnvelopeCountState> {
-  const parsed = SubmitCountSchema.safeParse({
-    cashSessionId: String(formData.get("cashSessionId") ?? ""),
-    countedPesos: String(formData.get("countedPesos") ?? "").replace(",", "."),
-    note: String(formData.get("note") ?? "") || undefined,
-  });
-  if (!parsed.success) return { error: "Cargá el monto contado.", result: null };
-
-  const cookieSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
-  if (cookieSessionId !== parsed.data.cashSessionId) {
-    return { error: "Solo quien tiene el turno abierto puede sellar su sobre.", result: null };
-  }
-
-  try {
-    const result = await EnvelopeService.submitCount({
-      cashSessionId: parsed.data.cashSessionId,
-      countedCents: Math.round(parsed.data.countedPesos * 100),
-      note: parsed.data.note ?? null,
-    });
-    return { error: null, result };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Error", result: null };
-  }
-}
 
 async function currentEmployeeId() {
   const employeeId = (await cookies()).get("bcn_employeeId")?.value ?? null;
