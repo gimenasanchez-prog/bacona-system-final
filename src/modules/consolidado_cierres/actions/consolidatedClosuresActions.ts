@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 import { ConsolidatedClosuresService } from "@/modules/consolidado_cierres/services/consolidatedClosuresService";
 import { PosSaleService } from "@/modules/ventas_pos/services/posSaleService";
 
@@ -58,3 +59,25 @@ export async function cancelSaleGerenciaAction(formData: FormData) {
   redirect(`/caja/cierres/${cashSessionId}`);
 }
 
+
+export async function closeStaleSessionAction(
+  _prev: { error: string } | null,
+  formData: FormData
+): Promise<{ error: string } | null> {
+  const role = (await cookies()).get("bcn_role")?.value;
+  if (role !== "GERENCIA") return { error: "No autorizado" };
+
+  const cashSessionId = formData.get("cashSessionId");
+  if (typeof cashSessionId !== "string" || !cashSessionId) return { error: "ID inválido" };
+
+  try {
+    await CashSessionService.closeCashSession({
+      cashSessionId,
+      notes: "Cerrado por gerencia desde el consolidado (turno quedó abierto)",
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error al cerrar" };
+  }
+
+  redirect("/caja/consolidado");
+}

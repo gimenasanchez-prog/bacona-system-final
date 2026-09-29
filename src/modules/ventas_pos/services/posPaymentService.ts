@@ -33,6 +33,25 @@ export class PosPaymentService {
     this.validatePaymentInput(params);
 
     return prisma.$transaction(async (tx) => {
+      // La facturación de CC busca las ventas por posSale.cuentaCorrienteAccountId. Si la
+      // cuenta se eligió solo en el panel de pago, la venta quedaba sin cuenta y nunca se
+      // facturaba: la venta toma la cuenta del pago.
+      if (params.method === "CUENTA_CORRIENTE" && params.cuentaCorrienteAccountId) {
+        const sale = await tx.posSale.findUnique({
+          where: { id: params.saleId },
+          select: { cuentaCorrienteAccountId: true },
+        });
+        if (!sale) throw new Error("Venta no encontrada");
+        if (!sale.cuentaCorrienteAccountId) {
+          await tx.posSale.update({
+            where: { id: params.saleId },
+            data: { cuentaCorrienteAccountId: params.cuentaCorrienteAccountId },
+          });
+        } else if (sale.cuentaCorrienteAccountId !== params.cuentaCorrienteAccountId) {
+          throw new Error("La venta está asignada a otra cuenta corriente. Revisá la cuenta elegida.");
+        }
+      }
+
       const payment = await tx.posPayment.create({
         data: {
           saleId: params.saleId,

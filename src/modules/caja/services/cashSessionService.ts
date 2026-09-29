@@ -56,6 +56,9 @@ function centsSum(values: number[]): number {
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
+/** Un turno abierto hace más de esto se considera de otro día (cubre turnos noche que pasan la medianoche). */
+export const STALE_SESSION_HOURS = 18;
+
 export class CashSessionService {
   static async openCashSession(params: {
     employeeId: string;
@@ -372,6 +375,50 @@ export class CashSessionService {
       },
     });
     return expected;
+  }
+
+  /**
+   * Un turno "tiene actividad" si tiene ventas cobradas o confirmadas (p.ej. una mesa
+   * abierta), egresos o sobre. Los borradores sin cobrar no cuentan.
+   */
+  static async hasActivity(cashSessionId: string, client: DbClient = prisma) {
+    const [sales, expenses, envelope] = await Promise.all([
+      client.posSale.count({
+        where: {
+          cashSessionId,
+          OR: [{ status: { in: ["CONFIRMED", "PAID"] } }, { status: "DRAFT", payments: { some: {} } }],
+        },
+      }),
+      client.localExpense.count({ where: { cashSessionId } }),
+      client.envelope.count({ where: { cashSessionId } }),
+    ]);
+    return sales + expenses + envelope > 0;
+  }
+
+  static isStale(openedAt: Date, now: Date = new Date()) {
+    return now.getTime() - openedAt.getTime() > STALE_SESSION_HOURS * 3600_000;
+  }
+
+  /**
+   * Cierra en $0 los turnos abiertos del empleado que no tienen actividad y devuelve los
+   * que sí tienen (más viejo primero). Evita que queden turnos abiertos para siempre
+   * cuando alguien sale sin cerrar o pierde la sesión del navegador.
+   */
+  static async closeEmptyOpenSessions(employeeId: string) {
+    const open = await prisma.cashSession.findMany({
+      where: { employeeId, status: "OPEN" },
+      select: { id: true, businessDate: true, shift: true, openedAt: true },
+      orderBy: { openedAt: "asc" },
+    });
+    const withActivity: typeof open = [];
+    for (const s of open) {
+      if (await this.hasActivity(s.id)) {
+        withActivity.push(s);
+      } else {
+        await this.closeCashSession({ cashSessionId: s.id, notes: "Cerrado automáticamente: turno sin actividad" });
+      }
+    }
+    return withActivity;
   }
 
   /** Recalcula todo lo derivado de un turno (snapshot del consolidado + sobre). */

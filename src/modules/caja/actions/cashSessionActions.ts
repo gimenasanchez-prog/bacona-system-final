@@ -28,15 +28,27 @@ export async function openCashSessionAction(
   });
   if (!parsed.success) return { error: parsed.error.message };
 
+  let pendingPrevious = false;
   try {
     const businessDate = parsed.data.businessDate
       ? new Date(`${parsed.data.businessDate}T00:00:00`)
       : undefined;
-    const cashSession = await CashSessionService.openCashSession({
-      employeeId: parsed.data.employeeId,
-      shift: parsed.data.shift,
-      businessDate,
-    });
+
+    // Turnos que quedaron abiertos (se salió sin cerrar, se perdió la sesión del navegador):
+    // los vacíos se cierran solos; si hay uno con actividad, se retoma para cerrarlo primero.
+    const pending = await CashSessionService.closeEmptyOpenSessions(parsed.data.employeeId);
+    const requestedDay = (businessDate ?? new Date()).toDateString();
+    const previous = pending.find(
+      (s) => !(s.shift === parsed.data.shift && s.businessDate.toDateString() === requestedDay)
+    );
+    const cashSession =
+      previous ??
+      (await CashSessionService.openCashSession({
+        employeeId: parsed.data.employeeId,
+        shift: parsed.data.shift,
+        businessDate,
+      }));
+    pendingPrevious = !!previous;
 
     const employee = await prisma.employee.findUnique({
       where: { id: parsed.data.employeeId },
@@ -46,7 +58,7 @@ export async function openCashSessionAction(
     const jar = await cookies();
     jar.set("bcn_cashSessionId", cashSession.id, { httpOnly: true, sameSite: "lax", path: "/" });
     jar.set("bcn_employeeId", parsed.data.employeeId, { httpOnly: true, sameSite: "lax", path: "/" });
-    jar.set("bcn_shift", parsed.data.shift, { httpOnly: true, sameSite: "lax", path: "/" });
+    jar.set("bcn_shift", cashSession.shift, { httpOnly: true, sameSite: "lax", path: "/" });
     if (employee) {
       jar.set("bcn_role", employee.role, { httpOnly: true, sameSite: "lax", path: "/" });
     }
@@ -54,7 +66,7 @@ export async function openCashSessionAction(
     return { error: e instanceof Error ? e.message : "Error" };
   }
 
-  redirect("/caja/turno");
+  redirect(pendingPrevious ? "/caja/turno?aviso=turno-pendiente" : "/caja/turno");
 }
 
 const CloseCashSessionSchema = z.object({

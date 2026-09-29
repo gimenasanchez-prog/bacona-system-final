@@ -8,6 +8,7 @@ import { formatBusinessDate, getCurrentMonthRange } from "@/lib/dates";
 import { ConsolidatedClosuresService } from "@/modules/consolidado_cierres/services/consolidatedClosuresService";
 import { ENVELOPE_STATUS_LABEL } from "@/modules/sobres/lib/envelopeStatus";
 import { EnvelopeStatusBadge } from "../sobres/EnvelopeStatusBadge";
+import { CloseStaleSessionButton } from "./CloseStaleSessionButton";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 
 const SHIFT_LABEL: Record<string, string> = {
@@ -40,7 +41,7 @@ export default async function ConsolidadoCierresPage(props: {
       : undefined;
   const employeeId = typeof sp.employeeId === "string" && sp.employeeId ? sp.employeeId : undefined;
 
-  const [employees, rows, internalBreakdown, differenceBreakdown] = await Promise.all([
+  const [employees, rows, internalBreakdown, differenceBreakdown, staleOpenSessions] = await Promise.all([
     prisma.employee.findMany({
       where: { isActive: true },
       select: { id: true, displayName: true },
@@ -70,7 +71,9 @@ export default async function ConsolidadoCierresPage(props: {
       cashSessionStatus,
       envelopeStatus,
     }),
+    ConsolidatedClosuresService.listStaleOpenSessions(),
   ]);
+  const staleWithPayments = staleOpenSessions.filter((s) => s.paidCents > 0 || s.expensesCount > 0);
 
   const totals =
     rows.length > 0
@@ -112,6 +115,50 @@ export default async function ConsolidadoCierresPage(props: {
           </Link>
         </div>
       </div>
+
+      {staleOpenSessions.length > 0 ? (
+        <details className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <summary className="cursor-pointer">
+            <b>
+              {staleOpenSessions.length} {staleOpenSessions.length === 1 ? "turno quedó abierto" : "turnos quedaron abiertos"}
+            </b>
+            {staleWithPayments.length > 0 ? (
+              <>
+                {" "}
+                · {staleWithPayments.length} con cobros por{" "}
+                <b>{formatArsFromCents(staleWithPayments.reduce((a, s) => a + s.paidCents, 0))}</b> que no suman al
+                consolidado hasta cerrarlos
+              </>
+            ) : null}{" "}
+            <span className="text-xs">(ver detalle ▾)</span>
+          </summary>
+          <table className="mt-3 w-full text-sm">
+            <tbody>
+              {staleOpenSessions.map((s) => (
+                <tr key={s.id} className="border-t border-amber-200">
+                  <td className="py-1.5 pr-2 whitespace-nowrap">{formatBusinessDate(s.businessDate)}</td>
+                  <td className="py-1.5 pr-2">{SHIFT_LABEL[s.shift] ?? s.shift}</td>
+                  <td className="py-1.5 pr-2">{s.employeeName}</td>
+                  <td className="py-1.5 pr-2 text-right">{s.paidCents > 0 ? formatArsFromCents(s.paidCents) : "sin cobros"}</td>
+                  <td className="py-1.5 pl-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Link className="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs hover:bg-amber-100" href={`/caja/cierres/${s.id}`}>
+                        Ver
+                      </Link>
+                      {role === "GERENCIA" ? (
+                        <CloseStaleSessionButton
+                          cashSessionId={s.id}
+                          label={`${formatBusinessDate(s.businessDate)} ${SHIFT_LABEL[s.shift] ?? s.shift} — ${s.employeeName}`}
+                        />
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
 
       <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
         <form className="grid gap-3 sm:grid-cols-6">

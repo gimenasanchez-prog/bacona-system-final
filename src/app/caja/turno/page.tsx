@@ -12,6 +12,8 @@ import { LocalExpenseModal } from "./LocalExpenseModal";
 import { EnvelopeDepositCard } from "./EnvelopeDepositCard";
 import { SessionSalesCard } from "./SessionSalesCard";
 
+const SHIFT_LABEL: Record<string, string> = { MANIANA: "Mañana", TARDE: "Tarde", NOCHE: "Noche" };
+
 function LabelValue(props: { label: string; value: React.ReactNode }) {
   return (
     <div>
@@ -32,7 +34,10 @@ function SummaryCard(props: { title: string; amountCents: number; subtle?: boole
   );
 }
 
-export default async function CajaTurnoPage() {
+export default async function CajaTurnoPage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { aviso } = await props.searchParams;
   const cashSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
   if (!cashSessionId) redirect("/caja/abrir");
   const role = (await cookies()).get("bcn_role")?.value ?? null;
@@ -62,8 +67,30 @@ export default async function CajaTurnoPage() {
     select: { envelopeCode: true },
   });
 
+  const isOpen = summary.cashSession.status === "OPEN";
+  const stale = isOpen && CashSessionService.isStale(summary.cashSession.openedAt);
+  const turnoLabel = `${formatBusinessDate(summary.cashSession.businessDate)} (${SHIFT_LABEL[summary.cashSession.shift] ?? summary.cashSession.shift})`;
+
   return (
     <div className="mx-auto w-full max-w-5xl p-4">
+      {isOpen && aviso === "cerrar-antes-de-salir" ? (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <b>Cerrá tu turno antes de salir.</b> Este turno tiene ventas o egresos cargados: si salís sin cerrarlo, no
+          aparece en el consolidado. Bajá hasta &quot;Cerrar turno&quot;.
+        </div>
+      ) : null}
+      {isOpen && aviso === "turno-pendiente" ? (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <b>Tenés un turno anterior sin cerrar: {turnoLabel}.</b> Lo abrimos para que lo cierres primero. Después
+          podés abrir el turno de hoy.
+        </div>
+      ) : null}
+      {stale && aviso !== "turno-pendiente" ? (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+          <b>Este turno es del {turnoLabel} y sigue abierto.</b> No se pueden cargar ventas nuevas en un turno viejo.
+          Cerralo y abrí el turno de hoy.
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-lg font-semibold">Tu turno</div>

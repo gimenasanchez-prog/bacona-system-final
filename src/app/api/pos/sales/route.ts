@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 import { PosSaleService } from "@/modules/ventas_pos/services/posSaleService";
 import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
@@ -19,14 +20,21 @@ export async function POST(req: Request) {
   }
 
   const cookieCashSessionId = (await cookies()).get("bcn_cashSessionId")?.value ?? null;
-  const cashSessionId =
-    cookieCashSessionId &&
-    (await prisma.cashSession.findFirst({
-      where: { id: cookieCashSessionId, status: "OPEN" },
-      select: { id: true },
-    }))
-      ? cookieCashSessionId
-      : null;
+  const openSession = cookieCashSessionId
+    ? await prisma.cashSession.findFirst({
+        where: { id: cookieCashSessionId, status: "OPEN" },
+        select: { id: true, openedAt: true },
+      })
+    : null;
+  // Un turno abierto hace más de un día no puede recibir ventas nuevas: quedarían en la
+  // fecha vieja y ese turno nunca se cierra (ej. ventas de semanas cargadas al 17/08).
+  if (openSession && CashSessionService.isStale(openSession.openedAt)) {
+    return NextResponse.json(
+      { error: "Tu turno es de otro día y sigue abierto. Cerralo desde \"Tu turno\" y abrí el turno de hoy." },
+      { status: 409 }
+    );
+  }
+  const cashSessionId = openSession?.id ?? null;
 
   const sale = await PosSaleService.createDraft({
     saleType: parsed.data.saleType,

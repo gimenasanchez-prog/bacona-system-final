@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { STALE_SESSION_HOURS } from "@/modules/caja/services/cashSessionService";
 
 export class ConsolidatedClosuresService {
   static async listCashClosures(params: {
@@ -99,6 +100,31 @@ export class ConsolidatedClosuresService {
         // contado − esperado: negativo = faltante, positivo = sobrante
         differenceCents: e.actualAmountCents! - e.expectedAmountCents,
       }));
+  }
+
+  /**
+   * Turnos abiertos hace más de STALE_SESSION_HOURS. Sus ventas no suman al consolidado
+   * (que lee el snapshot del cierre) hasta que se cierran, así que se muestran aparte.
+   */
+  static async listStaleOpenSessions() {
+    const cutoff = new Date(Date.now() - STALE_SESSION_HOURS * 3600_000);
+    const sessions = await prisma.cashSession.findMany({
+      where: { status: "OPEN", openedAt: { lt: cutoff } },
+      include: {
+        employee: { select: { displayName: true } },
+        sales: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { amountCents: true } } } },
+        _count: { select: { localExpenses: true } },
+      },
+      orderBy: { businessDate: "asc" },
+    });
+    return sessions.map((s) => ({
+      id: s.id,
+      businessDate: s.businessDate,
+      shift: s.shift,
+      employeeName: s.employee.displayName,
+      paidCents: s.sales.flatMap((x) => x.payments).reduce((a, p) => a + p.amountCents, 0),
+      expensesCount: s._count.localExpenses,
+    }));
   }
 
   static async deleteCashSession(cashSessionId: string): Promise<void> {
