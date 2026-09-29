@@ -1,6 +1,7 @@
 import { PosPaymentMethod } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 
 export class PosPaymentService {
   static validatePaymentInput(params: {
@@ -31,14 +32,24 @@ export class PosPaymentService {
   }) {
     this.validatePaymentInput(params);
 
-    return prisma.posPayment.create({
-      data: {
-        saleId: params.saleId,
-        method: params.method,
-        amountCents: params.amountCents,
-        cuentaCorrienteAccountId: params.cuentaCorrienteAccountId ?? null,
-        employeeId: params.employeeId ?? null,
-      },
+    return prisma.$transaction(async (tx) => {
+      const payment = await tx.posPayment.create({
+        data: {
+          saleId: params.saleId,
+          method: params.method,
+          amountCents: params.amountCents,
+          cuentaCorrienteAccountId: params.cuentaCorrienteAccountId ?? null,
+          employeeId: params.employeeId ?? null,
+        },
+        include: { sale: { select: { cashSessionId: true } } },
+      });
+      // Un cobro puede caer en un turno que ya generó sobre (o ya cerró, p.ej. una mesa
+      // que se paga en el turno siguiente): el sobre y el consolidado deben reflejarlo.
+      if (payment.sale.cashSessionId) {
+        await CashSessionService.syncAfterSessionChange(payment.sale.cashSessionId, tx);
+      }
+      const { sale: _sale, ...rest } = payment;
+      return rest;
     });
   }
 }

@@ -6,7 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { formatArsFromCents } from "@/lib/money";
 import { formatBusinessDate, getCurrentMonthRange } from "@/lib/dates";
 import { ConsolidatedClosuresService } from "@/modules/consolidado_cierres/services/consolidatedClosuresService";
-import { updateEnvelopeStatusAction } from "@/modules/sobres/actions/envelopeActions";
+import { ENVELOPE_STATUS_LABEL } from "@/modules/sobres/lib/envelopeStatus";
+import { EnvelopeStatusBadge } from "../sobres/EnvelopeStatusBadge";
 import { DeleteSessionButton } from "./DeleteSessionButton";
 
 const SHIFT_LABEL: Record<string, string> = {
@@ -14,21 +15,6 @@ const SHIFT_LABEL: Record<string, string> = {
   TARDE: "Tarde",
   NOCHE: "Noche",
 };
-
-function EnvelopeBadge(props: { status: string | null }) {
-  const status = props.status ?? "—";
-  const cls =
-    status === "CONTROLLED"
-      ? "bg-green-50 text-green-700"
-      : status === "NOT_CONTROLLED"
-        ? "bg-red-50 text-red-700"
-        : status === "OPENED"
-          ? "bg-yellow-50 text-yellow-700"
-          : status === "CLOSED"
-            ? "bg-neutral-100 text-neutral-700"
-            : "bg-neutral-100 text-neutral-700";
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{status}</span>;
-}
 
 export default async function ConsolidadoCierresPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -54,7 +40,7 @@ export default async function ConsolidadoCierresPage(props: {
       : undefined;
   const employeeId = typeof sp.employeeId === "string" && sp.employeeId ? sp.employeeId : undefined;
 
-  const [employees, rows, internalBreakdown, shortfallBreakdown] = await Promise.all([
+  const [employees, rows, internalBreakdown, differenceBreakdown] = await Promise.all([
     prisma.employee.findMany({
       where: { isActive: true },
       select: { id: true, displayName: true },
@@ -76,7 +62,7 @@ export default async function ConsolidadoCierresPage(props: {
       cashSessionStatus,
       envelopeStatus,
     }),
-    ConsolidatedClosuresService.getEnvelopeShortfallBreakdown({
+    ConsolidatedClosuresService.getEnvelopeDifferenceBreakdown({
       from,
       to,
       shift,
@@ -104,7 +90,12 @@ export default async function ConsolidadoCierresPage(props: {
             (s, r) => s + (r.envelope?.actualAmountCents ?? r.envelope?.expectedAmountCents ?? 0),
             0
           ),
-          shortfall: shortfallBreakdown.reduce((s, b) => s + b.shortfallCents, 0),
+          envelopeShortfall: differenceBreakdown
+            .filter((b) => b.differenceCents < 0)
+            .reduce((s, b) => s - b.differenceCents, 0),
+          envelopeSurplus: differenceBreakdown
+            .filter((b) => b.differenceCents > 0)
+            .reduce((s, b) => s + b.differenceCents, 0),
         }
       : null;
 
@@ -163,10 +154,10 @@ export default async function ConsolidadoCierresPage(props: {
             <div className="text-xs text-neutral-500">Estado sobre</div>
             <select name="envelopeStatus" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={envelopeStatus ?? ""}>
               <option value="">—</option>
-              <option value="CLOSED">Cerrado</option>
-              <option value="OPENED">Abierto</option>
-              <option value="CONTROLLED">Controlado</option>
-              <option value="NOT_CONTROLLED">No controlado</option>
+              <option value="CLOSED">{ENVELOPE_STATUS_LABEL.CLOSED}</option>
+              <option value="OPENED">{ENVELOPE_STATUS_LABEL.OPENED}</option>
+              <option value="CONTROLLED">{ENVELOPE_STATUS_LABEL.CONTROLLED}</option>
+              <option value="NOT_CONTROLLED">{ENVELOPE_STATUS_LABEL.NOT_CONTROLLED}</option>
             </select>
           </div>
           <div className="sm:col-span-6 flex justify-end">
@@ -257,25 +248,45 @@ export default async function ConsolidadoCierresPage(props: {
               <span className="font-medium">{formatArsFromCents(totals.internal)}</span>
             </div>
           )}
-          {shortfallBreakdown.length > 0 && (
+          {differenceBreakdown.length > 0 && (
             <details className="mt-2 border-t pt-2 text-sm">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
                 <span className="text-neutral-500">
-                  Pérdidas / faltantes <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
+                  Diferencias de sobres <span className="text-xs text-neutral-400">(ver detalle ▾)</span>
                 </span>
-                <span className="font-medium text-red-700">{formatArsFromCents(totals.shortfall)}</span>
+                <span className="flex gap-3 font-medium">
+                  <span className="text-red-700">Faltan {formatArsFromCents(totals.envelopeShortfall)}</span>
+                  <span className="text-blue-700">Sobran {formatArsFromCents(totals.envelopeSurplus)}</span>
+                </span>
               </summary>
               <div className="mt-2 overflow-auto rounded-md border">
                 <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-neutral-500">
+                      <th className="px-3 py-1.5 text-left font-medium">Fecha</th>
+                      <th className="px-3 py-1.5 text-left font-medium">Turno</th>
+                      <th className="px-3 py-1.5 text-left font-medium">Asociada/o</th>
+                      <th className="px-3 py-1.5 text-left font-medium">Sobre</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Esperado</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Contado</th>
+                      <th className="px-3 py-1.5 text-right font-medium">Diferencia</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {shortfallBreakdown.map((b) => (
+                    {differenceBreakdown.map((b) => (
                       <tr key={b.envelopeId} className="border-b last:border-b-0">
                         <td className="px-3 py-1.5 whitespace-nowrap">{formatBusinessDate(b.businessDate)}</td>
                         <td className="px-3 py-1.5">{SHIFT_LABEL[b.shift] ?? b.shift}</td>
                         <td className="px-3 py-1.5">{b.employeeName}</td>
                         <td className="px-3 py-1.5 font-mono text-xs">{b.envelopeCode}</td>
-                        <td className="px-3 py-1.5 text-right font-medium text-red-700">
-                          {formatArsFromCents(b.shortfallCents)}
+                        <td className="px-3 py-1.5 text-right">{formatArsFromCents(b.expectedAmountCents)}</td>
+                        <td className="px-3 py-1.5 text-right">{formatArsFromCents(b.actualAmountCents)}</td>
+                        <td
+                          className={`px-3 py-1.5 text-right font-medium ${b.differenceCents < 0 ? "text-red-700" : "text-blue-700"}`}
+                        >
+                          {b.differenceCents < 0
+                            ? `Faltan ${formatArsFromCents(-b.differenceCents)}`
+                            : `Sobran ${formatArsFromCents(b.differenceCents)}`}
                         </td>
                       </tr>
                     ))}
@@ -330,7 +341,7 @@ export default async function ConsolidadoCierresPage(props: {
                 </td>
                 <td className="px-2 py-2 font-mono text-xs">{r.envelope?.envelopeCode ?? "—"}</td>
                 <td className="px-2 py-2">
-                  <EnvelopeBadge status={r.envelope?.status ?? null} />
+                  <EnvelopeStatusBadge envelope={r.envelope} />
                 </td>
                 <td className="px-2 py-2">
                   <div className="flex flex-wrap gap-2">
@@ -341,25 +352,6 @@ export default async function ConsolidadoCierresPage(props: {
                       <Link className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-50" href={`/caja/sobres/${r.envelope.id}`}>
                         Ver sobre
                       </Link>
-                    ) : null}
-
-                    {r.envelope ? (
-                      <form action={updateEnvelopeStatusAction} className="flex items-center gap-1">
-                        <input type="hidden" name="envelopeId" value={r.envelope.id} />
-                        <select
-                          name="status"
-                          className="rounded-md border px-2 py-1 text-xs"
-                          defaultValue={r.envelope.status}
-                        >
-                          <option value="CLOSED">CERRADO</option>
-                          <option value="OPENED">ABIERTO</option>
-                          <option value="CONTROLLED">CONTROLADO</option>
-                          <option value="NOT_CONTROLLED">NO_CONTROLADO</option>
-                        </select>
-                        <button className="rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white">
-                          Guardar
-                        </button>
-                      </form>
                     ) : null}
 
                     <DeleteSessionButton

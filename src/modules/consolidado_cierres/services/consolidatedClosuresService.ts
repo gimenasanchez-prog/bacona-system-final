@@ -62,7 +62,8 @@ export class ConsolidatedClosuresService {
       .sort((a, b) => b.amountCents - a.amountCents);
   }
 
-  static async getEnvelopeShortfallBreakdown(params: {
+  /** Sobres contados cuyo monto no coincide con el esperado (faltantes y sobrantes). */
+  static async getEnvelopeDifferenceBreakdown(params: {
     from?: Date;
     to?: Date;
     shift?: "MANIANA" | "TARDE" | "NOCHE";
@@ -86,14 +87,17 @@ export class ConsolidatedClosuresService {
     });
 
     return envelopes
-      .filter((e) => e.actualAmountCents! < e.expectedAmountCents)
+      .filter((e) => e.actualAmountCents! !== e.expectedAmountCents)
       .map((e) => ({
         envelopeId: e.id,
         envelopeCode: e.envelopeCode,
         employeeName: e.cashSession.employee.displayName,
         businessDate: e.cashSession.businessDate,
         shift: e.cashSession.shift,
-        shortfallCents: e.expectedAmountCents - e.actualAmountCents!,
+        expectedAmountCents: e.expectedAmountCents,
+        actualAmountCents: e.actualAmountCents!,
+        // contado − esperado: negativo = faltante, positivo = sobrante
+        differenceCents: e.actualAmountCents! - e.expectedAmountCents,
       }));
   }
 

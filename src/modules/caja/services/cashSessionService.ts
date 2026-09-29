@@ -311,6 +311,7 @@ export class CashSessionService {
     }
 
     await prisma.$transaction(async (tx) => {
+      await this.syncEnvelopeExpectedAmount(params.cashSessionId, tx);
       await this.persistSnapshot(tx, params.cashSessionId, summary, {
         status: "CLOSED",
         closedAt: new Date(),
@@ -337,6 +338,46 @@ export class CashSessionService {
 
     const summary = await this.getCashSessionSummary(cashSessionId, client);
     await this.persistSnapshot(client, cashSessionId, summary);
+  }
+
+  /**
+   * Mantiene el monto esperado del sobre igual a (efectivo cobrado − egresos en
+   * efectivo del turno). El sobre se genera antes de cerrar el turno, así que
+   * cualquier cobro, egreso o anulación posterior tiene que reflejarse acá; si
+   * no, el sobre queda con un "esperado" que no coincide con el consolidado.
+   * Si el sobre ya fue contado, se re-evalúa CONTROLLED / NOT_CONTROLLED.
+   */
+  static async syncEnvelopeExpectedAmount(cashSessionId: string, client: DbClient = prisma) {
+    const envelope = await client.envelope.findUnique({
+      where: { cashSessionId },
+      select: { id: true, status: true, expectedAmountCents: true, actualAmountCents: true },
+    });
+    if (!envelope) return null;
+
+    const summary = await this.getCashSessionSummary(cashSessionId, client);
+    const expected = summary.totals.expectedEnvelopeAmountCents;
+    if (expected === envelope.expectedAmountCents) return expected;
+
+    const counted =
+      envelope.actualAmountCents != null &&
+      (envelope.status === "CONTROLLED" || envelope.status === "NOT_CONTROLLED");
+
+    await client.envelope.update({
+      where: { id: envelope.id },
+      data: {
+        expectedAmountCents: expected,
+        ...(counted
+          ? { status: envelope.actualAmountCents === expected ? "CONTROLLED" : "NOT_CONTROLLED" }
+          : {}),
+      },
+    });
+    return expected;
+  }
+
+  /** Recalcula todo lo derivado de un turno (snapshot del consolidado + sobre). */
+  static async syncAfterSessionChange(cashSessionId: string, client: Prisma.TransactionClient) {
+    await this.recomputeClosedSessionSnapshot(cashSessionId, client);
+    await this.syncEnvelopeExpectedAmount(cashSessionId, client);
   }
 }
 

@@ -3,19 +3,11 @@ import Link from "next/link";
 import { formatArsFromCents } from "@/lib/money";
 import { formatBusinessDate } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
-import { updateEnvelopeStatusAction } from "@/modules/sobres/actions/envelopeActions";
-
-function StatusBadge(props: { status: string }) {
-  const cls =
-    props.status === "CONTROLLED"
-      ? "bg-green-50 text-green-700"
-      : props.status === "NOT_CONTROLLED"
-        ? "bg-red-50 text-red-700"
-        : props.status === "OPENED"
-          ? "bg-yellow-50 text-yellow-700"
-          : "bg-neutral-100 text-neutral-700";
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{props.status}</span>;
-}
+import {
+  ENVELOPE_STATUS_LABEL,
+  envelopeDifferenceCents,
+} from "@/modules/sobres/lib/envelopeStatus";
+import { EnvelopeStatusBadge } from "../EnvelopeStatusBadge";
 
 export default async function SobreDetailPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
@@ -24,6 +16,7 @@ export default async function SobreDetailPage(props: { params: Promise<{ id: str
     include: { cashSession: { include: { employee: true } } },
   });
   if (!envelope) throw new Error("Envelope not found");
+  const diff = envelopeDifferenceCents(envelope);
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4">
@@ -31,7 +24,7 @@ export default async function SobreDetailPage(props: { params: Promise<{ id: str
         <div>
           <div className="text-lg font-semibold">Detalle sobre</div>
           <div className="mt-1 text-sm text-neutral-600">
-            <span className="font-mono">{envelope.envelopeCode}</span> · <StatusBadge status={envelope.status} />
+            <span className="font-mono">{envelope.envelopeCode}</span> · <EnvelopeStatusBadge envelope={envelope} />
           </div>
         </div>
         <Link className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50" href="/caja/consolidado">
@@ -58,43 +51,28 @@ export default async function SobreDetailPage(props: { params: Promise<{ id: str
             <div className="font-semibold">{formatArsFromCents(envelope.expectedAmountCents)}</div>
           </div>
           <div className="flex items-center justify-between">
-            <div>Actual</div>
+            <div>Contado</div>
             <div className="font-semibold">{envelope.actualAmountCents == null ? "—" : formatArsFromCents(envelope.actualAmountCents)}</div>
           </div>
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
-        <div className="text-sm font-semibold">Control / flags</div>
-        <form action={updateEnvelopeStatusAction} className="mt-3 grid gap-3 sm:grid-cols-3">
-          <input type="hidden" name="envelopeId" value={envelope.id} />
-          <div className="space-y-1">
-            <div className="text-xs text-neutral-500">Estado</div>
-            <select name="status" className="w-full rounded-md border px-2 py-1 text-sm" defaultValue={envelope.status}>
-              <option value="CLOSED">CERRADO</option>
-              <option value="OPENED">ABIERTO</option>
-              <option value="CONTROLLED">CONTROLADO</option>
-              <option value="NOT_CONTROLLED">NO_CONTROLADO</option>
-            </select>
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs text-neutral-500">Monto actual (centavos, opcional)</div>
-            <input
-              type="number"
-              name="actualAmountCents"
-              className="w-full rounded-md border px-2 py-1 text-sm"
-              defaultValue={envelope.actualAmountCents ?? undefined}
-              min={1}
-              step={1}
-            />
-          </div>
-          <div className="flex items-end justify-end">
-            <button className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white">
-              Guardar
-            </button>
-          </div>
-        </form>
-      </div>
+      {diff != null ? (
+        <div
+          className={`mt-4 rounded-lg border p-4 text-sm ${diff === 0 ? "border-green-200 bg-green-50 text-green-800" : diff < 0 ? "border-red-200 bg-red-50 text-red-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}
+        >
+          {diff === 0
+            ? "El monto contado coincide con el esperado."
+            : diff < 0
+              ? `Faltan ${formatArsFromCents(-diff)} respecto de lo esperado.`
+              : `Sobran ${formatArsFromCents(diff)} respecto de lo esperado.`}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-lg border bg-neutral-50 p-4 text-sm text-neutral-600">
+          {ENVELOPE_STATUS_LABEL[envelope.status]}. El sobre se controla al abrirlo y contarlo desde Caja BCÑ o Caja
+          Gerencia.
+        </div>
+      )}
 
       <div className="mt-4">
         <Link

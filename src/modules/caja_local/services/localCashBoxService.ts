@@ -1,6 +1,7 @@
 import { CashBoxKind, PosPaymentMethod } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 import { addBusinessDays } from "@/lib/businessDays";
 
 export type PaymentMethodConfigInput = {
@@ -244,12 +245,14 @@ export class LocalCashBoxService {
       for (const item of items) {
         const env = await tx.envelope.findUnique({
           where: { id: item.envelopeId },
-          select: { id: true, status: true, envelopeCode: true, expectedAmountCents: true },
+          select: { id: true, status: true, envelopeCode: true, cashSessionId: true },
         });
         if (!env || env.status !== "CLOSED") continue;
 
+        const expectedAmountCents =
+          (await CashSessionService.syncEnvelopeExpectedAmount(env.cashSessionId, tx)) ?? 0;
         const finalStatus =
-          item.actualAmountCents === env.expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
+          item.actualAmountCents === expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
 
         await tx.envelope.update({
           where: { id: item.envelopeId },
@@ -313,13 +316,15 @@ export class LocalCashBoxService {
     return prisma.$transaction(async (tx) => {
       const env = await tx.envelope.findUnique({
         where: { id: params.envelopeId },
-        select: { id: true, status: true, envelopeCode: true, expectedAmountCents: true },
+        select: { id: true, status: true, envelopeCode: true, cashSessionId: true },
       });
       if (!env) throw new Error("Sobre no encontrado.");
       if (env.status !== "CLOSED") throw new Error("El sobre no está disponible para abrir.");
 
+      const expectedAmountCents =
+        (await CashSessionService.syncEnvelopeExpectedAmount(env.cashSessionId, tx)) ?? 0;
       const finalStatus =
-        params.actualAmountCents === env.expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
+        params.actualAmountCents === expectedAmountCents ? "CONTROLLED" : "NOT_CONTROLLED";
       const now = new Date();
 
       await tx.envelope.update({

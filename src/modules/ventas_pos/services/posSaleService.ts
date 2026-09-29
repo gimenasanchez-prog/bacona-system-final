@@ -293,7 +293,7 @@ export class PosSaleService {
       });
 
       if (sale.cashSessionId) {
-        await CashSessionService.recomputeClosedSessionSnapshot(sale.cashSessionId, tx);
+        await CashSessionService.syncAfterSessionChange(sale.cashSessionId, tx);
       }
 
       return updated;
@@ -330,7 +330,7 @@ export class PosSaleService {
         await StockMovementService.ensureReversalForSaleMovement(tx, saleId);
       }
 
-      return tx.posSale.update({
+      const updated = await tx.posSale.update({
         where: { id: saleId },
         data: {
           status: "CANCELLED",
@@ -338,6 +338,12 @@ export class PosSaleService {
           cancelledAt: new Date(),
         },
       });
+
+      if (sale.cashSessionId) {
+        await CashSessionService.syncAfterSessionChange(sale.cashSessionId, tx);
+      }
+
+      return updated;
     });
   }
 

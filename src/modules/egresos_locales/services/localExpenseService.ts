@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { CashSessionService } from "@/modules/caja/services/cashSessionService";
 import { StockDefaultsService } from "@/modules/stock/services/stockDefaultsService";
 
 export type CreateLocalExpenseInput = {
@@ -122,6 +123,11 @@ export class LocalExpenseService {
             },
           },
         });
+      }
+
+      // Un egreso en efectivo cargado después de generar el sobre tiene que bajar el esperado.
+      if (input.paymentSource === "SHIFT_CASH") {
+        await CashSessionService.syncEnvelopeExpectedAmount(input.cashSessionId, tx);
       }
 
       return expense;
