@@ -124,12 +124,14 @@ export function HorasTabClient({
         <div className="mt-1 text-lg font-bold text-neutral-800">{formatArsFromCents(totalAccruedCents)}</div>
       </div>
 
-      <p className="text-xs text-neutral-500">
-        El pago de sueldos operativos se hace desde <span className="font-medium">Egresos → Costos fijos</span> ("Sueldos Operativos"),
-        no desde acá. Se paga mes vencido: lo acumulado de {periodLabel(period)} va a aparecer como el monto a pagar
-        del costo fijo de <span className="font-medium">{nextPeriodLabel}</span>. Al pagarse el total del mes en
-        Costos Fijos, este mes queda marcado como pagado acá automáticamente.
-      </p>
+      <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <span className="font-semibold">
+          ⚠ Lo acumulado de {periodLabel(period)} se paga en {nextPeriodLabel}.
+        </span>{" "}
+        El pago de sueldos operativos se hace desde <span className="font-medium">Egresos → Costos fijos</span> ("Sueldos
+        Operativos"), no desde acá — se paga mes vencido. Al pagarse el total del mes en Costos Fijos, este mes queda
+        marcado como pagado acá automáticamente.
+      </div>
 
       {error && <p className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
 
