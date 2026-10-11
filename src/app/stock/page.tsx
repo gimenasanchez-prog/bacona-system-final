@@ -194,11 +194,28 @@ function ItemDetailPanel({ detail }: { detail: ItemDetail | "loading" | "error" 
   );
 }
 
+const SEMAFORO_LABEL: Record<DashboardItem["semaforo"], string> = {
+  GREEN: "Verde",
+  YELLOW: "Amarillo",
+  RED: "Rojo",
+};
+
+function normalizeText(s: string) {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+const EMPTY_NEW_ITEM = { name: "", categoryId: "", dimension: "COUNT", unit: "UN", displayUnit: "UN", targetDaysCover: 14 };
+
 export default function StockPage() {
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
   const [items, setItems] = useState<InventoryItem[]>([]);
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [semaforoFilter, setSemaforoFilter] = useState<DashboardItem["semaforo"] | "">("");
 
   // Dashboard row expansion
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -214,8 +231,8 @@ export default function StockPage() {
     }
   }
 
-  // New item form
-  const [newCatName, setNewCatName] = useState("");
+  // New item modal
+  const [newItemOpen, setNewItemOpen] = useState(false);
   const [newItem, setNewItem] = useState<{
     name: string;
     categoryId: string;
@@ -223,7 +240,9 @@ export default function StockPage() {
     unit: string;
     displayUnit: string;
     targetDaysCover: number;
-  }>({ name: "", categoryId: "", dimension: "COUNT", unit: "UN", displayUnit: "UN", targetDaysCover: 14 });
+  }>(EMPTY_NEW_ITEM);
+  const [newCatOpen, setNewCatOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
 
   // Item editor
   const [itemEditor, setItemEditor] = useState<{
@@ -249,7 +268,6 @@ export default function StockPage() {
     setDashboard(dash);
     setCategories(cats.categories);
     setItems(it.items);
-    setNewItem((prev) => ({ ...prev, categoryId: prev.categoryId || cats.categories[0]?.id || "" }));
   }
 
   useEffect(() => {
@@ -263,15 +281,34 @@ export default function StockPage() {
     })();
   }, []);
 
+  const itemsById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
+
+  // Items matching search + category (before the semáforo filter, so chip counts reflect them)
+  const baseFiltered = useMemo(() => {
+    const q = normalizeText(search.trim());
+    return (dashboard?.items ?? []).filter(
+      (it) => (!q || normalizeText(it.name).includes(q)) && (!categoryFilter || it.category.id === categoryFilter),
+    );
+  }, [dashboard?.items, search, categoryFilter]);
+
+  const semaforoCounts = useMemo(() => {
+    const counts = { GREEN: 0, YELLOW: 0, RED: 0 };
+    for (const it of baseFiltered) counts[it.semaforo]++;
+    return counts;
+  }, [baseFiltered]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, DashboardItem[]>();
-    for (const it of dashboard?.items ?? []) {
+    for (const it of baseFiltered) {
+      if (semaforoFilter && it.semaforo !== semaforoFilter) continue;
       const arr = map.get(it.category.name) ?? [];
       arr.push(it);
       map.set(it.category.name, arr);
     }
     return [...map.entries()];
-  }, [dashboard?.items]);
+  }, [baseFiltered, semaforoFilter]);
+
+  const hasFilters = !!search.trim() || !!categoryFilter || !!semaforoFilter;
 
   // When dimension changes, auto-set unit to base unit and displayUnit to same
   function onDimensionChange(dim: string, setter: (fn: (p: any) => any) => void) {
@@ -279,161 +316,367 @@ export default function StockPage() {
     setter((p) => ({ ...p, dimension: dim, unit: base, displayUnit: base }));
   }
 
+  function openEditor(it: InventoryItem) {
+    setError(null);
+    setNewUom({ label: "", unit: it.unit, multiplierToBase: "1", isDefaultForEntry: false });
+    setItemEditor({
+      open: true,
+      item: it,
+      name: it.name,
+      categoryId: it.category.id,
+      dimension: it.dimension,
+      unit: it.unit,
+      displayUnit: it.displayUnit,
+      targetDaysCover: it.targetDaysCover,
+    });
+  }
+
+  async function deleteItem(it: { id: string; name: string }) {
+    try {
+      setError(null);
+      if (!window.confirm(`¿Eliminar/desactivar "${it.name}"?`)) return;
+      await apiJson(`/api/stock/items/${it.id}`, { method: "DELETE" });
+      if (expandedItemId === it.id) setExpandedItemId(null);
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  function openNewItem() {
+    setError(null);
+    setNewCatOpen(false);
+    setNewCatName("");
+    setNewItem({ ...EMPTY_NEW_ITEM, categoryId: categoryFilter || categories[0]?.id || "" });
+    setNewItemOpen(true);
+  }
+
+  async function createCategory() {
+    try {
+      setError(null);
+      if (!newCatName.trim()) return;
+      const res = await apiJson<{ category: InventoryCategory }>("/api/stock/categories", {
+        method: "POST",
+        body: JSON.stringify({ name: newCatName.trim() }),
+      });
+      setNewCatName("");
+      setNewCatOpen(false);
+      await refreshAll();
+      setNewItem((p) => ({ ...p, categoryId: res.category.id }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  async function createItem() {
+    try {
+      setError(null);
+      if (!newItem.name.trim()) return setError("Falta el nombre del ítem.");
+      if (!newItem.categoryId) return setError("Elegí una categoría.");
+      await apiJson("/api/stock/items", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newItem.name.trim(),
+          categoryId: newItem.categoryId,
+          unit: newItem.unit,
+          dimension: newItem.dimension,
+          displayUnit: newItem.displayUnit,
+          targetDaysCover: newItem.targetDaysCover,
+        }),
+      });
+      setNewItemOpen(false);
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  const modalError = error ? (
+    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
+  ) : null;
+
+  const chipClass = (active: boolean) =>
+    `rounded-full border px-3 py-1 text-xs font-medium ${
+      active ? "border-neutral-900 bg-neutral-900 text-white" : "bg-white text-neutral-700 hover:bg-neutral-50"
+    }`;
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
-      {/* Dashboard */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-lg font-semibold">Stock</div>
-            <div className="text-sm text-neutral-600">
-              Ubicación: <b>{dashboard?.location.label ?? "—"}</b>
-            </div>
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-lg font-semibold">Stock</div>
+          <div className="text-sm text-neutral-600">
+            Ubicación: <b>{dashboard?.location.label ?? "—"}</b>
           </div>
-          <div className="flex gap-2">
-            <Link href="/stock/entrada" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
-              Entrada de stock
-            </Link>
-            <Link href="/stock/movimientos" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
-              Ver movimientos
-            </Link>
+          <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-neutral-500">
+            <span>Ir a:</span>
+            <Link href="/compras" className="underline hover:text-neutral-800">Compras</Link>
+            <Link href="/produccion" className="underline hover:text-neutral-800">Producción</Link>
+            <Link href="/mermas" className="underline hover:text-neutral-800">Mermas</Link>
           </div>
         </div>
-
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
-        ) : null}
-
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-sm font-semibold">Dashboard (semaforizado)</div>
-          <div className="mt-3 space-y-4">
-            {grouped.length === 0 ? (
-              <div className="text-sm text-neutral-600">No hay ítems de stock todavía.</div>
-            ) : (
-              grouped.map(([catName, arr]) => (
-                <div key={catName}>
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{catName}</div>
-                  <div className="overflow-auto rounded-md border">
-                    <table className="w-full text-sm">
-                      <thead className="bg-neutral-50 text-xs text-neutral-600">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Ítem</th>
-                          <th className="px-3 py-2 text-right">Actual</th>
-                          <th className="px-3 py-2 text-right">Recomendado</th>
-                          <th className="px-3 py-2 text-left">Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {arr.map((it) => {
-                          const isOpen = expandedItemId === it.id;
-                          const detail = detailCache.get(it.id);
-                          return (
-                            <Fragment key={it.id}>
-                              <tr
-                                className="border-t cursor-pointer hover:bg-neutral-50"
-                                onClick={() => toggleExpand(it.id)}
-                              >
-                                <td className="px-3 py-2">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-neutral-400 text-xs select-none">
-                                      {isOpen ? "▼" : "▶"}
-                                    </span>
-                                    <div>
-                                      <div className="font-medium">{it.name}</div>
-                                      <div className="text-xs text-neutral-500">
-                                        Unidad: <b>{it.displayUnit}</b> · Cover: <b>{it.targetDaysCover}d</b>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  {it.currentQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  {it.recommendedQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeColor(it.semaforo)}`}>
-                                    {it.semaforo}
-                                  </span>
-                                </td>
-                              </tr>
-                              {isOpen && (
-                                <tr className="border-t bg-neutral-50">
-                                  <td colSpan={4} className="px-4 py-3">
-                                    <ItemDetailPanel detail={detail ?? "loading"} />
-                                  </td>
-                                </tr>
-                              )}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+            onClick={openNewItem}
+          >
+            + Nuevo ítem
+          </button>
+          <Link href="/stock/entrada" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50">
+            Entrada de stock
+          </Link>
+          <Link href="/stock/movimientos" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50">
+            Ver movimientos
+          </Link>
         </div>
       </div>
 
-      {/* Sidebar */}
-      <div className="space-y-3">
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-sm font-semibold">Carga rápida</div>
-          <div className="mt-3 space-y-4">
-            {/* Nueva categoría */}
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-neutral-700">Nueva categoría</div>
-              <div className="flex gap-2">
-                <input
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  placeholder="Ej: Limpieza / Descartables / Materia prima"
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                />
-                <button
-                  className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
-                  onClick={async () => {
-                    try {
-                      setError(null);
-                      if (!newCatName.trim()) return;
-                      await apiJson("/api/stock/categories", { method: "POST", body: JSON.stringify({ name: newCatName.trim() }) });
-                      setNewCatName("");
-                      await refreshAll();
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Error");
-                    }
-                  }}
-                >
-                  Crear
-                </button>
+      {error && !newItemOpen && !itemEditor.open ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+      ) : null}
+
+      <div className="rounded-lg border bg-white p-3">
+        {/* Filters */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative sm:max-w-sm sm:flex-1">
+            <input
+              className="w-full rounded-md border px-3 py-2 pr-8 text-sm"
+              placeholder="Buscar ítem…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search ? (
+              <button
+                type="button"
+                aria-label="Limpiar búsqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-1 text-neutral-400 hover:text-neutral-700"
+                onClick={() => setSearch("")}
+              >
+                ✕
+              </button>
+            ) : null}
+          </div>
+          <select
+            className="rounded-md border px-3 py-2 text-sm sm:w-56"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="">Todas las categorías</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" className={chipClass(semaforoFilter === "")} onClick={() => setSemaforoFilter("")}>
+              Todos ({baseFiltered.length})
+            </button>
+            {(["RED", "YELLOW", "GREEN"] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={chipClass(semaforoFilter === s)}
+                onClick={() => setSemaforoFilter((prev) => (prev === s ? "" : s))}
+              >
+                {SEMAFORO_LABEL[s]} ({semaforoCounts[s]})
+              </button>
+            ))}
+          </div>
+          {hasFilters ? (
+            <button
+              type="button"
+              className="text-xs text-neutral-500 underline hover:text-neutral-800 sm:ml-auto"
+              onClick={() => {
+                setSearch("");
+                setCategoryFilter("");
+                setSemaforoFilter("");
+              }}
+            >
+              Limpiar filtros
+            </button>
+          ) : null}
+        </div>
+
+        {/* Dashboard */}
+        <div className="mt-4 space-y-4">
+          {!dashboard ? (
+            <div className="text-sm text-neutral-600">Cargando…</div>
+          ) : dashboard.items.length === 0 ? (
+            <div className="text-sm text-neutral-600">No hay ítems de stock todavía.</div>
+          ) : grouped.length === 0 ? (
+            <div className="text-sm text-neutral-600">
+              Sin resultados{search.trim() ? <> para «{search.trim()}»</> : null}.
+            </div>
+          ) : (
+            grouped.map(([catName, arr]) => (
+              <div key={catName}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{catName}</div>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-xs text-neutral-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Ítem</th>
+                        <th className="px-3 py-2 text-right">Actual</th>
+                        <th className="px-3 py-2 text-right">Recomendado</th>
+                        <th className="px-3 py-2 text-left">Estado</th>
+                        <th className="px-3 py-2 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {arr.map((it) => {
+                        const isOpen = expandedItemId === it.id;
+                        const detail = detailCache.get(it.id);
+                        const full = itemsById.get(it.id);
+                        return (
+                          <Fragment key={it.id}>
+                            <tr
+                              className="border-t cursor-pointer hover:bg-neutral-50"
+                              onClick={() => toggleExpand(it.id)}
+                            >
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-neutral-400 text-xs select-none">
+                                    {isOpen ? "▼" : "▶"}
+                                  </span>
+                                  <div>
+                                    <div className="font-medium">{it.name}</div>
+                                    <div className="text-xs text-neutral-500">
+                                      Unidad: <b>{it.displayUnit}</b> · Cobertura: <b>{it.targetDaysCover}d</b>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right">
+                                {it.currentQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right">
+                                {it.recommendedQty} <span className="text-xs text-neutral-500">{it.displayUnit}</span>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${badgeColor(it.semaforo)}`}>
+                                  {SEMAFORO_LABEL[it.semaforo]}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="inline-flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50"
+                                    disabled={!full}
+                                    onClick={() => full && openEditor(full)}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                                    onClick={() => deleteItem(it)}
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            {isOpen && (
+                              <tr className="border-t bg-neutral-50">
+                                <td colSpan={5} className="px-4 py-3">
+                                  <ItemDetailPanel detail={detail ?? "loading"} />
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* New item modal */}
+      {newItemOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+          <div className="w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl" style={{ maxHeight: "90vh" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-base font-semibold">Nuevo ítem de stock</div>
+              <button type="button" className="rounded-md border px-2 py-1 text-sm" onClick={() => setNewItemOpen(false)}>
+                Cerrar
+              </button>
             </div>
 
-            {/* Nuevo ítem */}
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-neutral-700">Nuevo ítem</div>
-              <input
-                className="w-full rounded-md border px-3 py-2 text-sm"
-                placeholder="Ej: Jamón / Aceite / Coca-Cola"
-                value={newItem.name}
-                onChange={(e) => setNewItem((p) => ({ ...p, name: e.target.value }))}
-              />
-              <div className="grid gap-2 sm:grid-cols-2">
+            {modalError}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-neutral-700 sm:col-span-2">
+                Nombre
+                <input
+                  autoFocus
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="Ej: Jamón / Aceite / Coca-Cola"
+                  value={newItem.name}
+                  onChange={(e) => setNewItem((p) => ({ ...p, name: e.target.value }))}
+                />
+              </label>
+              <div className="text-xs text-neutral-700 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span>Categoría</span>
+                  {!newCatOpen ? (
+                    <button type="button" className="text-xs underline hover:text-neutral-900" onClick={() => setNewCatOpen(true)}>
+                      + Nueva categoría
+                    </button>
+                  ) : null}
+                </div>
+                {newCatOpen ? (
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      autoFocus
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      placeholder="Ej: Limpieza / Descartables"
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") createCategory();
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+                      onClick={createCategory}
+                    >
+                      Crear
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border px-3 py-2 text-sm"
+                      onClick={() => {
+                        setNewCatOpen(false);
+                        setNewCatName("");
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                    value={newItem.categoryId}
+                    onChange={(e) => setNewItem((p) => ({ ...p, categoryId: e.target.value }))}
+                  >
+                    <option value="">— Categoría —</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <label className="text-xs text-neutral-700">
+                Tipo de medida
                 <select
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={newItem.categoryId}
-                  onChange={(e) => setNewItem((p) => ({ ...p, categoryId: e.target.value }))}
-                >
-                  <option value="">— Categoría —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
                   value={newItem.dimension}
                   onChange={(e) => onDimensionChange(e.target.value, setNewItem)}
                 >
@@ -441,160 +684,53 @@ export default function StockPage() {
                   <option value="VOLUME">Volumen (ML/L)</option>
                   <option value="MASS">Peso (G/KG)</option>
                 </select>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="text-xs text-neutral-600">
-                  Unidad base (ledger)
-                  <select
-                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                    value={newItem.unit}
-                    onChange={(e) => setNewItem((p) => ({ ...p, unit: e.target.value }))}
-                  >
-                    {(UNITS_BY_DIMENSION[newItem.dimension] ?? ["UN"]).map((u) => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-xs text-neutral-600">
-                  Unidad de display
-                  <select
-                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                    value={newItem.displayUnit}
-                    onChange={(e) => setNewItem((p) => ({ ...p, displayUnit: e.target.value }))}
-                  >
-                    {(UNITS_BY_DIMENSION[newItem.dimension] ?? ["UN"]).map((u) => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="text-xs text-neutral-600">
-                  Target days cover
-                  <input
-                    type="number"
-                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                    value={newItem.targetDaysCover}
-                    onChange={(e) => setNewItem((p) => ({ ...p, targetDaysCover: Number(e.target.value) }))}
-                    min={1}
-                    max={365}
-                  />
-                </label>
-                <button
-                  className="mt-5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
-                  onClick={async () => {
-                    try {
-                      setError(null);
-                      if (!newItem.name.trim() || !newItem.categoryId) return;
-                      await apiJson("/api/stock/items", {
-                        method: "POST",
-                        body: JSON.stringify({
-                          name: newItem.name.trim(),
-                          categoryId: newItem.categoryId,
-                          unit: newItem.unit,
-                          dimension: newItem.dimension,
-                          displayUnit: newItem.displayUnit,
-                          targetDaysCover: newItem.targetDaysCover,
-                        }),
-                      });
-                      setNewItem((p) => ({ ...p, name: "" }));
-                      await refreshAll();
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Error");
-                    }
-                  }}
+              </label>
+              <label className="text-xs text-neutral-700">
+                Días de cobertura
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  value={newItem.targetDaysCover}
+                  onChange={(e) => setNewItem((p) => ({ ...p, targetDaysCover: Number(e.target.value) }))}
+                  min={1}
+                  max={365}
+                />
+              </label>
+              <label className="text-xs text-neutral-700">
+                Unidad base (ledger)
+                <select
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  value={newItem.unit}
+                  onChange={(e) => setNewItem((p) => ({ ...p, unit: e.target.value }))}
                 >
-                  Crear ítem
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-md border bg-neutral-50 p-3 text-sm text-neutral-700">
-              <div className="font-medium">Módulos relacionados</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Link href="/compras" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50">Compras</Link>
-                <Link href="/produccion" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50">Producción</Link>
-                <Link href="/mermas" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50">Mermas</Link>
-              </div>
+                  {(UNITS_BY_DIMENSION[newItem.dimension] ?? ["UN"]).map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-neutral-700">
+                Unidad de display
+                <select
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  value={newItem.displayUnit}
+                  onChange={(e) => setNewItem((p) => ({ ...p, displayUnit: e.target.value }))}
+                >
+                  {(UNITS_BY_DIMENSION[newItem.dimension] ?? ["UN"]).map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white sm:col-span-2"
+                onClick={createItem}
+              >
+                Crear ítem
+              </button>
             </div>
           </div>
         </div>
-
-        {/* Items list */}
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-sm font-semibold">Ítems activos</div>
-          <div className="mt-2 max-h-72 overflow-auto rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-xs text-neutral-600">
-                <tr>
-                  <th className="px-3 py-2 text-left">Nombre</th>
-                  <th className="px-3 py-2 text-left">Categoría</th>
-                  <th className="px-3 py-2 text-left">Unidad</th>
-                  <th className="px-3 py-2 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => (
-                  <tr key={it.id} className="border-t">
-                    <td className="px-3 py-2">{it.name}</td>
-                    <td className="px-3 py-2 text-neutral-600">{it.category.name}</td>
-                    <td className="px-3 py-2 text-neutral-600">
-                      {it.displayUnit}
-                      {it.unit !== it.displayUnit ? (
-                        <span className="ml-1 text-xs text-neutral-400">(base: {it.unit})</span>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-50"
-                          onClick={() => {
-                            setNewUom({ label: "", unit: it.unit, multiplierToBase: "1", isDefaultForEntry: false });
-                            setItemEditor({
-                              open: true,
-                              item: it,
-                              name: it.name,
-                              categoryId: it.category.id,
-                              dimension: it.dimension,
-                              unit: it.unit,
-                              displayUnit: it.displayUnit,
-                              targetDaysCover: it.targetDaysCover,
-                            });
-                          }}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-md border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
-                          onClick={async () => {
-                            try {
-                              setError(null);
-                              if (!window.confirm(`¿Eliminar/desactivar "${it.name}"?`)) return;
-                              await apiJson(`/api/stock/items/${it.id}`, { method: "DELETE" });
-                              await refreshAll();
-                            } catch (e) {
-                              setError(e instanceof Error ? e.message : "Error");
-                            }
-                          }}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {!items.length ? (
-                  <tr>
-                    <td className="px-3 py-6 text-sm text-neutral-600" colSpan={4}>Sin ítems todavía.</td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      ) : null}
 
       {/* Item editor modal */}
       {itemEditor.open && itemEditor.item ? (
@@ -613,6 +749,8 @@ export default function StockPage() {
                 Cerrar
               </button>
             </div>
+
+            {modalError}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-neutral-700 sm:col-span-2">
@@ -636,7 +774,7 @@ export default function StockPage() {
                 </select>
               </label>
               <label className="text-xs text-neutral-700">
-                Dimensión
+                Tipo de medida
                 <select
                   className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
                   value={itemEditor.dimension}
@@ -672,7 +810,7 @@ export default function StockPage() {
                 </select>
               </label>
               <label className="text-xs text-neutral-700">
-                Target days cover
+                Días de cobertura
                 <input
                   type="number"
                   className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
