@@ -217,6 +217,23 @@ export default function StockPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [semaforoFilter, setSemaforoFilter] = useState<DashboardItem["semaforo"] | "">("");
 
+  // Category groups: collapsed by default; all open while filtering
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
+
+  function toggleCat(catName: string) {
+    setExpandedCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(catName)) next.delete(catName);
+      else next.add(catName);
+      return next;
+    });
+  }
+
+  // Categories manager modal
+  const [catsOpen, setCatsOpen] = useState(false);
+  const [catEdit, setCatEdit] = useState<{ id: string; name: string } | null>(null);
+  const [catsNewName, setCatsNewName] = useState("");
+
   // Dashboard row expansion
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [detailCache, setDetailCache] = useState<Map<string, ItemDetail | "loading" | "error">>(new Map());
@@ -309,6 +326,51 @@ export default function StockPage() {
   }, [baseFiltered, semaforoFilter]);
 
   const hasFilters = !!search.trim() || !!categoryFilter || !!semaforoFilter;
+
+  const itemCountByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const it of items) map.set(it.category.id, (map.get(it.category.id) ?? 0) + 1);
+    return map;
+  }, [items]);
+
+  async function renameCategory() {
+    try {
+      setError(null);
+      if (!catEdit || !catEdit.name.trim()) return;
+      await apiJson(`/api/stock/categories/${catEdit.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: catEdit.name.trim() }),
+      });
+      setCatEdit(null);
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  async function deleteCategory(c: InventoryCategory) {
+    try {
+      setError(null);
+      if (!window.confirm(`¿Eliminar la categoría "${c.name}"?`)) return;
+      await apiJson(`/api/stock/categories/${c.id}`, { method: "DELETE" });
+      if (categoryFilter === c.id) setCategoryFilter("");
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  async function createCategoryFromManager() {
+    try {
+      setError(null);
+      if (!catsNewName.trim()) return;
+      await apiJson("/api/stock/categories", { method: "POST", body: JSON.stringify({ name: catsNewName.trim() }) });
+      setCatsNewName("");
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  }
 
   // When dimension changes, auto-set unit to base unit and displayUnit to same
   function onDimensionChange(dim: string, setter: (fn: (p: any) => any) => void) {
@@ -424,6 +486,18 @@ export default function StockPage() {
           >
             + Nuevo ítem
           </button>
+          <button
+            type="button"
+            className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50"
+            onClick={() => {
+              setError(null);
+              setCatEdit(null);
+              setCatsNewName("");
+              setCatsOpen(true);
+            }}
+          >
+            Categorías
+          </button>
           <Link href="/stock/entrada" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-neutral-50">
             Entrada de stock
           </Link>
@@ -433,7 +507,7 @@ export default function StockPage() {
         </div>
       </div>
 
-      {error && !newItemOpen && !itemEditor.open ? (
+      {error && !newItemOpen && !itemEditor.open && !catsOpen ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
       ) : null}
 
@@ -499,7 +573,7 @@ export default function StockPage() {
         </div>
 
         {/* Dashboard */}
-        <div className="mt-4 space-y-4">
+        <div className="mt-4 space-y-2">
           {!dashboard ? (
             <div className="text-sm text-neutral-600">Cargando…</div>
           ) : dashboard.items.length === 0 ? (
@@ -509,10 +583,53 @@ export default function StockPage() {
               Sin resultados{search.trim() ? <> para «{search.trim()}»</> : null}.
             </div>
           ) : (
-            grouped.map(([catName, arr]) => (
-              <div key={catName}>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{catName}</div>
-                <div className="overflow-x-auto rounded-md border">
+            <>
+            {!hasFilters ? (
+              <div className="flex justify-end gap-3 text-xs text-neutral-500">
+                <button
+                  type="button"
+                  className="underline hover:text-neutral-800"
+                  onClick={() => setExpandedCats(new Set(grouped.map(([n]) => n)))}
+                >
+                  Expandir todo
+                </button>
+                <button type="button" className="underline hover:text-neutral-800" onClick={() => setExpandedCats(new Set())}>
+                  Contraer todo
+                </button>
+              </div>
+            ) : null}
+            {grouped.map(([catName, arr]) => {
+              const catOpen = hasFilters || expandedCats.has(catName);
+              const redCount = arr.filter((it) => it.semaforo === "RED").length;
+              const yellowCount = arr.filter((it) => it.semaforo === "YELLOW").length;
+              return (
+              <div key={catName} className="rounded-md border">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-neutral-50"
+                  onClick={() => toggleCat(catName)}
+                  disabled={hasFilters}
+                >
+                  <span className="w-3 select-none text-xs text-neutral-400">{catOpen ? "▼" : "▶"}</span>
+                  <span className="text-sm font-semibold uppercase tracking-wide text-neutral-700">{catName}</span>
+                  <span className="text-xs text-neutral-500">
+                    {arr.length} ítem{arr.length === 1 ? "" : "s"}
+                  </span>
+                  <span className="ml-auto flex gap-1.5">
+                    {redCount > 0 ? (
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badgeColor("RED")}`}>
+                        {redCount} en rojo
+                      </span>
+                    ) : null}
+                    {yellowCount > 0 ? (
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badgeColor("YELLOW")}`}>
+                        {yellowCount} en amarillo
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+                {catOpen ? (
+                <div className="overflow-x-auto border-t">
                   <table className="w-full text-sm">
                     <thead className="bg-neutral-50 text-xs text-neutral-600">
                       <tr>
@@ -591,11 +708,118 @@ export default function StockPage() {
                     </tbody>
                   </table>
                 </div>
+                ) : null}
               </div>
-            ))
+              );
+            })}
+            </>
           )}
         </div>
       </div>
+
+      {/* Categories manager modal */}
+      {catsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+          <div className="w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl" style={{ maxHeight: "90vh" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold">Categorías de stock</div>
+                <div className="mt-1 text-xs text-neutral-500">
+                  Solo se puede eliminar una categoría sin ítems. Para vaciarla, editá sus ítems y cambiales la categoría.
+                </div>
+              </div>
+              <button type="button" className="rounded-md border px-2 py-1 text-sm" onClick={() => setCatsOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+
+            {modalError}
+
+            <div className="mt-4 divide-y rounded-md border">
+              {categories.map((c) => {
+                const count = itemCountByCategory.get(c.id) ?? 0;
+                const editing = catEdit?.id === c.id;
+                return (
+                  <div key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    {editing ? (
+                      <>
+                        <input
+                          autoFocus
+                          className="w-full rounded-md border px-2 py-1 text-sm"
+                          value={catEdit.name}
+                          onChange={(e) => setCatEdit({ id: c.id, name: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") renameCategory();
+                            if (e.key === "Escape") setCatEdit(null);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white"
+                          onClick={renameCategory}
+                        >
+                          Guardar
+                        </button>
+                        <button type="button" className="rounded-md border px-2 py-1 text-xs" onClick={() => setCatEdit(null)}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium">{c.name}</span>
+                        <span className="text-xs text-neutral-500">
+                          {count} ítem{count === 1 ? "" : "s"}
+                        </span>
+                        <span className="ml-auto inline-flex gap-2">
+                          <button
+                            type="button"
+                            className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100"
+                            onClick={() => {
+                              setError(null);
+                              setCatEdit({ id: c.id, name: c.name });
+                            }}
+                          >
+                            Renombrar
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={count > 0}
+                            title={count > 0 ? "Tiene ítems: movelos a otra categoría primero" : undefined}
+                            onClick={() => deleteCategory(c)}
+                          >
+                            Eliminar
+                          </button>
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              {!categories.length ? <div className="px-3 py-4 text-sm text-neutral-500">Sin categorías.</div> : null}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <input
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                placeholder="Nueva categoría (ej: Limpieza)"
+                value={catsNewName}
+                onChange={(e) => setCatsNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") createCategoryFromManager();
+                }}
+              />
+              <button
+                type="button"
+                className="whitespace-nowrap rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white"
+                onClick={createCategoryFromManager}
+              >
+                + Crear
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* New item modal */}
       {newItemOpen ? (
