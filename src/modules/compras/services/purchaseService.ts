@@ -14,6 +14,8 @@ export type PurchasePaymentInput =
       creditCardId?: string | null;
       installments?: number;
       createdByEmployeeId: string;
+      /** El pago ya está reflejado en el saldo de la caja/cuenta: no generar movimiento */
+      skipCashImpact?: boolean;
     };
 
 export class PurchaseService {
@@ -174,6 +176,7 @@ export class PurchaseService {
             creditCardId: params.payment.creditCardId ?? null,
             installments: params.payment.installments,
             createdByEmployeeId: params.payment.createdByEmployeeId,
+            skipCashImpact: params.payment.skipCashImpact,
           });
         }
       }

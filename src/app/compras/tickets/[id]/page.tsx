@@ -58,6 +58,7 @@ type FormLine = {
   unitPriceArs: string;
   ignored: boolean;
   matchSource: MatchSource;
+  lineTotalCents: number | null; // importe de la línea según el ticket
 };
 
 // Clases de formulario mobile-first: 16px en el celular para que iPhone no haga zoom al tocar un campo
@@ -135,6 +136,7 @@ export default function TicketReviewPage() {
     cashBoxId: "",
     creditCardId: "",
     installments: "1",
+    skipCashImpact: false,
   });
   const [lines, setLines] = useState<FormLine[]>([]);
 
@@ -176,6 +178,7 @@ export default function TicketReviewPage() {
           uomId,
           inventoryItemId: item ? item.id : "",
           unitPriceArs: centsToArsInput(l.unitPriceCents),
+          lineTotalCents: l.lineTotalCents,
           ignored: l.ignored,
           matchSource: l.matchSource,
         };
@@ -228,9 +231,11 @@ export default function TicketReviewPage() {
 
   const activeLines = lines.filter((l) => !l.ignored);
   // La suma incluye las líneas que no van al stock (bolsas, etc.): también están en el total del ticket.
-  const linesSumCents = lines.reduce((acc, l) => acc + Math.round(ars(l.unitPriceArs) * Number(l.qty || 0)), 0);
+  // Importe de cada línea: el del ticket si lo trae (no depende de la unidad elegida, ej. kg → g), si no cantidad × precio.
+  const lineAmountCents = (l: FormLine) => l.lineTotalCents ?? Math.round(ars(l.unitPriceArs) * Number(l.qty || 0));
+  const linesSumCents = lines.reduce((acc, l) => acc + lineAmountCents(l), 0);
   const totalCents = ars(form.invoiceTotalArs);
-  const allPriced = lines.length > 0 && lines.every((l) => l.unitPriceArs);
+  const allPriced = lines.length > 0 && lines.every((l) => l.lineTotalCents != null || l.unitPriceArs);
   const sumMismatch = allPriced && totalCents > 0 && Math.abs(linesSumCents - totalCents) > Math.max(100, totalCents * 0.01);
 
   const missingItems = activeLines.filter((l) => !l.inventoryItemId).length;
@@ -263,6 +268,7 @@ export default function TicketReviewPage() {
                 cashBoxId: form.paymentMethod !== "TARJETA_CREDITO" ? form.cashBoxId || null : null,
                 creditCardId: form.paymentMethod === "TARJETA_CREDITO" ? form.creditCardId || null : null,
                 installments: form.paymentMethod === "TARJETA_CREDITO" ? Number(form.installments) || 1 : undefined,
+                skipCashImpact: form.paymentMethod !== "TARJETA_CREDITO" ? form.skipCashImpact : undefined,
               },
         lines: lines.map((l) => ({
           id: l.id,
@@ -271,7 +277,11 @@ export default function TicketReviewPage() {
           unit: l.uomId ? null : l.unit || null,
           uomId: l.uomId || null,
           inventoryItemId: l.inventoryItemId || null,
-          unitPriceCents: l.unitPriceArs ? ars(l.unitPriceArs) : null,
+          // Costo por unidad cargada: si se cambió la unidad (ej. kg → g) el precio del ticket ya no aplica
+          unitPriceCents:
+            l.lineTotalCents != null && Number(l.qty) > 0
+              ? Math.round(l.lineTotalCents / Number(l.qty))
+              : l.unitPriceArs ? ars(l.unitPriceArs) : null,
           ignored: l.ignored,
         })),
       });
@@ -557,7 +567,7 @@ export default function TicketReviewPage() {
               <button type="button" className="mt-3 w-full rounded-md border px-3 py-2.5 text-sm hover:bg-neutral-50 sm:w-auto sm:py-2"
                 onClick={() => setLines((p) => [...p, {
                   id: null, rawDescription: "Producto agregado", qty: "1", unit: "UN", uomId: "",
-                  inventoryItemId: "", unitPriceArs: "", ignored: false, matchSource: "MANUAL",
+                  inventoryItemId: "", unitPriceArs: "", ignored: false, matchSource: "MANUAL", lineTotalCents: null,
                 }])}>
                 + Agregar producto
               </button>
@@ -566,7 +576,11 @@ export default function TicketReviewPage() {
             {allPriced ? (
               <div className={`mt-3 text-sm sm:text-xs ${sumMismatch ? "text-amber-700" : "text-neutral-500"}`}>
                 Suma de productos: {formatArsFromCents(linesSumCents)}
-                {sumMismatch ? ` — no coincide con el total del ticket (${formatArsFromCents(totalCents)}). Revisá cantidades y precios.` : ""}
+                {sumMismatch
+                  ? ticket.invoiceType === "A"
+                    ? ` — el total del ticket es ${formatArsFromCents(totalCents)}. En facturas A es normal: los productos suelen figurar sin IVA y el total suma IVA y percepciones.`
+                    : ` — no coincide con el total del ticket (${formatArsFromCents(totalCents)}). Revisá cantidades y precios.`
+                  : ""}
               </div>
             ) : null}
           </div>
@@ -610,6 +624,16 @@ export default function TicketReviewPage() {
                     </div>
                   )}
                 </div>
+              ) : null}
+              {form.paymentMode === "PAID_NOW" && form.paymentMethod !== "TARJETA_CREDITO" ? (
+                <label className="mt-3 flex items-start gap-3 rounded-md border p-3 text-sm text-neutral-700 sm:gap-2 sm:p-2 sm:text-xs">
+                  <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 sm:h-4 sm:w-4" checked={form.skipCashImpact}
+                    onChange={(e) => setForm((p) => ({ ...p, skipCashImpact: e.target.checked }))} />
+                  <span>
+                    <b>La plata ya se descontó</b> de esta caja o cuenta (no volver a descontarla). Usalo cuando el pago
+                    ya está registrado en el saldo, por ejemplo una transferencia que ya figura en los movimientos de la cuenta.
+                  </span>
+                </label>
               ) : null}
             </div>
           ) : null}

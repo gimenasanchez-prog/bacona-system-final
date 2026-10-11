@@ -15,6 +15,7 @@ const PaymentSchema = z.discriminatedUnion("mode", [
     cashBoxId: z.string().nullable().optional(),
     creditCardId: z.string().nullable().optional(),
     installments: z.number().int().min(1).max(24).optional(),
+    skipCashImpact: z.boolean().optional(),
   }),
 ]);
 
@@ -60,6 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           creditCardId: data.payment.creditCardId ?? null,
           installments: data.payment.installments,
           createdByEmployeeId: employeeId,
+          skipCashImpact: data.payment.method !== "TARJETA_CREDITO" ? data.payment.skipCashImpact : undefined,
         };
 
   try {
