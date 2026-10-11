@@ -225,6 +225,8 @@ model Employee {
   chequesCreated                     Cheque[]
   sierraDeltaDebtPaymentsCreated     SierraDeltaDebtPayment[]     @relation("EmployeeSierraDeltaDebtPaymentsCreated")
   sierraDeltaDebtPaymentsUpdated     SierraDeltaDebtPayment[]     @relation("EmployeeSierraDeltaDebtPaymentsUpdated")
+  purchasesCreated                   Purchase[]                   @relation("EmployeePurchasesCreated")
+  ticketImportsReviewed              TicketImport[]               @relation("EmployeeTicketImportsReviewed")
 
   @@index([isActive, displayName])
 }
@@ -280,16 +282,18 @@ model CashSessionPaymentBreakdownDetail {
 }
 
 model Supplier {
-  id        String            @id @default(cuid())
-  name      String
-  categoria String?
-  active    Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  expenses  LocalExpense[]
-  purchases Purchase[]
-  payables  SupplierPayable[]
-  payments  SupplierPayment[]
+  id             String                 @id @default(cuid())
+  name           String
+  categoria      String?
+  active         Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  expenses       LocalExpense[]
+  purchases      Purchase[]
+  payables       SupplierPayable[]
+  payments       SupplierPayment[]
+  ticketImports  TicketImport[]
+  productAliases SupplierProductAlias[]
 
   @@index([active, name])
 }
@@ -593,25 +597,27 @@ model InventoryCategory {
 }
 
 model InventoryItem {
-  id              String                @id @default(cuid())
-  categoryId      String
-  name            String
-  unit            StockUnit
-  dimension       StockDimension        @default(COUNT)
-  displayUnit     StockUnit             @default(UN)
-  isActive        Boolean               @default(true)
-  targetDaysCover Int                   @default(14)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  category        InventoryCategory     @relation(fields: [categoryId], references: [id])
-  lossLines       LossEventLine[]
-  modifierOptions ModifierOption[]
-  productLinks    Product[]             @relation("ProductInventoryItem")
-  productionLines ProductionBatchLine[]
-  purchaseLines   PurchaseLine[]
-  recipeLines     RecipeLine[]
-  stockLines      StockMovementLine[]
-  uoms            InventoryItemUom[]
+  id                String                 @id @default(cuid())
+  categoryId        String
+  name              String
+  unit              StockUnit
+  dimension         StockDimension         @default(COUNT)
+  displayUnit       StockUnit              @default(UN)
+  isActive          Boolean                @default(true)
+  targetDaysCover   Int                    @default(14)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  category          InventoryCategory      @relation(fields: [categoryId], references: [id])
+  lossLines         LossEventLine[]
+  modifierOptions   ModifierOption[]
+  productLinks      Product[]              @relation("ProductInventoryItem")
+  productionLines   ProductionBatchLine[]
+  purchaseLines     PurchaseLine[]
+  recipeLines       RecipeLine[]
+  stockLines        StockMovementLine[]
+  uoms              InventoryItemUom[]
+  ticketImportLines TicketImportLine[]
+  supplierAliases   SupplierProductAlias[]
 
   @@index([categoryId, isActive])
   @@index([isActive, name])
@@ -714,24 +720,27 @@ model ProductionBatchLine {
 }
 
 model Purchase {
-  id                String           @id @default(cuid())
-  type              PurchaseType
-  status            PurchaseStatus   @default(DRAFT)
-  locationId        String
-  supplierId        String?
-  supplierName      String?
-  invoiceTotalCents Int?
-  invoiceNumber     String?
-  purchasedAt       DateTime         @default(now())
-  postedAt          DateTime?
-  notes             String?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  location          StockLocation    @relation(fields: [locationId], references: [id])
-  supplier          Supplier?        @relation(fields: [supplierId], references: [id])
-  lines             PurchaseLine[]
-  stockMovement     StockMovement?   @relation("PurchaseStockMovement")
-  payable           SupplierPayable?
+  id                  String           @id @default(cuid())
+  type                PurchaseType
+  status              PurchaseStatus   @default(DRAFT)
+  locationId          String
+  supplierId          String?
+  supplierName        String?
+  invoiceTotalCents   Int?
+  invoiceNumber       String?
+  purchasedAt         DateTime         @default(now())
+  postedAt            DateTime?
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  location            StockLocation    @relation(fields: [locationId], references: [id])
+  supplier            Supplier?        @relation(fields: [supplierId], references: [id])
+  createdByEmployee   Employee?        @relation("EmployeePurchasesCreated", fields: [createdByEmployeeId], references: [id])
+  lines               PurchaseLine[]
+  stockMovement       StockMovement?   @relation("PurchaseStockMovement")
+  payable             SupplierPayable?
+  ticketImport        TicketImport?
 
   @@index([type, status, purchasedAt])
   @@index([locationId, purchasedAt])
@@ -753,6 +762,74 @@ model PurchaseLine {
 
   @@index([purchaseId, sortOrder])
   @@index([inventoryItemId])
+}
+
+/// Ticket de compra (foto) leído desde la carpeta de Drive, pendiente de revisión.
+/// Al confirmarlo se crea el Purchase (y su movimiento de stock) con PurchaseService.
+model TicketImport {
+  id                   String             @id @default(cuid())
+  driveFileId          String             @unique
+  driveFileName        String
+  mimeType             String
+  status               TicketImportStatus @default(PENDING_REVIEW)
+  errorMessage         String?
+  supplierNameRaw      String?
+  supplierId           String?
+  invoiceNumber        String?
+  invoiceType          String?
+  supplierCuit         String?
+  purchasedAt          DateTime?
+  totalCents           Int?
+  ivaCents             Int?
+  type                 PurchaseType       @default(IN_SITU)
+  locationCode         String             @default("BACONA")
+  rawExtraction        Json?
+  purchaseId           String?            @unique
+  reviewedByEmployeeId String?
+  reviewedAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  supplier             Supplier?          @relation(fields: [supplierId], references: [id])
+  purchase             Purchase?          @relation(fields: [purchaseId], references: [id])
+  reviewedByEmployee   Employee?          @relation("EmployeeTicketImportsReviewed", fields: [reviewedByEmployeeId], references: [id])
+  lines                TicketImportLine[]
+
+  @@index([status, createdAt])
+}
+
+model TicketImportLine {
+  id              String                @id @default(cuid())
+  ticketImportId  String
+  rawDescription  String
+  qty             Decimal               @db.Decimal(18, 3)
+  unitRaw         String?
+  unitPriceCents  Int?
+  lineTotalCents  Int?
+  inventoryItemId String?
+  uomId           String?
+  matchSource     TicketLineMatchSource @default(NONE)
+  ignored         Boolean               @default(false)
+  sortOrder       Int                   @default(0)
+  ticketImport    TicketImport          @relation(fields: [ticketImportId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem?        @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([ticketImportId, sortOrder])
+}
+
+/// Lo que el sistema aprende al confirmar tickets: "este texto de este proveedor es este insumo".
+model SupplierProductAlias {
+  id              String        @id @default(cuid())
+  supplierId      String
+  normalizedText  String
+  inventoryItemId String
+  uomId           String?
+  timesUsed       Int           @default(1)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  supplier        Supplier      @relation(fields: [supplierId], references: [id])
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@unique([supplierId, normalizedText])
 }
 
 model LossEvent {
@@ -892,6 +969,20 @@ enum PurchaseStatus {
   DRAFT
   POSTED
   CANCELLED
+}
+
+enum TicketImportStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  DISCARDED
+  ERROR
+}
+
+enum TicketLineMatchSource {
+  ALIAS
+  AI
+  MANUAL
+  NONE
 }
 
 enum ProductionStatus {

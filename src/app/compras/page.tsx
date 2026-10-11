@@ -21,6 +21,7 @@ type Purchase = {
   invoiceNumber: string | null;
   invoiceTotalCents: number | null;
   location: { code: string; label: string };
+  createdByEmployee: { displayName: string } | null;
   lines: Array<{
     id: string;
     qty: string;
@@ -130,6 +131,7 @@ export default function ComprasPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
+  const [ticketsToReview, setTicketsToReview] = useState(0);
 
   const [form, setForm] = useState<{
     type: "APROVISIONAMIENTO" | "IN_SITU";
@@ -179,6 +181,9 @@ export default function ComprasPage() {
     ]);
     setCashBoxes([...cb.items, ...cbBanco.items]);
     setCreditCards(cc.items);
+    apiGet<{ tickets: Array<{ status: string }> }>("/api/compras/tickets")
+      .then((t) => setTicketsToReview(t.tickets.filter((x) => x.status === "PENDING_REVIEW" || x.status === "ERROR").length))
+      .catch(() => undefined);
     setForm((prev) => ({
       ...prev,
       lines: prev.lines.map((l) => {
@@ -273,7 +278,17 @@ export default function ComprasPage() {
           <div className="text-lg font-semibold">Compras</div>
           <div className="text-sm text-neutral-600">Factura y estado de pago por proveedor. El impacto en stock es opcional.</div>
         </div>
-        <Link href="/stock" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">Ir a stock</Link>
+        <div className="flex gap-2">
+          <Link href="/compras/tickets" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">
+            Tickets de Drive
+            {ticketsToReview ? (
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                {ticketsToReview} por revisar
+              </span>
+            ) : null}
+          </Link>
+          <Link href="/stock" className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-50">Ir a stock</Link>
+        </div>
       </div>
 
       {error ? (
@@ -584,7 +599,10 @@ export default function ComprasPage() {
                     <td className="px-3 py-2 whitespace-nowrap">{new Date(p.purchasedAt).toLocaleString("es-AR")}</td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{p.supplierName ?? "—"}</div>
-                      <div className="text-xs text-neutral-500">{p.invoiceNumber ?? "—"}</div>
+                      <div className="text-xs text-neutral-500">
+                        {p.invoiceNumber ?? "—"}
+                        {p.createdByEmployee ? ` · cargó ${p.createdByEmployee.displayName}` : ""}
+                      </div>
                       {p.lines.length > 0 && (
                         <div className="mt-1 space-y-0.5">
                           {p.lines.map((l) => (

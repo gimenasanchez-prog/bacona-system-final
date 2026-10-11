@@ -26,6 +26,7 @@ export class PurchaseService {
     invoiceTotalCents?: number | null;
     notes?: string | null;
     purchasedAt?: Date;
+    createdByEmployeeId?: string | null;
     payment?: PurchasePaymentInput | null;
     lines: Array<{
       inventoryItemId: string;
@@ -107,6 +108,7 @@ export class PurchaseService {
           notes: params.notes ?? null,
           purchasedAt: params.purchasedAt ?? new Date(),
           postedAt: new Date(),
+          createdByEmployeeId: params.createdByEmployeeId ?? null,
           lines: {
             create: processedLines.map((l) => ({
               inventoryItemId: l.inventoryItemId,

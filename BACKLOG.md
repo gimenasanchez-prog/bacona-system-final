@@ -12,7 +12,9 @@ Deuda técnica y pendientes que Gimena pidió guardar para retomar más adelante
 
 ---
 
-## 2026-08-14 — Trazabilidad de usuario en Compras
+## 2026-08-14 — Trazabilidad de usuario en Compras ✅ Resuelto 2026-10-10
+
+> Resuelto junto con la carga de tickets desde Drive: `Purchase.createdByEmployeeId` se guarda desde la cookie `bcn_employeeId` (carga manual y confirmación de tickets) y se muestra en el historial de `/compras`. Las compras anteriores quedan sin dato.
 
 **Qué:** el modelo `Purchase` no guarda `createdByEmployeeId`, a diferencia de otros módulos (egresos, movimientos de stock, pagos a proveedores, etc.). Si una compra queda pendiente de pago (sin `SupplierPayment` asociado), no hay forma de saber qué empleado la cargó — solo timestamp y notas.
 

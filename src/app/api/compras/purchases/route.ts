@@ -11,6 +11,7 @@ export async function GET() {
     take: 50,
     include: {
       location: { select: { id: true, code: true, label: true } },
+      createdByEmployee: { select: { displayName: true } },
       lines: { include: { inventoryItem: { select: { id: true, name: true, unit: true } } }, orderBy: { sortOrder: "asc" } },
       payable: {
         include: {
@@ -100,6 +101,7 @@ export async function POST(req: Request) {
       invoiceTotalCents: parsed.data.invoiceTotalCents,
       notes: parsed.data.notes,
       purchasedAt: parsed.data.purchasedAt ? new Date(parsed.data.purchasedAt) : undefined,
+      createdByEmployeeId: employeeId ?? null,
       payment,
       lines: parsed.data.lines.map((l) => ({
         inventoryItemId: l.inventoryItemId,
