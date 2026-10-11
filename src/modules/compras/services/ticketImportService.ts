@@ -253,8 +253,8 @@ export class TicketImportService {
     if (!ticket) throw new Error("Ticket no encontrado");
     if (ticket.status !== TicketImportStatus.PENDING_REVIEW) throw new Error("El ticket ya no está pendiente");
 
+    // Sin líneas activas es válido: se registra solo la compra y el pago/deuda (ej. un servicio), sin mover stock.
     const activeLines = params.lines.filter((l) => !l.ignored);
-    if (!activeLines.length) throw new Error("No hay líneas para cargar al stock");
     const unmatched = activeLines.find((l) => !l.inventoryItemId);
     if (unmatched) throw new Error(`Falta elegir el insumo para "${unmatched.rawDescription}"`);
     const badQty = activeLines.find((l) => !(l.qty > 0));

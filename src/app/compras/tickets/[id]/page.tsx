@@ -239,14 +239,21 @@ export default function TicketReviewPage() {
   const sumMismatch = allPriced && totalCents > 0 && Math.abs(linesSumCents - totalCents) > Math.max(100, totalCents * 0.01);
 
   const missingItems = activeLines.filter((l) => !l.inventoryItemId).length;
-  const canConfirm = useMemo(() => {
-    if (!form.supplierId || totalCents <= 0) return false;
-    if (!activeLines.length) return false;
+  const noStockLines = activeLines.length === 0;
+  // Primer motivo que impide confirmar, o null si se puede
+  const blockReason = useMemo(() => {
+    if (missingItems) return `Faltan ${missingItems} producto${missingItems === 1 ? "" : "s"} por vincular`;
+    const badQty = activeLines.find((l) => !(Number(l.qty) > 0));
+    if (badQty) return `La cantidad de "${badQty.rawDescription}" tiene que ser mayor a 0`;
+    if (!form.supplierId) return "Falta elegir el proveedor";
+    if (totalCents <= 0) return "Falta el total del ticket";
     if (form.paymentMode === "PAID_NOW") {
-      if (form.paymentMethod === "TARJETA_CREDITO" ? !form.creditCardId : !form.cashBoxId) return false;
+      if (form.paymentMethod === "TARJETA_CREDITO" ? !form.creditCardId : !form.cashBoxId)
+        return form.paymentMethod === "TARJETA_CREDITO" ? "Falta elegir la tarjeta" : "Falta elegir la caja o cuenta";
     }
-    return activeLines.every((l) => l.inventoryItemId && Number(l.qty) > 0);
-  }, [form, totalCents, activeLines]);
+    return null;
+  }, [form, totalCents, activeLines, missingItems]);
+  const canConfirm = blockReason === null;
 
   async function confirm() {
     setBusy(true);
@@ -653,24 +660,18 @@ export default function TicketReviewPage() {
       {editable ? (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgba(0,0,0,0.06)] lg:static lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
           <div className="mx-auto flex max-w-screen-lg flex-col gap-2 lg:items-end">
-            {!canConfirm ? (
-              <div className="text-center text-xs text-neutral-600 lg:text-right">
-                {missingItems
-                  ? `Faltan ${missingItems} producto${missingItems === 1 ? "" : "s"} por vincular`
-                  : !form.supplierId
-                    ? "Falta elegir el proveedor"
-                    : totalCents <= 0
-                      ? "Falta el total del ticket"
-                      : form.paymentMode === "PAID_NOW"
-                        ? "Falta elegir con qué se pagó"
-                        : "Revisá los datos"}
+            {blockReason ? (
+              <div className="text-center text-xs text-neutral-600 lg:text-right">{blockReason}</div>
+            ) : noStockLines ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs text-amber-800 lg:text-right">
+                Ningún producto va al stock: se registra solo la compra y el pago, sin mover stock.
               </div>
             ) : null}
             <button type="button" onClick={confirm} disabled={!canConfirm || busy}
               className={`w-full rounded-md px-4 py-3 text-base font-medium lg:w-auto lg:py-2 lg:text-sm ${canConfirm && !busy
                 ? "bg-neutral-900 text-white"
                 : "bg-neutral-200 text-neutral-500"}`}>
-              {busy ? "Cargando…" : "Confirmar y cargar al stock"}
+              {busy ? "Cargando…" : noStockLines ? "Confirmar sin cargar stock" : "Confirmar y cargar al stock"}
             </button>
           </div>
         </div>
