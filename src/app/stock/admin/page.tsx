@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { StockAdminService } from "@/modules/stock/services/stockAdminService";
-import { ProductsTable } from "./ProductsTable";
+import { AuditView, type AuditProduct, type AuditRecipe } from "./AuditView";
 
 function fmtQty(qty: { toString(): string }) {
   const n = parseFloat(qty.toString());
@@ -22,247 +22,61 @@ export default async function StockAdminPage() {
     productionByOutputItemId,
   } = await StockAdminService.getAuditData();
 
-  const withRecipe = products.filter((p) => p.consumptionRecipeVersionId !== null);
-  const withItem = products.filter(
-    (p) => p.inventoryItemId !== null && p.consumptionRecipeVersionId === null,
-  );
-  const noLink = products.filter(
-    (p) => !p.consumptionRecipeVersionId && !p.inventoryItemId,
-  );
+  // Shape for the client view (plain strings, no Decimals)
+  const auditProducts: AuditProduct[] = products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: { id: p.category.id, name: p.category.name },
+    inventoryItemId: p.inventoryItemId,
+    consumptionRecipeVersionId: p.consumptionRecipeVersionId,
+    recipeName: p.consumptionRecipeVersion?.recipe.name ?? null,
+    inventoryItemName: p.inventoryItem?.name ?? null,
+  }));
 
-  // Group by category; within each category: no-link first, then alphabetically
-  const catMap = new Map<string, typeof products>();
-  for (const p of products) {
-    const arr = catMap.get(p.category.name) ?? [];
-    arr.push(p);
-    catMap.set(p.category.name, arr);
-  }
-  for (const arr of catMap.values()) {
-    arr.sort((a, b) => {
-      const aNo = !a.consumptionRecipeVersionId && !a.inventoryItemId;
-      const bNo = !b.consumptionRecipeVersionId && !b.inventoryItemId;
-      if (aNo !== bNo) return aNo ? -1 : 1;
-      return a.name.localeCompare(b.name, "es");
-    });
-  }
-  const sortedCategories = [...catMap.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0], "es"),
-  );
+  const lineOf = (l: { id: string; qty: { toString(): string }; inventoryItem: { name: string; unit: string } }) => ({
+    id: l.id,
+    itemName: l.inventoryItem.name,
+    qty: fmtQty(l.qty),
+    unit: l.inventoryItem.unit,
+  });
+
+  // Producción: se agrupa por la categoría de stock de lo que produce
+  const auditProduction: AuditRecipe[] = productionRecipes.map((r) => {
+    const lines = r.versions[0]?.lines ?? [];
+    const inputs = lines.filter((l) => l.direction === "OUT");
+    const outputs = lines.filter((l) => l.direction === "IN");
+    return {
+      id: r.id,
+      name: r.name,
+      groupName: outputs[0]?.inventoryItem.category.name ?? "Sin producto de salida",
+      inputs: inputs.map(lineOf),
+      outputs: outputs.map(lineOf),
+      linkedProducts: [],
+    };
+  });
+
+  // Consumo: se agrupa por la categoría POS del producto que la usa
+  const auditConsumption: AuditRecipe[] = consumptionRecipes.map((r) => {
+    const v = r.versions[0];
+    const linked = v?.productConsumptionLinks ?? [];
+    return {
+      id: r.id,
+      name: r.name,
+      groupName: linked[0]?.category.name ?? "Sin producto vinculado",
+      inputs: (v?.lines ?? []).filter((l) => l.direction === "OUT").map(lineOf),
+      outputs: [],
+      linkedProducts: linked.map((p) => p.name),
+    };
+  });
 
   return (
-    <div className="space-y-6">
-      <div>
-        <div className="text-lg font-semibold">Gestión de vínculos de stock</div>
-        <div className="text-sm text-neutral-500">Editar el vínculo de cada producto con su insumo o receta</div>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-xs text-neutral-500">Productos activos</div>
-          <div className="mt-1 text-2xl font-bold">{products.length}</div>
-        </div>
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-xs text-neutral-500">Con receta de consumo</div>
-          <div className="mt-1 text-2xl font-bold text-emerald-700">{withRecipe.length}</div>
-        </div>
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-xs text-neutral-500">Con item directo</div>
-          <div className="mt-1 text-2xl font-bold text-emerald-700">{withItem.length}</div>
-        </div>
-        <div
-          className={`rounded-lg border p-3 ${noLink.length > 0 ? "border-red-200 bg-red-50" : "bg-white"}`}
-        >
-          <div className="text-xs text-neutral-500">Sin link de stock</div>
-          <div
-            className={`mt-1 text-2xl font-bold ${noLink.length > 0 ? "text-red-700" : "text-neutral-900"}`}
-          >
-            {noLink.length}
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-xs text-neutral-500">Recetas de producción</div>
-          <div className="mt-1 text-2xl font-bold">{productionRecipes.length}</div>
-        </div>
-        <div className="rounded-lg border bg-white p-3">
-          <div className="text-xs text-neutral-500">Recetas de consumo</div>
-          <div className="mt-1 text-2xl font-bold">{consumptionRecipes.length}</div>
-        </div>
-      </div>
-
-      {/* Products table */}
-      <div className="rounded-lg border bg-white">
-        <div className="border-b px-4 py-3">
-          <div className="text-sm font-semibold">Productos y vínculos de stock</div>
-          <div className="mt-0.5 text-xs text-neutral-500">
-            Los productos sin link no descuentan stock al vender. Aparecen primero en cada
-            categoría.
-          </div>
-        </div>
-        <ProductsTable
-          sortedCategories={sortedCategories}
-          inventoryItems={inventoryItems}
-          consumptionRecipes={consumptionRecipesForModal}
-          productionByOutputItemId={productionByOutputItemId}
-        />
-      </div>
-
-      {/* Production recipes */}
-      <div className="rounded-lg border bg-white">
-        <div className="border-b px-4 py-3">
-          <div className="text-sm font-semibold">
-            Recetas de Producción ({productionRecipes.length})
-          </div>
-          <div className="mt-0.5 text-xs text-neutral-500">
-            Insumos elaborados in situ: panes, mayos, prepizzas, etc. Clic para expandir.
-          </div>
-        </div>
-        <div className="divide-y">
-          {productionRecipes.map((r) => {
-            const v = r.versions[0];
-            const inputs = v?.lines.filter((l) => l.direction === "OUT") ?? [];
-            const outputs = v?.lines.filter((l) => l.direction === "IN") ?? [];
-            return (
-              <details key={r.id}>
-                <summary className="flex cursor-pointer items-center justify-between px-4 py-3 hover:bg-neutral-50 list-none">
-                  <span className="text-sm font-medium">{r.name}</span>
-                  <span className="text-xs text-neutral-500">
-                    {inputs.length} insumos → {outputs.length} productos
-                  </span>
-                </summary>
-                <div className="border-t bg-neutral-50 px-4 py-3">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                        Egresa (inputs)
-                      </div>
-                      {inputs.length ? (
-                        <div className="space-y-1">
-                          {inputs.map((l) => (
-                            <div key={l.id} className="text-sm">
-                              {l.inventoryItem.name}:{" "}
-                              <span className="font-medium">{fmtQty(l.qty)}</span>{" "}
-                              <span className="text-neutral-500">{l.inventoryItem.unit}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-neutral-400">Sin inputs definidos.</div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                        Ingresa (outputs)
-                      </div>
-                      {outputs.length ? (
-                        <div className="space-y-1">
-                          {outputs.map((l) => (
-                            <div key={l.id} className="text-sm">
-                              {l.inventoryItem.name}:{" "}
-                              <span className="font-medium">{fmtQty(l.qty)}</span>{" "}
-                              <span className="text-neutral-500">{l.inventoryItem.unit}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-neutral-400">Sin outputs definidos.</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </details>
-            );
-          })}
-          {!productionRecipes.length && (
-            <div className="px-4 py-6 text-sm text-neutral-500">
-              Sin recetas de producción cargadas.
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Consumption recipes */}
-      <div className="rounded-lg border bg-white">
-        <div className="border-b px-4 py-3">
-          <div className="text-sm font-semibold">
-            Recetas de Consumo ({consumptionRecipes.length})
-          </div>
-          <div className="mt-0.5 text-xs text-neutral-500">
-            Qué ingredientes descuenta cada producto al venderse. Clic para expandir.
-          </div>
-        </div>
-        <div className="divide-y">
-          {consumptionRecipes.map((r) => {
-            const v = r.versions[0];
-            const ingredients = v?.lines.filter((l) => l.direction === "OUT") ?? [];
-            const linked = v?.productConsumptionLinks ?? [];
-            return (
-              <details key={r.id}>
-                <summary className="flex cursor-pointer items-center justify-between px-4 py-3 hover:bg-neutral-50 list-none">
-                  <span className="text-sm font-medium">{r.name}</span>
-                  <span className="text-xs">
-                    {linked.length > 0 ? (
-                      <span className="text-emerald-700">
-                        {linked[0].name}
-                        {linked.length > 1 ? ` +${linked.length - 1}` : ""}
-                      </span>
-                    ) : (
-                      <span className="text-amber-600">Sin producto vinculado</span>
-                    )}
-                  </span>
-                </summary>
-                <div className="border-t bg-neutral-50 px-4 py-3">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                        Ingredientes
-                      </div>
-                      {ingredients.length ? (
-                        <div className="space-y-1">
-                          {ingredients.map((l) => (
-                            <div key={l.id} className="text-sm">
-                              {l.inventoryItem.name}:{" "}
-                              <span className="font-medium">{fmtQty(l.qty)}</span>{" "}
-                              <span className="text-neutral-500">{l.inventoryItem.unit}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-neutral-400">Sin ingredientes definidos.</div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                        Productos POS vinculados
-                      </div>
-                      {linked.length ? (
-                        <div className="space-y-1">
-                          {linked.map((p) => (
-                            <div key={p.name} className="text-sm font-medium">
-                              {p.name}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-amber-700">
-                          Ningún producto usa esta receta todavía.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </details>
-            );
-          })}
-          {!consumptionRecipes.length && (
-            <div className="px-4 py-6 text-sm text-neutral-500">
-              Sin recetas de consumo cargadas.
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <AuditView
+      products={auditProducts}
+      productionRecipes={auditProduction}
+      consumptionRecipes={auditConsumption}
+      inventoryItems={inventoryItems}
+      consumptionRecipesForModal={consumptionRecipesForModal}
+      productionByOutputItemId={productionByOutputItemId}
+    />
   );
 }

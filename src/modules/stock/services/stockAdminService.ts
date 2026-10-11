@@ -20,7 +20,7 @@ export class StockAdminService {
               where: { isActive: true },
               include: {
                 lines: {
-                  include: { inventoryItem: true },
+                  include: { inventoryItem: { include: { category: { select: { name: true } } } } },
                   orderBy: { sortOrder: "asc" },
                 },
               },
@@ -38,7 +38,10 @@ export class StockAdminService {
                   include: { inventoryItem: { select: { id: true, name: true, unit: true } } },
                   orderBy: { sortOrder: "asc" },
                 },
-                productConsumptionLinks: { select: { name: true } },
+                productConsumptionLinks: {
+                  where: { isActive: true },
+                  select: { name: true, category: { select: { name: true } } },
+                },
               },
             },
           },
