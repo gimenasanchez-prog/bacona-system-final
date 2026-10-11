@@ -4,6 +4,8 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { ENVELOPE_OVERDUE_DAYS } from "@/modules/sobres/lib/envelopeStatus";
+import { EnvelopeCustodyService } from "@/modules/sobres/services/envelopeCustodyService";
 
 const SHIFT_LABELS: Record<string, string> = { MANIANA: "Mañana", TARDE: "Tarde", NOCHE: "Noche" };
 const STATUS_LABELS: Record<string, string> = { OPEN: "Abierto", CLOSED: "Cerrado" };
@@ -33,7 +35,15 @@ async function getActiveEmployee() {
       }
     }
 
-    return { displayName: employee.displayName, cashSessionId: cashSessionId ?? null, shiftLabel, statusLabel };
+    const envelopeAlert = await EnvelopeCustodyService.getCustodianAlert(employeeId, ENVELOPE_OVERDUE_DAYS);
+
+    return {
+      displayName: employee.displayName,
+      cashSessionId: cashSessionId ?? null,
+      shiftLabel,
+      statusLabel,
+      envelopeAlert,
+    };
   } catch {
     return null;
   }
@@ -74,6 +84,28 @@ export default async function RootLayout({
               </Link>
             )}
           </div>
+          {active?.envelopeAlert ? (
+            <Link
+              href="/caja/local"
+              className={`block border-t px-4 py-2 text-center text-sm font-medium hover:opacity-90 ${
+                active.envelopeAlert.overdueCount > 0 || active.envelopeAlert.hasPendingHandover
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+              }`}
+            >
+              {active.envelopeAlert.hasPendingHandover
+                ? "Te pasaron sobres: confirmá cuáles tenés. "
+                : ""}
+              {active.envelopeAlert.toReceiveCount > 0
+                ? `Hay ${active.envelopeAlert.toReceiveCount} sobre${active.envelopeAlert.toReceiveCount === 1 ? "" : "s"} por recibir${
+                    active.envelopeAlert.overdueCount > 0
+                      ? ` (${active.envelopeAlert.overdueCount} con más de ${ENVELOPE_OVERDUE_DAYS} días)`
+                      : ""
+                  }. Cuando te los den en mano, marcalos como recibidos. `
+                : ""}
+              <span className="underline">Ir a Caja BCÑ →</span>
+            </Link>
+          ) : null}
         </div>
         <div className="mx-auto max-w-screen-2xl px-4 py-4">{children}</div>
       </body>

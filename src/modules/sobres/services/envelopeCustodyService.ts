@@ -49,6 +49,24 @@ export class EnvelopeCustodyService {
     return custodian?.id === employeeId;
   }
 
+  /**
+   * Aviso para la encargada de sobres: cuántos sobres sellados le faltan recibir y si tiene un traspaso
+   * sin confirmar. null si el empleado no es la encargada o no tiene nada pendiente.
+   */
+  static async getCustodianAlert(employeeId: string, overdueDays: number) {
+    const custodian = await this.getActiveCustodian();
+    if (custodian?.id !== employeeId) return null;
+
+    const overdueBefore = new Date(Date.now() - overdueDays * 86_400_000);
+    const [toReceiveCount, overdueCount] = await Promise.all([
+      prisma.envelope.count({ where: { status: "CLOSED" } }),
+      prisma.envelope.count({ where: { status: "CLOSED", depositedAt: { lte: overdueBefore } } }),
+    ]);
+    const hasPendingHandover = !!custodian.pendingHandoverId;
+    if (toReceiveCount === 0 && !hasPendingHandover) return null;
+    return { toReceiveCount, overdueCount, hasPendingHandover };
+  }
+
   private static async assertActiveCustodian(employeeId: string, client: DbClient) {
     const custodian = await this.getActiveCustodian(client);
     if (!custodian) {
