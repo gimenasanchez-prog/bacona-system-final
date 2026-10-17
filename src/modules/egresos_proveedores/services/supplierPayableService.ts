@@ -257,7 +257,7 @@ export class SupplierPayableService {
         ...(filters?.search ? { name: { contains: filters.search, mode: "insensitive" } } : {}),
         ...(filters?.categoria ? { categoria: filters.categoria } : {}),
       },
-      select: { id: true, name: true, active: true, categoria: true },
+      select: { id: true, name: true, active: true, categoria: true, razonSocial: true, cuit: true },
       orderBy: { name: "asc" },
     });
 
@@ -266,6 +266,8 @@ export class SupplierPayableService {
       supplierName: s.name,
       active: s.active,
       categoria: s.categoria,
+      razonSocial: s.razonSocial,
+      cuit: s.cuit,
       debtCents: debtBySupplierId.get(s.id) ?? 0,
     }));
 

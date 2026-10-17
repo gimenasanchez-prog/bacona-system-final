@@ -8,6 +8,8 @@ type SupplierDebt = {
   supplierName: string;
   active: boolean;
   categoria: string | null;
+  razonSocial: string | null;
+  cuit: string | null;
   debtCents: number;
 };
 type CashBox = { id: string; name: string; kind: "EFECTIVO" | "CUENTA_BANCARIA" };
@@ -169,7 +171,14 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
           <tbody>
             {debts.map((d) => (
               <tr key={d.supplierId} className="border-b last:border-b-0">
-                <td className="px-3 py-2">{d.supplierName}</td>
+                <td className="px-3 py-2">
+                  {d.supplierName}
+                  {d.razonSocial || d.cuit ? (
+                    <div className="text-xs text-neutral-500">
+                      {[d.razonSocial, d.cuit ? `CUIT ${d.cuit}` : null].filter(Boolean).join(" · ")}
+                    </div>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2 text-xs text-neutral-500">{d.categoria ?? "—"}</td>
                 <td className={`px-3 py-2 text-right font-semibold ${d.debtCents > 0 ? "text-red-700" : "text-green-700"}`}>
                   {formatArsFromCents(d.debtCents)}
@@ -257,6 +266,8 @@ function SupplierFormModal({
 }) {
   const [name, setName] = useState(supplier?.supplierName ?? "");
   const [categoria, setCategoria] = useState(supplier?.categoria ?? "");
+  const [razonSocial, setRazonSocial] = useState(supplier?.razonSocial ?? "");
+  const [cuit, setCuit] = useState(supplier?.cuit ?? "");
   const [active, setActive] = useState(supplier?.active ?? true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,12 +281,12 @@ function SupplierFormModal({
         ? await fetch(`/api/proveedores/${supplier.supplierId}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name, categoria: categoria || null, active }),
+            body: JSON.stringify({ name, categoria: categoria || null, razonSocial: razonSocial || null, cuit: cuit || null, active }),
           })
         : await fetch("/api/proveedores", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name, categoria: categoria || null }),
+            body: JSON.stringify({ name, categoria: categoria || null, razonSocial: razonSocial || null, cuit: cuit || null }),
           });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar proveedor.");
@@ -301,6 +312,14 @@ function SupplierFormModal({
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Categoría / rubro (opcional)</label>
             <input type="text" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ej: bebidas, carnicería..." className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Razón social (como figura en la factura)</label>
+            <input type="text" value={razonSocial} onChange={(e) => setRazonSocial(e.target.value)} placeholder="Se completa sola al confirmar un ticket" className="w-full rounded border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">CUIT</label>
+            <input type="text" inputMode="numeric" value={cuit} onChange={(e) => setCuit(e.target.value)} placeholder="Ej: 30-71123086-2" className="w-full rounded border px-3 py-2 text-sm" />
           </div>
           {supplier && (
             <label className="flex items-center gap-2 text-sm">

@@ -133,6 +133,7 @@ export default function TicketReviewPage() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [duplicates, setDuplicates] = useState<Duplicate[]>([]);
+  const [supplierMatchedBy, setSupplierMatchedBy] = useState<"CUIT" | "NOMBRE" | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
@@ -156,7 +157,9 @@ export default function TicketReviewPage() {
 
   async function load() {
     const [t, it, sup, cb, cbBanco, cc] = await Promise.all([
-      apiGet<{ ticket: Ticket; possibleDuplicates: Duplicate[] }>(`/api/compras/tickets/${id}`),
+      apiGet<{ ticket: Ticket; possibleDuplicates: Duplicate[]; supplierMatchedBy: "CUIT" | "NOMBRE" | null }>(
+        `/api/compras/tickets/${id}`,
+      ),
       apiGet<{ items: InventoryItem[] }>("/api/stock/items"),
       apiGet<{ items: Supplier[] }>("/api/proveedores"),
       apiGet<{ items: CashBox[] }>("/api/egresos/cuentas?kind=EFECTIVO").catch(() => ({ items: [] })),
@@ -165,6 +168,7 @@ export default function TicketReviewPage() {
     ]);
     setTicket(t.ticket);
     setDuplicates(t.possibleDuplicates);
+    setSupplierMatchedBy(t.supplierMatchedBy ?? null);
     setItems(it.items);
     setSuppliers(sup.items);
     setCashBoxes([...cb.items, ...cbBanco.items]);
@@ -177,8 +181,9 @@ export default function TicketReviewPage() {
       invoiceNumber: tk.invoiceNumber ?? "",
       invoiceTotalArs: centsToArsInput(tk.totalCents),
       purchasedAt: tk.purchasedAt ? tk.purchasedAt.slice(0, 10) : p.purchasedAt,
-      type: tk.type,
-      locationCode: (tk.locationCode as typeof p.locationCode) ?? "BACONA",
+      // Pendiente: la mayoría de las compras son aprovisionamiento en Salta. Confirmado: lo que se eligió.
+      type: tk.status === "PENDING_REVIEW" ? "APROVISIONAMIENTO" : tk.type,
+      locationCode: tk.status === "PENDING_REVIEW" ? "SALTA" : ((tk.locationCode as typeof p.locationCode) ?? "BACONA"),
     }));
     setLines(
       tk.lines.map((l) => {
@@ -329,7 +334,8 @@ export default function TicketReviewPage() {
       const res = await fetch("/api/proveedores", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
+        // Nace con la razón social y el CUIT de la factura
+        body: JSON.stringify({ name, razonSocial: ticket?.supplierNameRaw ?? null, cuit: ticket?.supplierCuit ?? null }),
       });
       if (res.status === 403) throw new Error("Solo Gerencia puede crear proveedores nuevos.");
       const created = (await res.json().catch(() => ({}))) as { id?: string; name?: string };
@@ -481,7 +487,13 @@ export default function TicketReviewPage() {
                 </select>
                 <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500">
                   {ticket.supplierNameRaw ? <span>En el ticket dice: {ticket.supplierNameRaw}</span> : null}
-                  {editable ? (
+                  {editable && supplierMatchedBy && form.supplierId === ticket.supplierId ? (
+                    <span className="text-green-700">
+                      Reconocido por {supplierMatchedBy === "CUIT" ? "CUIT" : "razón social"}
+                    </span>
+                  ) : null}
+                  {/* Solo hace falta crear uno si todavía no hay proveedor elegido */}
+                  {editable && !form.supplierId ? (
                     <button type="button" onClick={createSupplier} className="py-1 text-blue-700 underline">
                       + Nuevo proveedor
                     </button>
@@ -512,17 +524,17 @@ export default function TicketReviewPage() {
                     const type = e.target.value as "APROVISIONAMIENTO" | "IN_SITU";
                     setForm((p) => ({ ...p, type, locationCode: type === "APROVISIONAMIENTO" ? "SALTA" : "BACONA" }));
                   }}>
-                  <option value="IN_SITU">Compra en el local (San Antonio)</option>
                   <option value="APROVISIONAMIENTO">Aprovisionamiento (Salta)</option>
+                  <option value="IN_SITU">Compra en el local (San Antonio)</option>
                 </select>
               </label>
               <label className={LABEL}>
                 ¿Dónde entra la mercadería?
                 <select className={INPUT} value={form.locationCode}
                   onChange={(e) => setForm((p) => ({ ...p, locationCode: e.target.value as typeof p.locationCode }))}>
-                  <option value="BACONA">Bacoña</option>
                   <option value="SALTA">Salta</option>
                   <option value="EN_TRANSITO">En tránsito</option>
+                  <option value="BACONA">Bacoña</option>
                 </select>
               </label>
             </div>

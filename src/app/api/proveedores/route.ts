@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { normalizeCuitInput } from "@/lib/cuit";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -21,6 +22,8 @@ export async function GET() {
 const CreateSchema = z.object({
   name: z.string().min(1),
   categoria: z.string().nullable().optional(),
+  razonSocial: z.string().nullable().optional(),
+  cuit: z.string().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -37,7 +40,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
     const supplier = await prisma.supplier.create({
-      data: { name: parsed.data.name, categoria: parsed.data.categoria ?? null },
+      data: {
+        name: parsed.data.name,
+        categoria: parsed.data.categoria ?? null,
+        razonSocial: parsed.data.razonSocial?.trim() || null,
+        cuit: normalizeCuitInput(parsed.data.cuit),
+      },
     });
     return NextResponse.json(supplier);
   } catch (err) {

@@ -2,11 +2,14 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { normalizeCuitInput } from "@/lib/cuit";
 import { prisma } from "@/lib/prisma";
 
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
   categoria: z.string().nullable().optional(),
+  razonSocial: z.string().nullable().optional(),
+  cuit: z.string().nullable().optional(),
   active: z.boolean().optional(),
 });
 
@@ -24,9 +27,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
+    const { razonSocial, cuit, ...rest } = parsed.data;
     const supplier = await prisma.supplier.update({
       where: { id },
-      data: parsed.data,
+      data: {
+        ...rest,
+        ...(razonSocial !== undefined ? { razonSocial: razonSocial?.trim() || null } : {}),
+        ...(cuit !== undefined ? { cuit: normalizeCuitInput(cuit) } : {}),
+      },
     });
     return NextResponse.json(supplier);
   } catch (err) {

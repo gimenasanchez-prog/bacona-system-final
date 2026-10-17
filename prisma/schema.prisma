@@ -285,6 +285,9 @@ model Supplier {
   id             String                 @id @default(cuid())
   name           String
   categoria      String?
+  /// Razón social y CUIT como figuran en sus facturas; se completan solos al confirmar tickets
+  razonSocial    String?
+  cuit           String?
   active         Boolean                @default(true)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt

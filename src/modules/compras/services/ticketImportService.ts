@@ -1,5 +1,6 @@
 import { Prisma, PurchaseType, TicketImportStatus, TicketLineMatchSource } from "@prisma/client";
 
+import { cuitDigits, formatCuit } from "@/lib/cuit";
 import { GoogleDrive } from "@/lib/googleDrive";
 import { prisma } from "@/lib/prisma";
 import { PurchaseService, type PurchasePaymentInput } from "@/modules/compras/services/purchaseService";
@@ -100,11 +101,50 @@ async function resolveLines(extraction: TicketExtraction, supplierId: string | n
   });
 }
 
+export type SupplierMatch = { supplierId: string; matchedBy: "CUIT" | "NOMBRE" };
+
+/**
+ * Proveedor ya conocido para un ticket, sin depender de la lectura de Claude:
+ * 1) el CUIT coincide con el de la ficha de un proveedor, o con el de un ticket ya confirmado;
+ * 2) la razón social coincide exactamente (sin acentos ni signos) con el nombre o la razón social de un proveedor activo.
+ */
+async function matchKnownSupplier(params: { cuit: string | null; nameRaw: string | null }): Promise<SupplierMatch | null> {
+  const cuit = cuitDigits(params.cuit);
+  const suppliers = await prisma.supplier.findMany({
+    where: { active: true },
+    select: { id: true, name: true, razonSocial: true, cuit: true },
+  });
+  if (cuit) {
+    const byCuit = suppliers.filter((s) => cuitDigits(s.cuit) === cuit);
+    if (byCuit.length === 1) return { supplierId: byCuit[0]!.id, matchedBy: "CUIT" };
+    const confirmed = await prisma.ticketImport.findMany({
+      where: { status: TicketImportStatus.CONFIRMED, supplierCuit: { not: null }, supplierId: { not: null }, supplier: { active: true } },
+      select: { supplierCuit: true, supplierId: true },
+      orderBy: { reviewedAt: "desc" },
+    });
+    const hit = confirmed.find((t) => cuitDigits(t.supplierCuit) === cuit);
+    if (hit?.supplierId) return { supplierId: hit.supplierId, matchedBy: "CUIT" };
+  }
+  // Sin espacios ni signos: "S.R.L." y "SRL" cuentan como lo mismo
+  const compact = (s: string) => normalizeTicketText(s).replace(/ /g, "");
+  const name = params.nameRaw ? compact(params.nameRaw) : "";
+  if (name) {
+    const same = suppliers.filter(
+      (s) => compact(s.name) === name || (s.razonSocial != null && compact(s.razonSocial) === name),
+    );
+    if (same.length === 1) return { supplierId: same[0]!.id, matchedBy: "NOMBRE" };
+  }
+  return null;
+}
+
 async function buildTicketData(extraction: TicketExtraction, catalog: ExtractionCatalog) {
-  const supplierId =
+  const aiSupplierId =
     extraction.supplier_id && catalog.suppliers.some((s) => s.id === extraction.supplier_id)
       ? extraction.supplier_id
       : null;
+  // Lo aprendido por CUIT manda sobre la sugerencia de Claude; el nombre exacto solo si Claude no eligió
+  const known = await matchKnownSupplier({ cuit: extraction.supplier_cuit, nameRaw: extraction.supplier_name_on_ticket });
+  const supplierId = known?.matchedBy === "CUIT" ? known.supplierId : (aiSupplierId ?? known?.supplierId ?? null);
   const lines = await resolveLines(extraction, supplierId, catalog);
   return {
     status: TicketImportStatus.PENDING_REVIEW,
@@ -194,6 +234,11 @@ export class TicketImportService {
       where: { id },
       data: { ...data, lines: { deleteMany: {}, create: lines } },
     });
+  }
+
+  /** Para tickets pendientes sin proveedor (leídos antes de que se conociera): busca uno por CUIT o razón social. */
+  static matchKnownSupplier(params: { cuit: string | null; nameRaw: string | null }) {
+    return matchKnownSupplier(params);
   }
 
   static async discard(id: string, employeeId: string) {
@@ -306,6 +351,11 @@ export class TicketImportService {
       throw e;
     }
 
+    // Completar la ficha del proveedor con lo que dice la factura (solo campos vacíos: no pisa lo cargado a mano)
+    const supplierFill: Prisma.SupplierUpdateInput = {};
+    if (!supplier.razonSocial && ticket.supplierNameRaw?.trim()) supplierFill.razonSocial = ticket.supplierNameRaw.trim();
+    if (!supplier.cuit && formatCuit(ticket.supplierCuit)) supplierFill.cuit = formatCuit(ticket.supplierCuit);
+
     // Guardar la versión revisada de las líneas y lo aprendido
     const previous = new Map(ticket.lines.map((l) => [l.id, l]));
     await prisma.$transaction([
@@ -360,6 +410,13 @@ export class TicketImportService {
           }),
         ),
     ]);
+
+    // Aparte y sin frenar nada: la compra ya quedó confirmada aunque esto falle
+    if (Object.keys(supplierFill).length) {
+      await prisma.supplier
+        .update({ where: { id: supplier.id }, data: supplierFill })
+        .catch((e) => console.error("[tickets] completar ficha del proveedor", supplier.id, e));
+    }
 
     return purchase;
   }
