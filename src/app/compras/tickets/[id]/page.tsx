@@ -105,6 +105,11 @@ function ars(v: string): number {
   return Math.round(Number(v || "0") * 100);
 }
 
+/** Descuentos, bonificaciones y anulaciones: vienen con importe negativo en el ticket. */
+function isDiscount(l: FormLine): boolean {
+  return (l.lineTotalCents ?? 0) < 0 || ars(l.unitPriceArs) < 0;
+}
+
 function centsToArsInput(c: number | null): string {
   return c == null ? "" : (c / 100).toFixed(2);
 }
@@ -247,8 +252,7 @@ export default function TicketReviewPage() {
   const activeLines = lines.filter((l) => !l.ignored);
   // La suma incluye las líneas que no van al stock (bolsas, etc.): también están en el total del ticket.
   // Importe de cada línea: el del ticket si lo trae (no depende de la unidad elegida, ej. kg → g), si no cantidad × precio.
-  const lineAmountCents = (l: FormLine) => l.lineTotalCents ?? Math.round(ars(l.unitPriceArs) * Number(l.qty || 0));
-  const linesSumCents = lines.reduce((acc, l) => acc + lineAmountCents(l), 0);
+  const lineAmountCents = (l: FormLine) => l.lineTotalCents ?? Math.round(ars(l.unitPriceArs) * Number(l.qty || 0));  const linesSumCents = lines.reduce((acc, l) => acc + lineAmountCents(l), 0);
   const totalCents = ars(form.invoiceTotalArs);
   const allPriced = lines.length > 0 && lines.every((l) => l.lineTotalCents != null || l.unitPriceArs);
   const sumMismatch = allPriced && totalCents > 0 && Math.abs(linesSumCents - totalCents) > Math.max(100, totalCents * 0.01);
@@ -258,7 +262,7 @@ export default function TicketReviewPage() {
   // Primer motivo que impide confirmar, o null si se puede
   const blockReason = useMemo(() => {
     // Antes que "faltan vincular": a un descuento no hay que buscarle insumo
-    const negative = activeLines.find((l) => (l.lineTotalCents ?? 0) < 0 || ars(l.unitPriceArs) < 0);
+    const negative = activeLines.find(isDiscount);
     if (negative) return `"${negative.rawDescription}" es un descuento: marcalo como "No va al stock"`;
     if (missingItems) return `Faltan ${missingItems} producto${missingItems === 1 ? "" : "s"} por vincular`;
     const badQty = activeLines.find((l) => !(Number(l.qty) > 0));
@@ -539,9 +543,10 @@ export default function TicketReviewPage() {
             <div className="mt-3 space-y-3">
               {lines.map((l, idx) => {
                 const badge = l.inventoryItemId ? MATCH_BADGE[l.matchSource] : MATCH_BADGE.NONE;
+                const discount = isDiscount(l);
                 return (
                   <div key={l.id ?? `new-${idx}`}
-                    className={`rounded-md border p-3 sm:p-2 ${l.ignored ? "bg-neutral-50" : l.inventoryItemId ? "" : "border-amber-300"}`}>
+                    className={`rounded-md border p-3 sm:p-2 ${discount && !l.ignored ? "border-red-400 bg-red-50" : l.ignored ? "bg-neutral-50" : l.inventoryItemId ? "" : "border-amber-300"}`}>
                     {l.id ? (
                       <div className={`break-words px-1 text-base font-medium sm:text-sm ${l.ignored ? "text-neutral-500 line-through" : ""}`}>
                         {l.rawDescription}
@@ -554,6 +559,12 @@ export default function TicketReviewPage() {
                         aria-label="Nombre del producto agregado"
                       />
                     )}
+                    {discount ? (
+                      <div className="mt-1 px-1 text-sm font-medium text-red-700 sm:text-xs">
+                        Descuento {formatArsFromCents(-Math.abs(lineAmountCents(l)))}
+                        {l.ignored ? " · se resta del total, no del stock" : " · no es mercadería: marcalo como \"No va al stock\""}
+                      </div>
+                    ) : null}
                     <div className="mt-1 flex items-center justify-between gap-2">
                       {!l.ignored ? (
                         <span className={`rounded-full px-2 py-0.5 text-xs ${badge.className}`}>{badge.label}</span>
