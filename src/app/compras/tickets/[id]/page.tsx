@@ -3,10 +3,19 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ItemPicker } from "@/components/ItemPicker";
 import { formatArsFromCents } from "@/lib/money";
 
 type Uom = { id: string; label: string; unit: string; multiplierToBase: string; isDefaultForEntry: boolean };
-type InventoryItem = { id: string; name: string; unit: string; displayUnit: string; dimension: string; uoms: Uom[] };
+type InventoryItem = {
+  id: string;
+  name: string;
+  unit: string;
+  displayUnit: string;
+  dimension: string;
+  uoms: Uom[];
+  category: { name: string } | null;
+};
 type Supplier = { id: string; name: string };
 type CashBox = { id: string; name: string; kind: "EFECTIVO" | "CUENTA_BANCARIA" };
 type CreditCard = { id: string; name: string };
@@ -179,7 +188,8 @@ export default function TicketReviewPage() {
           inventoryItemId: item ? item.id : "",
           unitPriceArs: centsToArsInput(l.unitPriceCents),
           lineTotalCents: l.lineTotalCents,
-          ignored: l.ignored,
+          // Descuentos/bonificaciones (importe negativo) no van al stock
+          ignored: l.ignored || (l.lineTotalCents ?? 0) < 0 || (l.unitPriceCents ?? 0) < 0,
           matchSource: l.matchSource,
         };
       }),
@@ -229,6 +239,11 @@ export default function TicketReviewPage() {
     }
   }
 
+  const pickerItems = useMemo(
+    () => items.map((it) => ({ id: it.id, name: it.name, hint: it.displayUnit, group: it.category?.name })),
+    [items],
+  );
+
   const activeLines = lines.filter((l) => !l.ignored);
   // La suma incluye las líneas que no van al stock (bolsas, etc.): también están en el total del ticket.
   // Importe de cada línea: el del ticket si lo trae (no depende de la unidad elegida, ej. kg → g), si no cantidad × precio.
@@ -242,6 +257,9 @@ export default function TicketReviewPage() {
   const noStockLines = activeLines.length === 0;
   // Primer motivo que impide confirmar, o null si se puede
   const blockReason = useMemo(() => {
+    // Antes que "faltan vincular": a un descuento no hay que buscarle insumo
+    const negative = activeLines.find((l) => (l.lineTotalCents ?? 0) < 0 || ars(l.unitPriceArs) < 0);
+    if (negative) return `"${negative.rawDescription}" es un descuento: marcalo como "No va al stock"`;
     if (missingItems) return `Faltan ${missingItems} producto${missingItems === 1 ? "" : "s"} por vincular`;
     const badQty = activeLines.find((l) => !(Number(l.qty) > 0));
     if (badQty) return `La cantidad de "${badQty.rawDescription}" tiene que ser mayor a 0`;
@@ -549,11 +567,9 @@ export default function TicketReviewPage() {
                     </div>
                     {!l.ignored ? (
                       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-[1fr_90px_150px_110px]">
-                        <select className={`col-span-2 sm:col-span-1 ${CELL} ${l.inventoryItemId ? "" : "border-amber-400"}`}
-                          value={l.inventoryItemId} onChange={(e) => onItemChange(idx, e.target.value)} aria-label="Insumo">
-                          <option value="">— Elegir insumo —</option>
-                          {items.map((it) => <option key={it.id} value={it.id}>{it.name} ({it.displayUnit})</option>)}
-                        </select>
+                        <ItemPicker className="col-span-2 sm:col-span-1" fieldClassName={`${CELL} ${l.inventoryItemId ? "" : "border-amber-400"}`}
+                          items={pickerItems} value={l.inventoryItemId} onChange={(itemId) => onItemChange(idx, itemId)}
+                          placeholder="— Elegir insumo —" ariaLabel="Insumo" />
                         <input type="number" inputMode="decimal" min={0} step="0.001" className={CELL}
                           value={l.qty} onChange={(e) => updateLine(idx, { qty: e.target.value })} aria-label="Cantidad" />
                         <select className={CELL} disabled={!l.inventoryItemId} aria-label="Unidad"

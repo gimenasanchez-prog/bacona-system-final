@@ -35,7 +35,8 @@ const ConfirmSchema = z.object({
       unit: STOCK_UNIT.nullable(),
       uomId: z.string().nullable(),
       inventoryItemId: z.string().nullable(),
-      unitPriceCents: z.number().int().nonnegative().nullable(),
+      // Puede ser negativo en descuentos/bonificaciones; el servicio solo lo rechaza si la línea va al stock
+      unitPriceCents: z.number().int().nullable(),
       ignored: z.boolean(),
     }),
   ),
@@ -48,7 +49,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!employeeId) return NextResponse.json({ error: "Sin sesión" }, { status: 401 });
 
   const parsed = ConfirmSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.message }, { status: 400 });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue?.path[0] === "lines" && typeof issue.path[1] === "number" ? ` (producto ${issue.path[1] + 1})` : "";
+    return NextResponse.json({ error: `Hay un dato inválido${where}. Revisá el ticket y volvé a intentar.` }, { status: 400 });
+  }
   const data = parsed.data;
 
   const payment: PurchasePaymentInput =

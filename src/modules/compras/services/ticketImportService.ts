@@ -82,8 +82,12 @@ async function resolveLines(extraction: TicketExtraction, supplierId: string | n
       matchSource = TicketLineMatchSource.AI;
     }
 
+    // Descuentos y bonificaciones vienen con importe negativo: no son mercadería
+    const isDiscount = (l.line_total ?? 0) < 0 || (l.unit_price ?? 0) < 0;
+
     return {
       rawDescription: l.description,
+      ignored: isDiscount,
       qty: new Prisma.Decimal(Number.isFinite(l.quantity) && l.quantity > 0 ? l.quantity : 1),
       unitRaw: l.quantity_unit && STOCK_UNITS.has(l.quantity_unit) ? l.quantity_unit : null,
       unitPriceCents: pesosToCents(l.unit_price),
@@ -255,6 +259,9 @@ export class TicketImportService {
 
     // Sin líneas activas es válido: se registra solo la compra y el pago/deuda (ej. un servicio), sin mover stock.
     const activeLines = params.lines.filter((l) => !l.ignored);
+    const negative = activeLines.find((l) => l.unitPriceCents != null && l.unitPriceCents < 0);
+    if (negative)
+      throw new Error(`"${negative.rawDescription}" tiene precio negativo (parece un descuento): marcalo como "No va al stock"`);
     const unmatched = activeLines.find((l) => !l.inventoryItemId);
     if (unmatched) throw new Error(`Falta elegir el insumo para "${unmatched.rawDescription}"`);
     const badQty = activeLines.find((l) => !(l.qty > 0));
