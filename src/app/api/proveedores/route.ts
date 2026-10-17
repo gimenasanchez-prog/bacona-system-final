@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { normalizeCuitInput } from "@/lib/cuit";
+import { normalizeCuitInput, sameSupplierAs } from "@/lib/supplierIdentity";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -39,15 +39,31 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
-    const supplier = await prisma.supplier.create({
-      data: {
-        name: parsed.data.name,
-        categoria: parsed.data.categoria ?? null,
-        razonSocial: parsed.data.razonSocial?.trim() || null,
-        cuit: normalizeCuitInput(parsed.data.cuit),
-      },
+    const razonSocial = parsed.data.razonSocial?.trim() || null;
+    const cuit = normalizeCuitInput(parsed.data.cuit);
+
+    // No duplicar: si ya hay uno activo con ese CUIT o esa razón social, se devuelve ese (completando lo que le falte)
+    const active = await prisma.supplier.findMany({
+      where: { active: true },
+      select: { id: true, name: true, razonSocial: true, cuit: true },
+      orderBy: { createdAt: "asc" },
     });
-    return NextResponse.json(supplier);
+    const existing = sameSupplierAs({ cuit, razonSocial, name: parsed.data.name }, active)[0];
+    if (existing) {
+      const fill = {
+        ...(!existing.razonSocial && razonSocial ? { razonSocial } : {}),
+        ...(!existing.cuit && cuit ? { cuit } : {}),
+      };
+      const supplier = Object.keys(fill).length
+        ? await prisma.supplier.update({ where: { id: existing.id }, data: fill })
+        : existing;
+      return NextResponse.json({ ...supplier, existing: true });
+    }
+
+    const supplier = await prisma.supplier.create({
+      data: { name: parsed.data.name, categoria: parsed.data.categoria ?? null, razonSocial, cuit },
+    });
+    return NextResponse.json({ ...supplier, existing: false });
   } catch (err) {
     console.error("[/api/proveedores POST]", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

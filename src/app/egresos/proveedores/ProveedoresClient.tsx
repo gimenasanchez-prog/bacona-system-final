@@ -10,6 +10,8 @@ type SupplierDebt = {
   categoria: string | null;
   razonSocial: string | null;
   cuit: string | null;
+  /** Otros proveedores activos con el mismo CUIT o razón social */
+  duplicates: Array<{ id: string; name: string }>;
   debtCents: number;
 };
 type CashBox = { id: string; name: string; kind: "EFECTIVO" | "CUENTA_BANCARIA" };
@@ -69,6 +71,7 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
   const [categoria, setCategoria] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
 
   const loadDebts = useCallback(async () => {
     const params = new URLSearchParams();
@@ -105,6 +108,8 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
   }, [loadDebts, loadSuppliers]);
 
   const totalDebtCents = debts.reduce((sum, d) => sum + d.debtCents, 0);
+  const duplicateCount = debts.filter((d) => d.duplicates.length).length;
+  const shown = onlyDuplicates ? debts.filter((d) => d.duplicates.length) : debts;
 
   return (
     <div className="space-y-4">
@@ -138,7 +143,7 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
       <div className="rounded-lg border bg-white p-3 shadow-sm grid gap-2 sm:grid-cols-5">
         <input
           type="text"
-          placeholder="Buscar por nombre..."
+          placeholder="Buscar por nombre, razón social o CUIT..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="rounded border px-3 py-2 text-sm"
@@ -158,6 +163,14 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border px-3 py-2 text-sm" title="Deuda hasta" />
       </div>
 
+      {duplicateCount > 0 && (
+        <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <input type="checkbox" checked={onlyDuplicates} onChange={(e) => setOnlyDuplicates(e.target.checked)} />
+          Hay {duplicateCount} proveedores que parecen repetidos (mismo CUIT o razón social). Ver solo esos
+          {isGerencia ? " y unificarlos desde Editar." : "."}
+        </label>
+      )}
+
       <div className="rounded-lg border bg-white shadow-sm max-h-[70vh] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-white">
@@ -169,13 +182,18 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {debts.map((d) => (
+            {shown.map((d) => (
               <tr key={d.supplierId} className="border-b last:border-b-0">
                 <td className="px-3 py-2">
                   {d.supplierName}
                   {d.razonSocial || d.cuit ? (
                     <div className="text-xs text-neutral-500">
                       {[d.razonSocial, d.cuit ? `CUIT ${d.cuit}` : null].filter(Boolean).join(" · ")}
+                    </div>
+                  ) : null}
+                  {d.duplicates.length ? (
+                    <div className="mt-0.5 text-xs text-amber-700">
+                      Parece repetido de: {d.duplicates.map((x) => x.name).join(", ")}
                     </div>
                   ) : null}
                 </td>
@@ -209,7 +227,7 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
                 </td>
               </tr>
             ))}
-            {!loading && !debts.length && (
+            {!loading && !shown.length && (
               <tr>
                 <td className="px-3 py-6 text-center text-neutral-500" colSpan={4}>
                   No hay proveedores que coincidan con el filtro.
@@ -243,6 +261,7 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
       {formModalSupplier && (
         <SupplierFormModal
           supplier={formModalSupplier === "NEW" ? null : formModalSupplier}
+          suppliers={suppliers}
           onClose={() => setFormModalSupplier(null)}
           onSuccess={() => {
             setFormModalSupplier(null);
@@ -257,13 +276,44 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
 
 function SupplierFormModal({
   supplier,
+  suppliers,
   onClose,
   onSuccess,
 }: {
   supplier: SupplierDebt | null;
+  suppliers: Supplier[];
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const [mergeIntoId, setMergeIntoId] = useState(supplier?.duplicates[0]?.id ?? "");
+  const mergeTarget = suppliers.find((s) => s.id === mergeIntoId);
+
+  async function handleMerge() {
+    if (!supplier || !mergeTarget) return;
+    const ok = window.confirm(
+      `¿Unificar "${supplier.supplierName}" dentro de "${mergeTarget.name}"?\n\n` +
+        `Sus compras, deudas, pagos, egresos, tickets y productos aprendidos pasan a "${mergeTarget.name}". ` +
+        `"${supplier.supplierName}" queda inactivo.`,
+    );
+    if (!ok) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/proveedores/${supplier.supplierId}/merge`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ intoId: mergeTarget.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "No se pudo unificar.");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error desconocido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const [name, setName] = useState(supplier?.supplierName ?? "");
   const [categoria, setCategoria] = useState(supplier?.categoria ?? "");
   const [razonSocial, setRazonSocial] = useState(supplier?.razonSocial ?? "");
@@ -290,6 +340,9 @@ function SupplierFormModal({
           });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar proveedor.");
+      if (!supplier && data.existing) {
+        throw new Error(`Ya existe "${data.name}" con ese CUIT o razón social: no se creó otro. Editá ese.`);
+      }
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido.");
@@ -326,6 +379,29 @@ function SupplierFormModal({
               <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
               Activo
             </label>
+          )}
+          {supplier && (
+            <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+              <div className="text-xs font-medium text-amber-900">Unificar con otro proveedor</div>
+              <p className="text-xs text-amber-800">
+                Si &quot;{supplier.supplierName}&quot; es el mismo que otro, todo lo suyo pasa a ese y este queda inactivo.
+              </p>
+              <select value={mergeIntoId} onChange={(e) => setMergeIntoId(e.target.value)} className="w-full rounded border bg-white px-3 py-2 text-sm">
+                <option value="">— Elegir el proveedor que queda —</option>
+                {supplier.duplicates.length ? (
+                  <optgroup label="Parecen el mismo">
+                    {supplier.duplicates.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </optgroup>
+                ) : null}
+                <optgroup label="Todos">
+                  {suppliers.filter((s) => s.id !== supplier.supplierId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </optgroup>
+              </select>
+              <button onClick={handleMerge} disabled={!mergeTarget || loading}
+                className="w-full rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+                {mergeTarget ? `Unificar dentro de "${mergeTarget.name}"` : "Unificar"}
+              </button>
+            </div>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

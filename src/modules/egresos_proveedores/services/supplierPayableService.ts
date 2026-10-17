@@ -2,6 +2,7 @@ import { Prisma, SupplierPayment, SupplierPaymentMethod } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { assertIntCents } from "@/lib/money";
+import { sameSupplierAs } from "@/lib/supplierIdentity";
 
 export type RegisterSupplierPaymentInput = {
   supplierId: string;
@@ -254,11 +255,25 @@ export class SupplierPayableService {
     const suppliers = await prisma.supplier.findMany({
       where: {
         active: true,
-        ...(filters?.search ? { name: { contains: filters.search, mode: "insensitive" } } : {}),
+        ...(filters?.search
+          ? {
+              OR: [
+                { name: { contains: filters.search, mode: "insensitive" as const } },
+                { razonSocial: { contains: filters.search, mode: "insensitive" as const } },
+                { cuit: { contains: filters.search } },
+              ],
+            }
+          : {}),
         ...(filters?.categoria ? { categoria: filters.categoria } : {}),
       },
       select: { id: true, name: true, active: true, categoria: true, razonSocial: true, cuit: true },
       orderBy: { name: "asc" },
+    });
+
+    // Posibles duplicados (mismo CUIT o razón social) entre todos los activos, para poder unificarlos
+    const allActive = await prisma.supplier.findMany({
+      where: { active: true },
+      select: { id: true, name: true, razonSocial: true, cuit: true },
     });
 
     let result = suppliers.map((s) => ({
@@ -268,6 +283,9 @@ export class SupplierPayableService {
       categoria: s.categoria,
       razonSocial: s.razonSocial,
       cuit: s.cuit,
+      duplicates: sameSupplierAs(s, allActive)
+        .filter((d) => d.id !== s.id)
+        .map((d) => ({ id: d.id, name: d.name })),
       debtCents: debtBySupplierId.get(s.id) ?? 0,
     }));
 

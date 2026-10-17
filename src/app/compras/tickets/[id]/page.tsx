@@ -134,6 +134,9 @@ export default function TicketReviewPage() {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [duplicates, setDuplicates] = useState<Duplicate[]>([]);
   const [supplierMatchedBy, setSupplierMatchedBy] = useState<"CUIT" | "NOMBRE" | null>(null);
+  const [supplierCandidates, setSupplierCandidates] = useState(0);
+  const [fileSuggestion, setFileSuggestion] = useState<Supplier | null>(null);
+  const [supplierNotice, setSupplierNotice] = useState<string | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
@@ -157,7 +160,13 @@ export default function TicketReviewPage() {
 
   async function load() {
     const [t, it, sup, cb, cbBanco, cc] = await Promise.all([
-      apiGet<{ ticket: Ticket; possibleDuplicates: Duplicate[]; supplierMatchedBy: "CUIT" | "NOMBRE" | null }>(
+      apiGet<{
+        ticket: Ticket;
+        possibleDuplicates: Duplicate[];
+        supplierMatchedBy: "CUIT" | "NOMBRE" | null;
+        supplierCandidates: number;
+        fileSuggestion: Supplier | null;
+      }>(
         `/api/compras/tickets/${id}`,
       ),
       apiGet<{ items: InventoryItem[] }>("/api/stock/items"),
@@ -169,6 +178,8 @@ export default function TicketReviewPage() {
     setTicket(t.ticket);
     setDuplicates(t.possibleDuplicates);
     setSupplierMatchedBy(t.supplierMatchedBy ?? null);
+    setSupplierCandidates(t.supplierCandidates ?? 0);
+    setFileSuggestion(t.fileSuggestion ?? null);
     setItems(it.items);
     setSuppliers(sup.items);
     setCashBoxes([...cb.items, ...cbBanco.items]);
@@ -327,9 +338,11 @@ export default function TicketReviewPage() {
   }
 
   async function createSupplier() {
-    const name = window.prompt("Nombre del proveedor nuevo:", ticket?.supplierNameRaw ?? "")?.trim();
+    // Con razón social leída se crea directo con ese nombre (se puede renombrar en Proveedores)
+    const name = ticket?.supplierNameRaw?.trim() || window.prompt("Nombre del proveedor nuevo:", "")?.trim();
     if (!name) return;
     setError(null);
+    setSupplierNotice(null);
     try {
       const res = await fetch("/api/proveedores", {
         method: "POST",
@@ -338,10 +351,15 @@ export default function TicketReviewPage() {
         body: JSON.stringify({ name, razonSocial: ticket?.supplierNameRaw ?? null, cuit: ticket?.supplierCuit ?? null }),
       });
       if (res.status === 403) throw new Error("Solo Gerencia puede crear proveedores nuevos.");
-      const created = (await res.json().catch(() => ({}))) as { id?: string; name?: string };
+      const created = (await res.json().catch(() => ({}))) as { id?: string; name?: string; existing?: boolean };
       if (!res.ok || !created.id) throw new Error("No se pudo crear el proveedor.");
-      setSuppliers((prev) => [...prev, { id: created.id!, name: created.name ?? name }].sort((a, b) => a.name.localeCompare(b.name)));
+      setSuppliers((prev) =>
+        prev.some((s) => s.id === created.id)
+          ? prev
+          : [...prev, { id: created.id!, name: created.name ?? name }].sort((a, b) => a.name.localeCompare(b.name)),
+      );
       setForm((p) => ({ ...p, supplierId: created.id! }));
+      if (created.existing) setSupplierNotice(`Ya existía como "${created.name}": se usó ese.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     }
@@ -478,28 +496,50 @@ export default function TicketReviewPage() {
           <div className="rounded-lg border bg-white p-3">
             <div className="text-base font-semibold sm:text-sm">Datos de la compra</div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className={LABEL}>
-                Proveedor
-                <select className={INPUT} value={form.supplierId}
-                  onChange={(e) => setForm((p) => ({ ...p, supplierId: e.target.value }))}>
-                  <option value="">— Elegir proveedor —</option>
-                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500">
-                  {ticket.supplierNameRaw ? <span>En el ticket dice: {ticket.supplierNameRaw}</span> : null}
+              <div>
+                <label className={LABEL}>
+                  Proveedor
+                  <select className={INPUT} value={form.supplierId}
+                    onChange={(e) => setForm((p) => ({ ...p, supplierId: e.target.value }))}>
+                    <option value="">— Elegir proveedor —</option>
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </label>
+                <div className="mt-1 space-y-1.5 text-xs text-neutral-500">
+                  {ticket.supplierNameRaw || ticket.supplierCuit ? (
+                    <div>
+                      En la factura: {ticket.supplierNameRaw ?? "—"}
+                      {ticket.supplierCuit ? ` · CUIT ${ticket.supplierCuit}` : ""}
+                    </div>
+                  ) : null}
                   {editable && supplierMatchedBy && form.supplierId === ticket.supplierId ? (
-                    <span className="text-green-700">
+                    <div className="text-green-700">
                       Reconocido por {supplierMatchedBy === "CUIT" ? "CUIT" : "razón social"}
-                    </span>
+                      {supplierCandidates > 1 ? (
+                        <span className="text-amber-700">
+                          {" "}· hay {supplierCandidates} proveedores iguales: unificalos en Proveedores
+                        </span>
+                      ) : null}
+                    </div>
                   ) : null}
-                  {/* Solo hace falta crear uno si todavía no hay proveedor elegido */}
+                  {/* Sin reconocer: crear el proveedor con los datos de la factura, o usar la sugerencia por el nombre del archivo */}
                   {editable && !form.supplierId ? (
-                    <button type="button" onClick={createSupplier} className="py-1 text-blue-700 underline">
-                      + Nuevo proveedor
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={createSupplier}
+                        className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white sm:text-xs">
+                        {ticket.supplierNameRaw ? `+ Crear proveedor "${ticket.supplierNameRaw}"` : "+ Nuevo proveedor"}
+                      </button>
+                      {fileSuggestion ? (
+                        <button type="button" onClick={() => setForm((p) => ({ ...p, supplierId: fileSuggestion.id }))}
+                          className="rounded-md border px-3 py-2 text-sm text-neutral-700 sm:text-xs">
+                          ¿Es {fileSuggestion.name}? Usar
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
-                </span>
-              </label>
+                  {supplierNotice ? <div className="text-blue-700">{supplierNotice}</div> : null}
+                </div>
+              </div>
               <label className={LABEL}>
                 N° de factura o ticket
                 <input className={INPUT} value={form.invoiceNumber}

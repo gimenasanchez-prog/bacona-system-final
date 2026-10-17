@@ -1,6 +1,6 @@
 import { Prisma, PurchaseType, TicketImportStatus, TicketLineMatchSource } from "@prisma/client";
 
-import { cuitDigits, formatCuit } from "@/lib/cuit";
+import { cuitDigits, formatCuit, nameKey, sameSupplierAs } from "@/lib/supplierIdentity";
 import { GoogleDrive } from "@/lib/googleDrive";
 import { prisma } from "@/lib/prisma";
 import { PurchaseService, type PurchasePaymentInput } from "@/modules/compras/services/purchaseService";
@@ -101,50 +101,51 @@ async function resolveLines(extraction: TicketExtraction, supplierId: string | n
   });
 }
 
-export type SupplierMatch = { supplierId: string; matchedBy: "CUIT" | "NOMBRE" };
+export type SupplierMatch = {
+  supplierId: string;
+  matchedBy: "CUIT" | "NOMBRE";
+  /** Cuántos proveedores activos coinciden (más de 1 = hay duplicados para fusionar) */
+  candidates: number;
+};
 
 /**
- * Proveedor ya conocido para un ticket, sin depender de la lectura de Claude:
+ * Proveedor del ticket según su factura (no según el nombre del archivo):
  * 1) el CUIT coincide con el de la ficha de un proveedor, o con el de un ticket ya confirmado;
- * 2) la razón social coincide exactamente (sin acentos ni signos) con el nombre o la razón social de un proveedor activo.
+ * 2) la razón social coincide (sin acentos, espacios ni signos) con la razón social o el nombre de un proveedor.
+ * Si hay duplicados, se elige el más antiguo y se informa cuántos hay para poder fusionarlos.
  */
 async function matchKnownSupplier(params: { cuit: string | null; nameRaw: string | null }): Promise<SupplierMatch | null> {
-  const cuit = cuitDigits(params.cuit);
   const suppliers = await prisma.supplier.findMany({
     where: { active: true },
     select: { id: true, name: true, razonSocial: true, cuit: true },
+    orderBy: { createdAt: "asc" },
   });
+  const cuit = cuitDigits(params.cuit);
+  // Todos los activos que parecen este proveedor (por CUIT o razón social): si son más de uno, hay que unificarlos
+  const candidates = Math.max(1, sameSupplierAs({ cuit, razonSocial: params.nameRaw }, suppliers).length);
   if (cuit) {
-    const byCuit = suppliers.filter((s) => cuitDigits(s.cuit) === cuit);
-    if (byCuit.length === 1) return { supplierId: byCuit[0]!.id, matchedBy: "CUIT" };
+    const byCuit = sameSupplierAs({ cuit }, suppliers);
+    if (byCuit.length) return { supplierId: byCuit[0]!.id, matchedBy: "CUIT", candidates };
     const confirmed = await prisma.ticketImport.findMany({
       where: { status: TicketImportStatus.CONFIRMED, supplierCuit: { not: null }, supplierId: { not: null }, supplier: { active: true } },
       select: { supplierCuit: true, supplierId: true },
       orderBy: { reviewedAt: "desc" },
     });
     const hit = confirmed.find((t) => cuitDigits(t.supplierCuit) === cuit);
-    if (hit?.supplierId) return { supplierId: hit.supplierId, matchedBy: "CUIT" };
+    if (hit?.supplierId) return { supplierId: hit.supplierId, matchedBy: "CUIT", candidates };
   }
-  // Sin espacios ni signos: "S.R.L." y "SRL" cuentan como lo mismo
-  const compact = (s: string) => normalizeTicketText(s).replace(/ /g, "");
-  const name = params.nameRaw ? compact(params.nameRaw) : "";
-  if (name) {
-    const same = suppliers.filter(
-      (s) => compact(s.name) === name || (s.razonSocial != null && compact(s.razonSocial) === name),
-    );
-    if (same.length === 1) return { supplierId: same[0]!.id, matchedBy: "NOMBRE" };
+  if (nameKey(params.nameRaw)) {
+    const byName = sameSupplierAs({ razonSocial: params.nameRaw }, suppliers);
+    if (byName.length) return { supplierId: byName[0]!.id, matchedBy: "NOMBRE", candidates };
   }
   return null;
 }
 
 async function buildTicketData(extraction: TicketExtraction, catalog: ExtractionCatalog) {
-  const aiSupplierId =
-    extraction.supplier_id && catalog.suppliers.some((s) => s.id === extraction.supplier_id)
-      ? extraction.supplier_id
-      : null;
-  // Lo aprendido por CUIT manda sobre la sugerencia de Claude; el nombre exacto solo si Claude no eligió
+  // El proveedor sale de la factura (CUIT / razón social). Lo que propuso Claude por el nombre del archivo
+  // queda en rawExtraction.supplier_id y la pantalla lo ofrece como sugerencia, sin elegirlo solo.
   const known = await matchKnownSupplier({ cuit: extraction.supplier_cuit, nameRaw: extraction.supplier_name_on_ticket });
-  const supplierId = known?.matchedBy === "CUIT" ? known.supplierId : (aiSupplierId ?? known?.supplierId ?? null);
+  const supplierId = known?.supplierId ?? null;
   const lines = await resolveLines(extraction, supplierId, catalog);
   return {
     status: TicketImportStatus.PENDING_REVIEW,

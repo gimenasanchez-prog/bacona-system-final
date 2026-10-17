@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { normalizeCuitInput } from "@/lib/cuit";
+import { normalizeCuitInput } from "@/lib/supplierIdentity";
 import { prisma } from "@/lib/prisma";
 
 const UpdateSchema = z.object({
