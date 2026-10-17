@@ -33,6 +33,23 @@ export function nameKey(s: string | null | undefined): string {
 
 type SupplierIdentity = { id: string; name: string; razonSocial: string | null; cuit: string | null };
 
+const MIN_PREFIX = 6;
+
+/**
+ * Para AVISAR posibles repetidos (no para elegir solo): además de lo idéntico, un nombre que empieza
+ * igual que otro ("13 hermanos" ↔ "13 HERMANOS - DAROUICHE OSCAR ASIS"). La persona decide si unificar.
+ */
+export function similarSuppliers<T extends SupplierIdentity>(target: T, suppliers: T[]): T[] {
+  const mine = [nameKey(target.name), nameKey(target.razonSocial)].filter((k) => k.length >= MIN_PREFIX);
+  const exact = new Set(sameSupplierAs(target, suppliers).map((s) => s.id));
+  return suppliers.filter((s) => {
+    if (s.id === target.id) return false;
+    if (exact.has(s.id)) return true;
+    const theirs = [nameKey(s.name), nameKey(s.razonSocial)].filter((k) => k.length >= MIN_PREFIX);
+    return mine.some((a) => theirs.some((b) => a.startsWith(b) || b.startsWith(a)));
+  });
+}
+
 /** Proveedores que parecen el mismo que `target`: mismo CUIT, o misma razón social / nombre. */
 export function sameSupplierAs<T extends SupplierIdentity>(
   target: { cuit?: string | null; razonSocial?: string | null; name?: string | null },

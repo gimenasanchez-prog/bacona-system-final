@@ -2,7 +2,7 @@ import { Prisma, SupplierPayment, SupplierPaymentMethod } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { assertIntCents } from "@/lib/money";
-import { sameSupplierAs } from "@/lib/supplierIdentity";
+import { similarSuppliers } from "@/lib/supplierIdentity";
 
 export type RegisterSupplierPaymentInput = {
   supplierId: string;
@@ -283,9 +283,7 @@ export class SupplierPayableService {
       categoria: s.categoria,
       razonSocial: s.razonSocial,
       cuit: s.cuit,
-      duplicates: sameSupplierAs(s, allActive)
-        .filter((d) => d.id !== s.id)
-        .map((d) => ({ id: d.id, name: d.name })),
+      duplicates: similarSuppliers(s, allActive).map((d) => ({ id: d.id, name: d.name })),
       debtCents: debtBySupplierId.get(s.id) ?? 0,
     }));
 

@@ -72,6 +72,7 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [onlyDuplicates, setOnlyDuplicates] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadDebts = useCallback(async () => {
     const params = new URLSearchParams();
@@ -163,10 +164,17 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border px-3 py-2 text-sm" title="Deuda hasta" />
       </div>
 
+      {notice && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="shrink-0 text-xs underline">Cerrar</button>
+        </div>
+      )}
+
       {duplicateCount > 0 && (
         <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           <input type="checkbox" checked={onlyDuplicates} onChange={(e) => setOnlyDuplicates(e.target.checked)} />
-          Hay {duplicateCount} proveedores que parecen repetidos (mismo CUIT o razón social). Ver solo esos
+          Hay {duplicateCount} proveedores que parecen repetidos (mismo CUIT, razón social o nombre parecido). Ver solo esos
           {isGerencia ? " y unificarlos desde Editar." : "."}
         </label>
       )}
@@ -263,8 +271,9 @@ export function ProveedoresClient({ isGerencia }: { isGerencia: boolean }) {
           supplier={formModalSupplier === "NEW" ? null : formModalSupplier}
           suppliers={suppliers}
           onClose={() => setFormModalSupplier(null)}
-          onSuccess={() => {
+          onSuccess={(message) => {
             setFormModalSupplier(null);
+            setNotice(message ?? null);
             loadDebts();
             loadSuppliers();
           }}
@@ -283,9 +292,10 @@ function SupplierFormModal({
   supplier: SupplierDebt | null;
   suppliers: Supplier[];
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (message?: string) => void;
 }) {
-  const [mergeIntoId, setMergeIntoId] = useState(supplier?.duplicates[0]?.id ?? "");
+  // Arranca vacío: unificar es una decisión explícita, no algo que se dispare por guardar
+  const [mergeIntoId, setMergeIntoId] = useState("");
   const mergeTarget = suppliers.find((s) => s.id === mergeIntoId);
 
   async function handleMerge() {
@@ -306,7 +316,12 @@ function SupplierFormModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "No se pudo unificar.");
-      onSuccess();
+      const m = data.moved ?? {};
+      onSuccess(
+        `Listo: "${supplier.supplierName}" quedó unificado dentro de "${mergeTarget.name}" ` +
+          `(${m.purchases ?? 0} compras, ${m.payables ?? 0} deudas, ${m.payments ?? 0} pagos, ` +
+          `${m.expenses ?? 0} egresos, ${m.tickets ?? 0} tickets) y ya no aparece en la lista.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido.");
     } finally {
@@ -352,8 +367,8 @@ function SupplierFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="my-auto w-full max-w-sm rounded-xl bg-white shadow-xl">
         <div className="border-b px-6 py-4 font-semibold text-neutral-800">
           {supplier ? "Editar proveedor" : "Nuevo proveedor"}
         </div>
@@ -397,19 +412,27 @@ function SupplierFormModal({
                   {suppliers.filter((s) => s.id !== supplier.supplierId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </optgroup>
               </select>
-              <button onClick={handleMerge} disabled={!mergeTarget || loading}
-                className="w-full rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
-                {mergeTarget ? `Unificar dentro de "${mergeTarget.name}"` : "Unificar"}
-              </button>
+              {mergeTarget ? (
+                <p className="text-xs font-medium text-amber-900">
+                  Tocá &quot;Unificar&quot; abajo para confirmar. Los cambios de nombre o CUIT de arriba no se guardan.
+                </p>
+              ) : null}
             </div>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <div className="border-t px-6 py-4 flex justify-end gap-3">
           <button onClick={onClose} className="rounded px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-100">Cancelar</button>
-          <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-            {loading ? "Guardando..." : "Guardar"}
-          </button>
+          {/* Un solo botón principal: si hay destino elegido, unifica; si no, guarda */}
+          {mergeTarget ? (
+            <button onClick={handleMerge} disabled={loading} className="rounded bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+              {loading ? "Unificando..." : `Unificar en "${mergeTarget.name}"`}
+            </button>
+          ) : (
+            <button onClick={handleSubmit} disabled={loading} className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+              {loading ? "Guardando..." : "Guardar"}
+            </button>
+          )}
         </div>
       </div>
     </div>
